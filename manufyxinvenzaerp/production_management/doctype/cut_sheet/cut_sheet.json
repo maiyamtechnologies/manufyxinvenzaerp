@@ -10,6 +10,7 @@
   "naming_series",
   "company",
   "status",
+  "inactive_reason",
   "col_break_head_1",
   "item_code",
   "item_name",
@@ -78,8 +79,16 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Draft\nActive\nFully Allocated\nConsumed",
+   "options": "Draft\nActive\nFully Allocated\nConsumed\nInactive",
    "read_only": 1
+  },
+  {
+   "fieldname": "inactive_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason for Inactive",
+   "read_only": 1,
+   "depends_on": "eval:doc.status == 'Inactive'",
+   "description": "Why this Cut Sheet was set aside. Recorded when it is marked Inactive."
   },
   {
    "fieldname": "col_break_head_1",
@@ -132,7 +141,8 @@
    "fieldname": "warehouse",
    "fieldtype": "Link",
    "label": "Warehouse",
-   "options": "Warehouse"
+   "options": "Warehouse",
+   "reqd": 1
   },
   {
    "description": "The sheet as it stands today, read from the batch.",
@@ -179,10 +189,10 @@
    "read_only": 1
   },
   {
-   "description": "The piece this sheet is cut into. Thickness always comes from the batch \u2014 a cut changes Length and Width, never how thick the steel is.",
+   "description": "The piece this sheet is cut into. Thickness always comes from the batch — a cut changes Length and Width, never how thick the steel is.",
    "fieldname": "section_w1",
    "fieldtype": "Section Break",
-   "label": "W1 \u2014 Piece to Cut"
+   "label": "W1 — Piece to Cut"
   },
   {
    "fieldname": "w1_length",
@@ -200,7 +210,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "How many of these pieces this sheet yields. Entered by hand \u2014 a suggestion is offered from the geometry, but the nesting is yours to decide.",
+   "description": "How many of these pieces this sheet yields. Entered by hand — a suggestion is offered from the geometry, but the nesting is yours to decide.",
    "fieldname": "w1_sec_qty",
    "fieldtype": "Float",
    "label": "W1 Sec Nos (available)",
@@ -261,7 +271,7 @@
    "description": "What is left of the sheet once the cutting is done. Entered by hand. Written onto the batch when the first transfer from this Cut Sheet is submitted.",
    "fieldname": "section_w2",
    "fieldtype": "Section Break",
-   "label": "W2 \u2014 Balance"
+   "label": "W2 — Balance"
   },
   {
    "fieldname": "w2_length",

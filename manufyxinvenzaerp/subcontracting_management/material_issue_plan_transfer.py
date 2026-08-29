@@ -255,6 +255,302 @@ def _cut_sheet_caps(mip):
 
 
 @frappe.whitelist()
+def get_mip_process_loss_state(mip_name):
+    """What is left unexplained on this job, and what stands in the way of closing it.
+
+    Answers the question the plan cannot: 1,836 Kg went out, 116 was used, 1,450 came
+    back -- so where are the other 270? Until they are either returned or written off,
+    they sit at the supplier as real stock belonging to nobody's plan.
+
+    Returns the figures the dialog shows, plus two things that must be dealt with
+    first: excess still declared-but-not-returned, and any of it another Material
+    Planning has already claimed.
+    """
+    mip = frappe.get_doc("Material Issue Plan", mip_name)
+
+    at_supplier = _job_stock_at_supplier(mip)
+    remaining = flt(sum(at_supplier.values()), 3)
+
+    pending, claimed = [], []
+    for r in (mip.excess_return_items or []):
+        if r.stock_entry_created or flt(r.qty) <= 0:
+            continue
+        pending.append({
+            "row": r.name, "idx": r.idx, "item_code": r.item_code,
+            "qty": flt(r.qty, 3),
+            "length": flt(r.length, 3), "width": flt(r.width, 3),
+            "sec_qty": flt(r.sec_qty, 3),
+        })
+        if r.mapped_material_planning:
+            claimed.append({
+                "row": r.name, "idx": r.idx, "item_code": r.item_code,
+                "plan": r.mapped_material_planning, "qty": flt(r.qty, 3),
+            })
+
+    planned_return = flt(sum(flt(r.qty) for r in (mip.excess_return_items or [])), 3)
+    returned = flt(sum(
+        flt(r.qty) for r in (mip.excess_return_items or []) if r.stock_entry_created
+    ), 3)
+
+    threshold_pct = flt(frappe.db.get_single_value(
+        "Manufyxinvenza Settings", "process_loss_warning_percent"
+    )) or 5.0
+    transferred = flt(mip.transferred_weight_kg)
+    over_threshold = bool(transferred) and remaining > (transferred * threshold_pct / 100.0)
+
+    return {
+        "transferred": transferred,
+        "used_in_fg": flt(mip.used_in_fg_weight_kg, 3),
+        "planned_return": planned_return,
+        "returned": returned,
+        "remaining": remaining,
+        "pending_return": pending,
+        "pending_return_kg": flt(sum(p["qty"] for p in pending), 3),
+        "claimed": claimed,
+        "threshold_pct": threshold_pct,
+        "over_threshold": over_threshold,
+        "final_entry_exists": bool(_final_manufacture_entry(mip)),
+    }
+
+
+def _final_manufacture_entry(mip):
+    """The job's final Stock Entry, if it has been made. Process loss cannot be
+    judged before it exists -- until the finished goods are booked, material still
+    at the supplier is work in progress, not loss."""
+    if not mip.subcontracting_order:
+        return None
+    return frappe.db.get_value(
+        "Stock Entry",
+        {"subcontracting_order": mip.subcontracting_order,
+         "stock_entry_type": "Manufacture", "docstatus": 1},
+        "name",
+    )
+
+
+@frappe.whitelist()
+def create_mip_process_loss_entry(mip_name, reason, absorb_unreturned=0):
+    """Write off what never came back, with a reason, and close the job's material.
+
+    The last step of the chain: transferred, less what the job used, less what
+    physically returned, is what the supplier could not account for -- offcut dust,
+    cutting loss, short return. It is real stock standing in the supplier warehouse
+    under this job's name, and until it is issued out the warehouse says the job
+    still has material it does not have.
+
+    Refused before the final Stock Entry exists: material at the supplier is work in
+    progress until the finished goods are booked, not loss.
+
+    `absorb_unreturned` is the user's answer to the one question this cannot decide:
+    excess was declared to return and has not. Either make that return entry first,
+    or say plainly that it is not coming -- in which case those rows are folded into
+    the loss. Refused while another Material Planning has claimed any of it: a plan
+    is counting on that steel, and it must be unallocated there first rather than
+    written off underneath it.
+    """
+    if not frappe.has_permission("Material Issue Plan", "write"):
+        frappe.throw(_("Not permitted to modify this Material Issue Plan"), frappe.PermissionError)
+
+    reason = (reason or "").strip()
+    if not reason:
+        frappe.throw(_("Enter a reason — a write-off with no explanation is not one."),
+                     title=_("Reason Required"))
+
+    mip = frappe.get_doc("Material Issue Plan", mip_name)
+    _ensure_mip_editable(mip)
+
+    if not _final_manufacture_entry(mip):
+        frappe.throw(
+            _("Make the Final Stock Entry first. Until the finished goods are booked, "
+              "material at the supplier is work in progress — not loss."),
+            title=_("Final Stock Entry Not Made"),
+        )
+
+    state = get_mip_process_loss_state(mip_name)
+    absorb = bool(int(absorb_unreturned or 0))
+
+    if state["pending_return_kg"] > 0.001 and not absorb:
+        frappe.throw(
+            _("{0} Kg is still declared to return but has not come back.<br><br>"
+              "Make the Return Excess entry for it first — or confirm it is not coming, "
+              "and it will be written off with the rest.")
+            .format(state["pending_return_kg"]),
+            title=_("Excess Still Awaiting Return"),
+        )
+
+    if absorb and state["claimed"]:
+        frappe.throw(
+            _("Another Material Planning is counting on this material, so it cannot be "
+              "written off:<br><br>{0}<br><br>Unallocate it there first.")
+            .format("<br>".join(
+                "<b>{0}</b> — row {1} ({2}, {3} Kg)".format(c["plan"], c["idx"], c["item_code"], c["qty"])
+                for c in state["claimed"]
+            )),
+            title=_("Claimed by Another Plan"),
+        )
+
+    at_supplier = _job_stock_at_supplier(mip)
+    if not at_supplier:
+        frappe.throw(_("Nothing is left at the supplier for this job — there is nothing to write off."),
+                     title=_("Nothing to Write Off"))
+
+    se_items = [
+        {
+            "item_code": item_code,
+            "qty": qty,
+            "uom": frappe.db.get_value("Item", item_code, "stock_uom") or "Kg",
+            "s_warehouse": mip.supplier_warehouse,
+            "batch_no": batch_no or None,
+            "use_serial_batch_fields": 1 if batch_no else 0,
+        }
+        for (item_code, batch_no), qty in sorted(at_supplier.items())
+        if qty > 0.001
+    ]
+
+    se = frappe.get_doc({
+        "doctype": "Stock Entry",
+        "stock_entry_type": "Material Issue",
+        "company": mip.company,
+        "custom_mip_ref": mip_name,
+        "custom_sco_ref": mip.subcontracting_order or None,
+        "items": se_items,
+    })
+    se.insert(ignore_permissions=True)
+
+    # The rows folded in are no longer awaiting anything -- they were written off.
+    if absorb:
+        for r in (mip.excess_return_items or []):
+            if not r.stock_entry_created and flt(r.qty) > 0:
+                r.return_reason = (
+                    (r.return_reason or "").strip() + " " if r.return_reason else ""
+                ) + _("[Written off as process loss: {0}]").format(reason)
+                r.stock_entry_created = 1
+
+    mip.process_loss_weight_kg = flt(sum(i["qty"] for i in se_items), 3)
+    mip.process_loss_reason = reason
+    mip.flags.mfx_saved_by_another_document = True
+    mip.save(ignore_permissions=True)
+    mip.add_comment("Comment", _("Process loss {0} Kg written off: {1}").format(
+        mip.process_loss_weight_kg, reason))
+
+    return {"stock_entry": se.name, "process_loss_kg": mip.process_loss_weight_kg}
+
+
+def _job_stock_at_supplier(mip):
+    """What this job still has standing at the supplier, per (item, batch).
+
+    Netted across the supplier warehouse boundary from this job's own Stock
+    Entries -- in adds, out subtracts -- rather than read from the warehouse's live
+    stock, because a supplier warehouse is shared across every order placed with
+    that supplier and reading it would pull in other jobs' material.
+    """
+    if not (mip.supplier_warehouse and mip.subcontracting_order):
+        return {}
+    rows = frappe.db.sql(
+        """
+        SELECT sed.item_code, IFNULL(sed.batch_no, '') AS batch_no,
+               SUM(CASE WHEN sed.t_warehouse = %(wh)s THEN sed.qty
+                        WHEN sed.s_warehouse = %(wh)s THEN -sed.qty
+                        ELSE 0 END) AS qty
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON se.name = sed.parent
+        WHERE (se.custom_sco_ref = %(sco)s OR se.subcontracting_order = %(sco)s)
+          AND se.docstatus = 1
+          AND (sed.t_warehouse = %(wh)s OR sed.s_warehouse = %(wh)s)
+        GROUP BY sed.item_code, sed.batch_no
+        HAVING SUM(CASE WHEN sed.t_warehouse = %(wh)s THEN sed.qty
+                        WHEN sed.s_warehouse = %(wh)s THEN -sed.qty
+                        ELSE 0 END) > 0
+        """,
+        {"wh": mip.supplier_warehouse, "sco": mip.subcontracting_order},
+        as_dict=True,
+    )
+    return {(r.item_code, r.batch_no): flt(r.qty, 3) for r in rows}
+
+
+def _excess_return_source_rows(mip, in_rows):
+    """The 'out' half of the return: what to take from the supplier for each off-cut.
+
+    An excess row carries no batch on purpose -- an off-cut comes back as one shape
+    however many batches it was drawn from -- so the batches are chosen here, from
+    what this job actually has standing at the supplier, largest first. A row's
+    weight can therefore be met from more than one batch.
+
+    Returns (rows, shortfalls). A shortfall means the plan is asking to return more
+    than is left, which the caller refuses rather than quietly returning less: the
+    difference is either already consumed or already returned, and pretending
+    otherwise is how the counts drifted in the first place.
+    """
+    available = _job_stock_at_supplier(mip)
+    out_rows, shortfalls = [], []
+
+    for item in in_rows:
+        wanted = flt(item["qty"], 3)
+        item_code = item["item_code"]
+        candidates = sorted(
+            [(k, v) for k, v in available.items() if k[0] == item_code and v > 0],
+            key=lambda kv: -kv[1],
+        )
+        for key, have in candidates:
+            if wanted <= 0.001:
+                break
+            take = flt(min(wanted, have), 3)
+            if take <= 0:
+                continue
+            out_rows.append({
+                "item_code": item_code,
+                "qty": take,
+                "uom": item.get("uom") or "Kg",
+                "s_warehouse": mip.supplier_warehouse,
+                # The quantity is a ledger fact, so this row carries no dimensions:
+                # validate_stock_entry recomputes Qty from Length x Sec Qty for
+                # Structurals and Plates, and the batch's own length would make it
+                # try to move a whole plate that is no longer there.
+                "batch_no": key[1] or None,
+                "use_serial_batch_fields": 1 if key[1] else 0,
+            })
+            available[key] = flt(have - take, 3)
+            wanted = flt(wanted - take, 3)
+
+        if wanted > 0.001:
+            shortfalls.append(
+                _("{0}: {1} Kg short").format(item_code, flt(wanted, 3))
+            )
+
+    return out_rows, shortfalls
+
+
+def _cut_sheet_w1_totals(raw_items):
+    """W1 weight per batch, from the Cut Sheet governing it — the most a cut plate
+    can yield in pieces, whatever the uncut plate happens to weigh.
+
+    Keyed by batch alone: a Cut Sheet is unique per batch, and the batch is what
+    the popup's stock figure is about."""
+    batches = {i.get("batch_no") for i in raw_items if i.get("batch_no")}
+    if not batches:
+        return {}
+    return {
+        cs.batch_no: flt(cs.w1_total_qty)
+        for cs in frappe.get_all(
+            "Cut Sheet",
+            # A sheet set aside is not a cut plan any more, so it must not cap
+            # anything either.
+            filters={"batch_no": ["in", list(batches)], "status": ["!=", "Inactive"]},
+            fields=["batch_no", "w1_total_qty"],
+        )
+        if flt(cs.w1_total_qty) > 0
+    }
+
+
+def _available_for_transfer(item_code, batch_no, warehouse, w1_totals):
+    """Free stock, never more than the cut plan can actually yield."""
+    free = flt(_batch_free_qty(item_code, batch_no, warehouse), 3)
+    w1 = w1_totals.get(batch_no)
+    if w1 is None:
+        return free
+    return flt(min(free, w1), 3)
+
+
+@frappe.whitelist()
 def get_mip_pending_items(mip_name):
     """Raw-material items reserved for this plan but not yet transferred. Each row
     also carries duno_mark_no/drawing so the transfer popup can filter by them."""
@@ -289,6 +585,20 @@ def get_mip_pending_items(mip_name):
         cap = cut_sheet_qty_by_key.get((item["item_code"], item.get("batch_no")))
         if cap is not None:
             item["qty"] = flt(min(flt(item["qty"]), cap), 3)
+
+    # What a cut batch can offer at all, for the popup's "In Stock" column.
+    #
+    # That column reported the batch's whole free weight, which on a cut plate is
+    # the entire uncut sheet -- 5,877.600 Kg against a planned 1,248.503, when only
+    # the W1 pieces (2,449.000 Kg) are being cut from it at all. Read straight, it
+    # said there was four times more of this material available than the cut plan
+    # would ever yield.
+    #
+    # Capped at the sheet's W1 total rather than replaced by it: the column still
+    # has to answer "has the stock actually arrived", so a batch not yet received
+    # must still read 0 (a Material Issue Plan is routinely made before the
+    # Purchase Receipt lands).
+    w1_totals = _cut_sheet_w1_totals(raw_items)
 
     if not raw_items:
         return []
@@ -405,7 +715,9 @@ def get_mip_pending_items(mip_name):
             # so a row can be planned and reserved while the stock is not in yet --
             # showing 0 here is the difference between "nothing to send" and "not
             # arrived yet".
-            "available_qty": flt(_batch_free_qty(item_code, batch_no, source_warehouse), 3),
+            "available_qty": _available_for_transfer(
+                item_code, batch_no, source_warehouse, w1_totals
+            ),
             "uom": item.get("uom") or "Kg",
             "custom_sec_qty": flt(flt(item.get("custom_sec_qty", 0)) * ratio, 3),
             "custom_sec_uom": item.get("custom_sec_uom") or "",
@@ -1450,12 +1762,13 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
     for r in (mip.excess_return_items or []):
         if r.get("stock_entry_created"):
             continue
-        if r.get("billed_to_consume"):
-            # Never comes back, so there is nothing to receive: it stays in the
-            # supplier's warehouse and the job's final Stock Entry consumes it from
-            # there, which is what puts its cost on the job rather than in the free
-            # pool. No return entry, no batch, and no other plan can claim it.
-            continue
+        # "Billed to Consume" used to sit here: a row marked never-coming-back was
+        # skipped, left at the supplier, and swept up by the job's final Stock
+        # Entry. It is gone. Material that does not come back is now Process Loss --
+        # declared deliberately, with a reason, and issued out of the supplier
+        # warehouse by its own entry rather than absorbed silently into finished
+        # goods.
+        #
         # A claimed row is deliberately NOT skipped: bringing the off-cut back is
         # exactly how a virtual claim stops being a paper promise. The batch this
         # creates is attached to the claiming Material Mapping row automatically on
@@ -1529,12 +1842,50 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
         frappe.throw(_("No new off-cut items to process. All rows already have a Stock Entry created, "
                        "or no rows with Weight (Kg) > 0 exist."))
 
+    # A Repack, not a Material Receipt.
+    #
+    # This used to receive the off-cut as brand-new stock with no source at all, so
+    # the same steel was created in stores while every kilo of it was still standing
+    # at the supplier -- and the final Stock Entry then consumed it. The material was
+    # counted twice, and the job was charged for material it never used.
+    #
+    # A Repack does both halves in one document: out rows empty what this job has at
+    # the supplier, an in row receives the off-cut at its measured size as a NEW
+    # batch. In and out are not required to match, which is exactly right here --
+    # the difference is the cut, and what it leaves behind is process loss, declared
+    # separately with a reason.
+    #
+    # Tagged with custom_sco_ref as well as custom_mip_ref: the consumption netting
+    # (_get_supplier_wh_consumption_items) matches on the SCO, so without it a return
+    # was invisible to the very query whose docstring says a return "correctly
+    # reduces what is left to consume".
+    # A plan with no supplier warehouse never sent material anywhere this app can
+    # follow -- excess claimed straight off another plan's table, for instance, which
+    # never involves a supplier at all. There is nothing to take the off-cut OUT of,
+    # so it is received as it always was. The double-count this Repack exists to stop
+    # cannot arise there either: the final Stock Entry consumes from the supplier
+    # warehouse, and there isn't one.
+    supplier_tracked = bool(mip.supplier_warehouse and mip.subcontracting_order)
+
+    out_rows, shortfalls = (
+        _excess_return_source_rows(mip, se_items) if supplier_tracked else ([], [])
+    )
+    if shortfalls:
+        frappe.throw(
+            _("There is not enough of this material left at {0} to return:<br><br>{1}<br><br>"
+              "It has already been consumed by the final Stock Entry, or returned before. "
+              "Reduce the return quantity, or write the difference off as Process Loss.")
+            .format(mip.supplier_warehouse or _("the supplier"), "<br>".join(shortfalls)),
+            title=_("Not Enough Left to Return"),
+        )
+
     se = frappe.get_doc({
         "doctype": "Stock Entry",
-        "stock_entry_type": "Material Receipt",
+        "stock_entry_type": "Repack" if out_rows else "Material Receipt",
         "company": mip.company,
         "custom_mip_ref": mip_name,
-        "items": se_items,
+        "custom_sco_ref": mip.subcontracting_order or None,
+        "items": out_rows + se_items,
     })
     frappe.db.commit()
     se.insert(ignore_permissions=True)

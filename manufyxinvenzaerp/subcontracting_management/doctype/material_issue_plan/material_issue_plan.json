@@ -29,6 +29,10 @@
   "column_break_weight",
   "transferred_weight_kg",
   "excess_weight_kg",
+  "used_in_fg_weight_kg",
+  "returned_weight_kg",
+  "process_loss_weight_kg",
+  "process_loss_reason",
   "tab_drawings",
   "drawing_items",
   "tab_raw_materials",
@@ -134,7 +138,7 @@
    "label": "Warehouses"
   },
   {
-   "description": "Warehouse to transfer raw materials FROM. Auto-fetched from the Production Plan's Raw Material Warehouse \u2014 override here if needed.",
+   "description": "Warehouse to transfer raw materials FROM. Auto-fetched from the Production Plan's Raw Material Warehouse — override here if needed.",
    "fieldname": "source_warehouse",
    "fieldtype": "Link",
    "label": "Source Warehouse (RM)",
@@ -198,11 +202,42 @@
    "read_only": 1
   },
   {
-   "description": "Over-mapped weight (allocated beyond planned) \u2014 the difference expected back as excess/off-cut.",
+   "description": "Over-mapped weight (allocated beyond planned) — the difference expected back as excess/off-cut.",
    "fieldname": "excess_weight_kg",
    "fieldtype": "Float",
    "label": "Excess Weight (Kg)",
    "read_only": 1
+  },
+  {
+   "fieldname": "used_in_fg_weight_kg",
+   "fieldtype": "Float",
+   "label": "Used in FG (Kg)",
+   "read_only": 1,
+   "description": "What the Final Stock Entry actually consumed for this job — not what was sent.",
+   "precision": "3"
+  },
+  {
+   "fieldname": "returned_weight_kg",
+   "fieldtype": "Float",
+   "label": "Actual Excess Returned (Kg)",
+   "read_only": 1,
+   "description": "What physically came back, from submitted return entries. Can differ from the plan: the off-cut is re-measured on the way back.",
+   "precision": "3"
+  },
+  {
+   "fieldname": "process_loss_weight_kg",
+   "fieldtype": "Float",
+   "label": "Process Loss — Not Returned (Kg)",
+   "read_only": 1,
+   "description": "Transferred, minus what the job used, minus what came back. Written off with a reason once the supplier confirms it.",
+   "precision": "3"
+  },
+  {
+   "fieldname": "process_loss_reason",
+   "fieldtype": "Small Text",
+   "label": "Process Loss Reason",
+   "read_only": 1,
+   "depends_on": "eval:doc.process_loss_weight_kg"
   },
   {
    "fieldname": "tab_drawings",
@@ -243,7 +278,7 @@
   {
    "fieldname": "consolidate_html",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'>One row per item and batch \u2014 what will physically move, with rows for the same batch merged. Rebuilt on every save from the Raw Materials table; not editable here.</p>"
+   "options": "<p class='text-muted small'>One row per item and batch — what will physically move, with rows for the same batch merged. Rebuilt on every save from the Raw Materials table; not editable here.</p>"
   },
   {
    "fieldname": "consolidate_items",
@@ -258,7 +293,7 @@
    "label": "Excess Material Return"
   },
   {
-   "description": "Off-cut / balance material left after cutting the transferred raw material. Enter the items in their new dimensions and Sec Nos \u2014 weight (Kg) is auto-calculated.",
+   "description": "Off-cut / balance material left after cutting the transferred raw material. Enter the items in their new dimensions and Sec Nos — weight (Kg) is auto-calculated.",
    "fieldname": "excess_return_items",
    "fieldtype": "Table",
    "label": "Excess Material Items",

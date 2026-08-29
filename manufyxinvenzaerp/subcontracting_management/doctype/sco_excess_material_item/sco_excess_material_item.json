@@ -25,7 +25,6 @@
   "available_sec_qty",
   "available_qty",
   "return_reason",
-  "billed_to_consume",
   "return_warehouse",
   "stock_entry_created",
   "source_table",
@@ -190,21 +189,11 @@
    "label": "Return Reason"
   },
   {
-   "allow_on_submit": 1,
-   "default": "0",
-   "description": "The off-cut is never coming back: it stays where it is, is charged to this job, and is consumed by the final Stock Entry out of the supplier's warehouse so the job carries its cost. No return entry is made for it and no other plan can claim it -- treat it as scrapped.",
-   "fieldname": "billed_to_consume",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Billed to Consume"
-  },
-  {
    "description": "Where this off-cut comes back to. Defaults to the plan's raw-material warehouse; change it to a scrap warehouse when the piece is not reusable.",
    "fieldname": "return_warehouse",
    "fieldtype": "Link",
    "label": "Return Warehouse",
-   "options": "Warehouse",
-   "depends_on": "eval:!doc.billed_to_consume"
+   "options": "Warehouse"
   },
   {
    "allow_on_submit": 1,

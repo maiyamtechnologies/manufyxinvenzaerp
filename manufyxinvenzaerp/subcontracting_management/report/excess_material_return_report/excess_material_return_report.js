@@ -51,12 +51,6 @@ frappe.query_reports["Excess Material Return Report"] = {
 			options: "\nInternal Job\nSupplier Job\nSupplier with Material",
 		},
 		{
-			fieldname: "billed_to_consume",
-			label: __("Billed to Consume"),
-			fieldtype: "Select",
-			options: "\nBilled to Consume\nComing Back",
-		},
-		{
 			// Defaults to the last three months so the report opens on the question
 			// it exists to answer: what was due back a while ago and never came.
 			// Matched against the Material Issue Plan's posting date.

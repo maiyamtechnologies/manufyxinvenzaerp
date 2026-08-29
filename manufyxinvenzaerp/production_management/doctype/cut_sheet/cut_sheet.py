@@ -36,8 +36,30 @@ QTY_EPSILON = 0.001
 
 
 class CutSheet(Document):
+    # The cut itself: the piece being taken and the off-cut left behind. Once a job
+    # is holding pieces of this sheet, none of these may move under it.
+    CUT_FIELDS = (
+        ("w1_length", "W1 Length"),
+        ("w1_width", "W1 Width"),
+        ("w1_sec_qty", "W1 Sec Nos"),
+        ("w2_length", "W2 Length"),
+        ("w2_width", "W2 Width"),
+        ("w2_sec_qty", "W2 Sec Nos"),
+    )
+
+    # What this sheet IS: the company, the material, the physical batch and where
+    # that batch sits. Chosen once, when the sheet is created.
+    IDENTITY_FIELDS = (
+        ("company", "Company"),
+        ("item_code", "Item Code"),
+        ("batch_no", "Batch"),
+        ("warehouse", "Warehouse"),
+    )
+
     def validate(self):
+        self._block_identity_changes()
         self._fetch_batch_dimensions()
+        self._block_cut_changes_while_claimed()
         self._sync_allocations_from_rows()
         self._calculate()
         self._validate_allocations_fit()
@@ -115,6 +137,109 @@ class CutSheet(Document):
         # record that knows them disappears.
         if self.w2_applied:
             revert_w2_from_batch(self.name)
+
+    def _block_identity_changes(self):
+        """A saved Cut Sheet cannot be re-pointed at different material.
+
+        Every figure on this document is derived from one physical plate in one
+        warehouse -- the sheet's own dimensions are read off that batch, the cut is
+        planned against them, and jobs allocate pieces of it. Repointing a saved
+        sheet at another batch keeps the cut, the allocations and the status while
+        changing what they describe, which is not an edit anybody could mean. Make
+        a new sheet for a different plate.
+        """
+        before = self.get_doc_before_save()
+        if not before:
+            return
+
+        changed = [
+            label for field, label in self.IDENTITY_FIELDS
+            if (self.get(field) or "") != (before.get(field) or "")
+        ]
+        if changed:
+            frappe.throw(
+                _("{0} cannot be changed after a Cut Sheet is saved — every figure on it "
+                  "describes one plate in one warehouse. Create a new Cut Sheet for "
+                  "different material.")
+                .format(", ".join(changed)),
+                title=_("Cannot Change What Is Being Cut"),
+            )
+
+    def claiming_rows(self):
+        """Material Planning rows holding pieces of this sheet, live from the
+        database. Both raw-material tables carry a cut-sheet reference.
+
+        Not read from self.allocations: that table is rebuilt during validate, so on
+        a document loaded and edited it holds whatever was true when it was last
+        written -- a claim made since then would not appear in it."""
+        rows = []
+        for child_dt in (
+            "Material Planning Material Mapping",
+            "Material Planning Available Raw Material",
+        ):
+            for r in frappe.get_all(
+                child_dt,
+                filters={"cut_sheet_ref": self.name},
+                fields=["name", "parent", "idx", "item_code", "is_reserved"],
+            ):
+                if frappe.db.exists("Material Planning", r.parent):
+                    r.child_doctype = child_dt
+                    rows.append(r)
+        return rows
+
+    def _block_cut_changes_while_claimed(self):
+        """The cut cannot be re-drawn under a job that is already planning to it.
+
+        A Material Issue Plan does not keep its own copy of these sizes -- it reads
+        W1/W2 back off this sheet every time its raw materials refresh
+        (material_issue_plan._cut_sheet_reference) -- so changing them here silently
+        rewrites what an existing plan will transfer, for material somebody already
+        committed to. The planner never sees the change and never agreed to it.
+
+        Only _validate_allocations_fit guarded any of this before, and only for one
+        case: W1 Sec Nos reduced below the number of pieces taken. Length and Width,
+        on both W1 and W2, could be changed freely with jobs holding the sheet.
+
+        The way through is deliberate rather than blocked: release the allocations
+        (Release Allocations, which refuses while anything is reserved), then the
+        sizes are free and the plan picks up the new ones when its batch is
+        assigned again."""
+        before = self.get_doc_before_save()
+        if not before:
+            return  # new sheet -- nothing can be claiming it yet
+
+        changed = [
+            label for field, label in self.CUT_FIELDS
+            if flt(self.get(field), 3) != flt(before.get(field), 3)
+        ]
+        if not changed:
+            return
+
+        claims = self.claiming_rows()
+        if not claims:
+            return
+
+        by_plan = {}
+        for r in claims:
+            by_plan.setdefault(r.parent, []).append(r)
+        described = "<br>".join(
+            "<b>{0}</b> — row {1}{2}".format(
+                plan,
+                ", ".join(str(r.idx) for r in sorted(rows_, key=lambda x: x.idx)),
+                _(" (reserved)") if any(r.is_reserved for r in rows_) else "",
+            )
+            for plan, rows_ in sorted(by_plan.items())
+        )
+        frappe.throw(
+            _("{0} cannot be changed — this Cut Sheet is already being planned from:"
+              "<br><br>{1}<br><br>"
+              "Use <b>Release Allocations</b> to hand the pieces back first. Anything "
+              "still reserved has to be unreserved on its Material Planning before "
+              "that will work, so the plan is re-made deliberately rather than "
+              "changing underneath it.")
+            .format(", ".join(changed), described),
+            title=_("Cut Sheet In Use"),
+        )
 
     def _block_if_claimed(self):
         """Material Planning rows still pointing at this sheet.
@@ -244,6 +369,11 @@ class CutSheet(Document):
             )
 
     def _set_status(self):
+        # Inactive is a decision, not a derived state: someone set this sheet aside
+        # and said why. Recomputing over it would quietly bring it back to Active on
+        # the next save.
+        if self.status == "Inactive":
+            return
         if self.w2_applied:
             self.status = "Consumed"
         elif not flt(self.w1_sec_qty):
@@ -306,7 +436,9 @@ def get_available_cut_sheets(mp_name, item_code=None):
     if not mp:
         frappe.throw(_("Material Planning {0} not found.").format(mp_name))
 
-    filters = {"company": mp.company, "w2_applied": 0}
+    # Inactive sheets are set aside deliberately and must stop being offered as
+    # material to cut -- that is what marking one Inactive is for.
+    filters = {"company": mp.company, "w2_applied": 0, "status": ["!=", "Inactive"]}
     if item_code:
         filters["item_code"] = item_code
 
@@ -333,7 +465,7 @@ def get_cut_sheet_for_batch(batch_no, exclude_row=None):
     if not batch_no:
         return None
     cs = frappe.db.get_value(
-        "Cut Sheet", {"batch_no": batch_no},
+        "Cut Sheet", {"batch_no": batch_no, "status": ["!=", "Inactive"]},
         ["name", "item_code", "parent_item_group", "unit_weight", "status",
          "sheet_length", "sheet_width", "sheet_thickness",
          "w1_length", "w1_width", "w1_sec_qty", "w1_qty_per_nos",
@@ -496,6 +628,213 @@ def refresh_cut_sheet_allocations(cut_sheet_name):
             title="Cut Sheet allocation refresh failed",
             message=frappe.get_traceback(),
         )
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def cut_sheet_warehouse_query(doctype, txt, searchfield, start, page_len, filters):
+    """Warehouses that actually hold the batch being cut.
+
+    The field offered every warehouse on the site, and only one of them contains
+    this plate -- picking any other names a place the sheet's own material is not,
+    and the split happens against the batch in the warehouse named here.
+
+    Stock is read through ERPNext's get_batch_qty rather than summing the ledger:
+    a batch received on a Purchase Receipt records its quantity in a Serial and
+    Batch Bundle and leaves Stock Ledger Entry.batch_no empty, so a GROUP BY on
+    that column reports zero for exactly the batches most likely to be picked.
+    """
+    from erpnext.stock.doctype.batch.batch import get_batch_qty
+
+    batch_no = (filters or {}).get("batch_no")
+    if not batch_no:
+        return []
+
+    by_warehouse = {}
+    for row in get_batch_qty(batch_no=batch_no) or []:
+        wh = row.get("warehouse")
+        if wh:
+            by_warehouse[wh] = by_warehouse.get(wh, 0.0) + flt(row.get("qty"))
+
+    company = (filters or {}).get("company")
+    out = []
+    for wh, qty in sorted(by_warehouse.items(), key=lambda kv: -kv[1]):
+        if qty <= 0:
+            continue
+        if txt and txt.lower() not in wh.lower():
+            continue
+        if company and frappe.db.get_value("Warehouse", wh, "company") != company:
+            continue
+        # Second column is shown beside the name in the picker: which of these
+        # holds enough is the actual question being asked here.
+        out.append((wh, _("{0} in stock").format(flt(qty, 3))))
+    return out[start:start + page_len]
+
+
+@frappe.whitelist()
+def mark_cut_sheet_inactive(cut_sheet_name, reason):
+    """Set an unused Cut Sheet aside, with a reason, instead of deleting it.
+
+    A sheet raised by mistake had nowhere to go: deleting it loses the record that
+    it was ever made, and leaving it Active means it keeps appearing in the picker
+    as material available to cut. Inactive is neither -- the sheet stays for
+    reference and stops being offered anywhere (get_available_cut_sheets,
+    get_cut_sheet_for_batch and Material Planning's own batch sync all skip it).
+
+    Only while nothing has been done with it: no job holding pieces, no transfer
+    taken, no balance written back to the batch. A sheet that has been used is a
+    record of a real cut and is not something to set aside; release the
+    allocations or cancel the transfer first, and then it can be.
+
+    The reason is required. Six months later "why is this sheet inactive" has no
+    other answer, and the sheet is being kept precisely for that question.
+    """
+    if not frappe.has_permission("Cut Sheet", "write"):
+        frappe.throw(_("Not permitted to modify Cut Sheets"), frappe.PermissionError)
+
+    reason = (reason or "").strip()
+    if not reason:
+        frappe.throw(_("Enter a reason — it is what this sheet is being kept for."),
+                     title=_("Reason Required"))
+
+    cs = frappe.get_doc("Cut Sheet", cut_sheet_name)
+    if cs.status == "Inactive":
+        frappe.throw(_("This Cut Sheet is already Inactive."))
+
+    blockers = []
+    claims = cs.claiming_rows()
+    if claims:
+        blockers.append(
+            _("pieces are allocated to {0}").format(
+                ", ".join(sorted({r.parent for r in claims}))
+            )
+        )
+    transferred = sorted({
+        a.stock_entry for a in (cs.allocations or [])
+        if a.stock_entry and frappe.db.get_value("Stock Entry", a.stock_entry, "docstatus") == 1
+    })
+    if transferred:
+        blockers.append(_("material has been transferred by {0}").format(", ".join(transferred)))
+    if cs.w2_applied:
+        blockers.append(_("the balance has already been written back to the batch"))
+
+    if blockers:
+        frappe.throw(
+            _("This Cut Sheet has been used, so it cannot be set aside: {0}.<br><br>"
+              "Release the allocations, or cancel the transfer, and then mark it Inactive.")
+            .format("; ".join(blockers)),
+            title=_("Cut Sheet Already In Use"),
+        )
+
+    cs.status = "Inactive"
+    cs.inactive_reason = reason
+    cs.save(ignore_permissions=True)
+    cs.add_comment("Comment", _("Marked Inactive: {0}").format(reason))
+    return {"status": cs.status}
+
+
+@frappe.whitelist()
+def release_all_cut_sheet_allocations(cut_sheet_name):
+    """Hand every job's pieces back, so the sheet can be re-cut.
+
+    A sheet with allocations against it cannot have its W1 Sec Nos reduced below
+    what jobs have already taken (_validate_allocations_fit) -- correct, because
+    lowering it would silently oversubscribe pieces someone is relying on. But
+    there was no way to undo those claims either: re-cutting a plate meant
+    editing every claiming Material Planning by hand to find and clear the rows.
+
+    This is that missing step. It clears the cut-sheet markers AND the cut
+    figures on every Material Mapping row pointing here, then rebuilds the sheet
+    -- which empties Allocations, since that table is derived from those rows.
+    W1/W2 dimensions and Sec Nos are then free to change.
+
+    Refused once material has physically moved: a submitted transfer means the
+    steel is cut and the batch rewritten to match, so handing the pieces back on
+    paper would claim a whole plate that is out on the floor in pieces. Cancel
+    the transfer first, which reverts the batch through the ordinary path.
+
+    Refused, too, while any claiming row is RESERVED. A reservation is a
+    commitment against real stock, and quietly detaching the cut plan behind one
+    would leave the job holding a batch on terms nobody re-agreed. Unreserving is
+    a decision to be made on the Material Planning, looking at that plan -- so
+    this says which rows, and stops. Rows merely allocated are released here,
+    which is the ordinary case.
+
+    The rows released are named in the return value and in a comment on the
+    sheet, because "which jobs did I just detach" is the question anyone asks
+    immediately afterwards.
+    """
+    if not frappe.has_permission("Cut Sheet", "write"):
+        frappe.throw(_("Not permitted to modify Cut Sheets"), frappe.PermissionError)
+
+    cs = frappe.get_doc("Cut Sheet", cut_sheet_name)
+
+    transferred = sorted({
+        a.stock_entry for a in (cs.allocations or [])
+        if a.stock_entry and frappe.db.get_value("Stock Entry", a.stock_entry, "docstatus") == 1
+    })
+    if transferred:
+        frappe.throw(
+            _("Material has already been transferred from this Cut Sheet by {0}. "
+              "Cancel {1} first — that puts the batch's dimensions back — and then "
+              "release the allocations.")
+            .format(", ".join(transferred), _("it") if len(transferred) == 1 else _("them")),
+            title=_("Already Cut"),
+        )
+
+    rows = cs.claiming_rows()
+
+    reserved = [r for r in rows if r.is_reserved]
+    if reserved:
+        by_plan = {}
+        for r in reserved:
+            by_plan.setdefault(r.parent, []).append(str(r.idx))
+        frappe.throw(
+            _("Stock is still reserved against this Cut Sheet:<br><br>{0}<br><br>"
+              "Open each Material Planning, unreserve those rows and take the batch "
+              "off them, then release the allocations. A reservation is a claim on "
+              "real stock — it is not something to undo from here without looking at "
+              "the plan that made it.")
+            .format("<br>".join(
+                "<b>{0}</b> — row {1}".format(plan, ", ".join(idxs))
+                for plan, idxs in sorted(by_plan.items())
+            )),
+            title=_("Reserved — Unreserve on the Plan First"),
+        )
+
+    released = []
+    for row in rows:
+        frappe.db.set_value(
+            row.child_doctype, row.name,
+            {
+                "cut_sheet": 0, "cut_sheet_ref": "", "cut_sheet_avail_sec_qty": 0,
+                # The cut figures go with the claim -- left behind they describe a
+                # cut this row is no longer part of, and the Material Issue Plan
+                # reads them back for the transfer.
+                "use_length": 0, "use_width": 0, "use_sec_qty": 0, "use_calc_qty": 0,
+                "balance_length": 0, "balance_width": 0, "balance_sec_qty": 0,
+                "balance_calc_qty": 0,
+            },
+            update_modified=False,
+        )
+        released.append(row)
+
+    # Rebuild after the rows are cleared, not before: the table is derived from
+    # whatever still points here, so refreshing first would simply find them again.
+    refresh_cut_sheet_allocations(cut_sheet_name)
+
+    if released:
+        cs.add_comment(
+            "Comment",
+            _("Allocations released: {0}").format(
+                ", ".join("%s row %s (%s)" % (r.parent, r.idx, r.item_code) for r in released)
+            ),
+        )
+
+    return {
+        "released": len(released),
+        "plans": sorted({r.parent for r in released}),
+    }
 
 
 def release_cut_sheet_allocation(row):

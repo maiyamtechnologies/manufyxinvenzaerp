@@ -82,6 +82,14 @@ def refresh_sco_status(sco_name):
         return
     sco.update_status()
 
+    # The plan above it follows the same events -- keep the two in step here rather
+    # than making every caller remember both.
+    from manufyxinvenzaerp.production_plan_management.production_plan import (
+        refresh_production_plan_status,
+    )
+
+    refresh_production_plan_status(sco.custom_production_plan)
+
 
 class CustomStockEntry(StockEntry):
     """Stock Entry override that relaxes ERPNext's standard subcontracting checks for

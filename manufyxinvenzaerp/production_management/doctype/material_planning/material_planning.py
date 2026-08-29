@@ -146,6 +146,9 @@ class MaterialPlanning(Document):
             self._validate_alternate_item_qty()
         self._consolidate_unavailable_items()
         self._recalculate_consolidate_items()
+        # After _apply_rwd_fractional_nos and the batch validations above, so the
+        # per-row figure is derived from the same numbers the summary totals.
+        self._set_row_excess()
         self._update_weight_summary()
         _update_bom_item_weights(self)
         self._auto_update_planning_status()
@@ -302,8 +305,9 @@ class MaterialPlanning(Document):
                 continue
 
             cs = frappe.db.get_value(
-                "Cut Sheet", {"batch_no": row.batch},
+                "Cut Sheet", {"batch_no": row.batch, "status": ["!=", "Inactive"]},
                 ["name", "w1_sec_qty", "w1_length", "w1_width", "w1_qty_per_nos",
+                 "w2_length", "w2_width", "w2_sec_qty",
                  "sheet_thickness", "parent_item_group", "unit_weight"], as_dict=True,
             )
             if not cs:
@@ -314,6 +318,32 @@ class MaterialPlanning(Document):
 
             row.cut_sheet = 1
             row.cut_sheet_ref = cs.name
+
+            # Seed the row's own cut figures from the sheet, once.
+            #
+            # Nothing set these. To Use / Balance were only ever written by a user
+            # typing into the grid, so a row that took its batch any other way sat at
+            # use_length = 0 while the sheet showed its pieces allocated -- and since
+            # _sync_cut_sheet_calc derives use_calc_qty from those dimensions, it
+            # stayed 0 too. That is the figure _cut_sheet_caps reads to hold a
+            # transfer down to what the cut plan yields, so the cap silently never
+            # applied: the plan claimed pieces of a plate while carrying none of the
+            # sizes describing them (MP-2026-00042, three rows against CS-2026-00004,
+            # all reading zero).
+            #
+            # Seeded only where empty. Adjusting the take by hand is the point of
+            # these fields -- what the saw really produced is not always what was
+            # planned -- so a value already entered is never overwritten.
+            if not flt(row.use_length):
+                row.use_length = flt(cs.w1_length)
+                row.use_width = flt(cs.w1_width)
+                # Whole pieces where the row counts pieces; a dimension-waived row
+                # gets its fractional share from _apply_rwd_fractional_nos instead.
+                row.use_sec_qty = flt(row.batch_sec_qty) or flt(cs.w1_sec_qty)
+            if not flt(row.balance_length):
+                row.balance_length = flt(cs.w2_length)
+                row.balance_width = flt(cs.w2_width)
+                row.balance_sec_qty = flt(cs.w2_sec_qty)
             # What this row could take: the sheet's yield less what OTHER rows hold.
             #
             # Counted from the ROWS holding pieces, not from the Cut Sheet's own
@@ -383,10 +413,22 @@ class MaterialPlanning(Document):
                 unit_weight = row.get("batch_unit_weight") or row.get("unit_weight")
                 group = row.get("batch_parent_item_group") or row.get("parent_item_group")
 
-                use_qty = calculate_qty(
-                    group, row.use_length, row.use_width, thickness, unit_weight, row.use_sec_qty,
-                )
-                row.use_calc_qty = flt(use_qty, 3) if use_qty is not None else 0
+                if row.get("reserve_without_dimensions") and flt(row.get("batch_calc_qty")):
+                    # A dimension-waived row takes exactly its Required Qty from the
+                    # sheet, and its Sec Nos is that weight expressed as a fraction of
+                    # a piece -- stored to 3 decimals. Recomputing the weight back from
+                    # that rounded fraction loses a little of it every time (0.039 of a
+                    # 612.25 Kg piece reads 23.878 where the row reserves 24.003), and
+                    # this figure caps the transfer, so the loss would come off what
+                    # the Material Issue Plan offers. Take the weight it actually
+                    # reserved instead of deriving it a second time.
+                    row.use_calc_qty = flt(row.batch_calc_qty, 3)
+                else:
+                    use_qty = calculate_qty(
+                        group, row.use_length, row.use_width, thickness, unit_weight,
+                        row.use_sec_qty,
+                    )
+                    row.use_calc_qty = flt(use_qty, 3) if use_qty is not None else 0
 
                 balance_qty = calculate_qty(
                     group, row.balance_length, row.balance_width, thickness, unit_weight,
@@ -519,6 +561,23 @@ class MaterialPlanning(Document):
                 )
         if conflicts:
             frappe.throw("<br><br>".join(conflicts), title=_("Duplicate Batch Across Tables"))
+
+    def _set_row_excess(self):
+        """Per-row excess: what this batch gives beyond what the row asks for.
+
+        The Weight Summary has carried the total for a long time, but the total is
+        where the question STARTS -- a plan reporting 1,131.822 Kg of excess across
+        twenty rows says nothing about which rows to look at, and on a cut plate the
+        answer is rarely spread evenly (on MP-2026-00042 three rows carry all of it
+        and seventeen carry none). Now each row states its own share.
+
+        Only rows with a batch: an unmapped row has nothing to be in excess of, and
+        showing a negative there would read as a shortfall rather than "not decided
+        yet". Kept as a stored field rather than computed in the grid so it is
+        available to reports and to the Job Work Order without restating the formula.
+        """
+        for row in (self.material_mapping or []):
+            row.excess_qty = flt(flt(row.batch_calc_qty) - flt(row.qty), 3) if row.batch else 0.0
 
     def _update_weight_summary(self):
         """Keep the header weight-summary fields in sync with the child tables
@@ -2074,6 +2133,38 @@ def finalize_mapping(doc):
             shortfall_qty=flt(row.get("shortfall_qty")),
             reserved_on=row.get("reserved_on") or "",
             store_location=row.get("store_location") or "",
+            # Decisions made ON the row, which this function rebuilds rather than
+            # edits -- so anything not named here is silently dropped.
+            #
+            # reserve_without_dimensions was, and it took a chain of three
+            # symptoms with it: the checkbox came back unticked, Sec Qty (Nos)
+            # changed underneath (_apply_rwd_fractional_nos only keeps the
+            # fractional Nos in step while the flag is set), and the next save
+            # failed with "Calculated Qty is less than Required Qty" -- because
+            # reserve_batches routes a dimension-waived row through its own
+            # branch, and without the flag it takes the strict one instead.
+            # Re-ticking the box by hand fixed all three at once, which is
+            # exactly what a dropped field looks like from the outside.
+            #
+            # The cut-sheet figures go the same way: they say which plate this
+            # row cuts from and what is left of it, and a Material Issue Plan
+            # reads them back for the transfer.
+            reserve_without_dimensions=row.get("reserve_without_dimensions") or 0,
+            cut_sheet=row.get("cut_sheet") or 0,
+            cut_sheet_ref=row.get("cut_sheet_ref") or "",
+            cut_sheet_avail_sec_qty=flt(row.get("cut_sheet_avail_sec_qty")),
+            use_length=flt(row.get("use_length")),
+            use_width=flt(row.get("use_width")),
+            use_sec_qty=flt(row.get("use_sec_qty")),
+            use_calc_qty=flt(row.get("use_calc_qty")),
+            balance_length=flt(row.get("balance_length")),
+            balance_width=flt(row.get("balance_width")),
+            balance_sec_qty=flt(row.get("balance_sec_qty")),
+            balance_calc_qty=flt(row.get("balance_calc_qty")),
+            excess_material=row.get("excess_material") or 0,
+            cnc_process=row.get("cnc_process") or 0,
+            batch_remarks=row.get("batch_remarks") or "",
+            storage_location=row.get("storage_location") or "",
         )
 
         group = row.get("parent_item_group") or ""
@@ -3111,7 +3202,6 @@ def get_available_virtual_excess_items(mp_name, item_code=None):
     filters = {
         "parenttype": "Material Issue Plan",
         "stock_entry_created": 0,
-        "billed_to_consume": 0,
     }
     if item_code:
         filters["item_code"] = item_code
@@ -3214,18 +3304,13 @@ def claim_virtual_excess_mapping(mp_name, excess_row_name, row_name=None, unavai
         "SCO Excess Material Item", excess_row_name,
         ["parent", "parenttype", "item_code", "item_name", "parent_item_group", "unit_weight",
          "length", "width", "thickness", "sec_qty", "sec_uom", "qty", "uom",
-         "billed_to_consume", "mapped_material_planning", "stock_entry_created"],
+         "mapped_material_planning", "stock_entry_created"],
         as_dict=True,
     )
     if not excess:
         frappe.throw(_("Excess Material Item row {0} not found.").format(excess_row_name))
     if excess.stock_entry_created:
         frappe.throw(_("This row has already been physically returned to stock -- use the normal batch-based Excess Material Mapping instead."))
-    if excess.billed_to_consume:
-        frappe.throw(
-            _("This off-cut is Billed to Consume: it stays where it is, is charged to "
-              "its own job and is consumed there, so no other plan can take it.")
-        )
     if flt(excess.qty) <= 0:
         frappe.throw(_("Excess item has no quantity to claim."))
 

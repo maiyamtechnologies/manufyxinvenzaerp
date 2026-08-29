@@ -147,7 +147,12 @@ def run():
         d = frappe.get_doc("Cut Sheet", cs.name)
         d.w1_sec_qty = 1
         d.save(ignore_permissions=True)
-    ok, detail = _throws(_shrink_below_allocated, "already allocated")
+    # Refused, and now by the broader guard: any change to W1/W2 is blocked while a
+    # job is planning from the sheet, not only a reduction past what it holds
+    # (CutSheet._block_cut_changes_while_claimed). Matched on "cannot be changed"
+    # rather than the older "already allocated" wording, which only ever covered the
+    # one case.
+    ok, detail = _throws(_shrink_below_allocated, "cannot be changed")
     check("cutting the sheet's yield below what jobs hold is refused", ok, detail)
 
     print("\n=== releasing gives the pieces back ===")

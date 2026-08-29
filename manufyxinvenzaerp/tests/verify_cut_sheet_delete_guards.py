@@ -64,9 +64,15 @@ def _make_batch():
     }).insert(ignore_permissions=True)
 
 
+def _warehouse():
+    return frappe.db.get_value("Warehouse", {"is_group": 0}, "name")
+
+
 def _make_sheet():
     cs = frappe.get_doc({
         "doctype": "Cut Sheet", "batch_no": BATCH, "item_code": ITEM,
+        # Mandatory: the split is against the batch in this warehouse.
+        "warehouse": _warehouse(),
         "parent_item_group": "Structurals", "unit_weight": UNIT_WEIGHT,
         "w1_length": SHEET_LENGTH - W2_LENGTH, "w1_sec_qty": 1,
         "w2_length": W2_LENGTH, "w2_sec_qty": W2_SEC,

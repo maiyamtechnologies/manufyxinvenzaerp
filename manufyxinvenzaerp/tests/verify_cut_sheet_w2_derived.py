@@ -45,6 +45,10 @@ def run():
     cs = frappe.new_doc("Cut Sheet")
     cs.update({
         "batch_no": batch, "item_code": item, "parent_item_group": "Structurals",
+        # Warehouse is mandatory: the split happens against the batch in one
+        # particular warehouse, so a sheet that does not name one cannot say
+        # which stock it is cutting.
+        "warehouse": ctx.warehouse,
         "unit_weight": 10, "sheet_length": 10000, "sheet_sec_qty": 1,
         "w1_length": 3000, "w1_sec_qty": 2,      # 2 pieces x 3 m x 10 Kg/m = 60 Kg
         # Deliberately mis-measured: 7 m x 10 Kg/m would be 70 Kg, but only 40 Kg is

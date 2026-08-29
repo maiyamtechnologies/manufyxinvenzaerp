@@ -255,20 +255,20 @@ def run():
 
     print()
     print("=== the excess trio reconciles ===")
-    # Excess, what came back, and what is still out there. Billed-to-Consume comes off
-    # the difference rather than sitting in it forever: that material is scrapped by
-    # decision, not awaiting collection -- the same line the Excess Material Return
-    # Report draws when it builds its chase-list.
+    # Excess, what came back, and what is still out there. Two categories now, not
+    # three: Billed to Consume is gone, so anything that has not returned is simply
+    # still out there -- to be returned, or written off as Process Loss with a
+    # reason on the plan.
     for r in data:
         rows = _excess_rows(r["subcontracting_order"])
         booked = flt(sum(flt(x.qty) for x in rows), 3)
         back = flt(sum(flt(x.qty) for x in rows if x.stock_entry_created), 3)
-        scrapped = flt(sum(flt(x.qty) for x in rows
-                           if not x.stock_entry_created and x.billed_to_consume), 3)
+        # Billed to Consume was a third category here and is gone: material that
+        # does not come back is Process Loss now, declared on the plan with a reason.
         check("%s: booked" % r["subcontracting_order"], flt(r["excess_weight_kg"], 3), booked)
         check("  returned", flt(r["returned_excess_kg"], 3), back)
         check("  difference is what is left to chase",
-              flt(r["excess_difference_kg"], 3), flt(booked - back - scrapped, 3))
+              flt(r["excess_difference_kg"], 3), flt(booked - back, 3))
         break
 
     print()
@@ -306,7 +306,7 @@ def _excess_rows(sco):
         return []
     return frappe.get_all("SCO Excess Material Item",
                           filters={"parent": ["in", mips], "parenttype": "Material Issue Plan"},
-                          fields=["qty", "stock_entry_created", "billed_to_consume"])
+                          fields=["qty", "stock_entry_created"])
 
 
 def _summary():

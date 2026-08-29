@@ -679,7 +679,15 @@ def _cut_sheet_reference(mp_row):
     ref = mp_row.get("cut_sheet_ref")
     if not ref:
         return {}
-    cache = frappe.local.__dict__.setdefault(_CUT_SHEET_REF_CACHE_KEY, {})
+    # getattr/setattr, not frappe.local.__dict__: frappe.local is a Werkzeug Local
+    # proxy, and on this Werkzeug version it raises AttributeError for __dict__ --
+    # which killed "Job work order & MIP" outright the moment a plan had one
+    # cut-sheet row (PP-INT-2026-00013: "AttributeError: __dict__"). These two
+    # reach the same per-request store without touching the proxy's internals.
+    cache = getattr(frappe.local, _CUT_SHEET_REF_CACHE_KEY, None)
+    if cache is None:
+        cache = {}
+        setattr(frappe.local, _CUT_SHEET_REF_CACHE_KEY, cache)
     if ref not in cache:
         cache[ref] = frappe.db.get_value(
             "Cut Sheet", ref,
@@ -886,6 +894,42 @@ def _sync_excess_return_totals(mip):
     mip.excess_return_total_kg = flt(total_kg, 3)
     mip.excess_return_total_nos = flt(total_nos, 3)
 
+    # What actually came back, as opposed to what was planned to. The two differ
+    # routinely: an off-cut is re-measured on the way home, so 1,500 Kg planned at
+    # 150x50 can return as 1,450 at 140x50.
+    mip.returned_weight_kg = flt(sum(
+        flt(row.qty) for row in (mip.excess_return_items or []) if row.stock_entry_created
+    ), 3)
+
+    # What the job's own finished-goods entry consumed. Read from the entry rather
+    # than assumed from the transfer: the whole point is that they are not the same
+    # number, and the gap between them is what has to be returned or written off.
+    mip.used_in_fg_weight_kg = _used_in_fg_weight(mip)
+
+
+def _used_in_fg_weight(mip):
+    """Kg consumed by this job's submitted 'Manufacture' Stock Entries.
+
+    Only the consumed side: a Manufacture entry carries the finished good as well,
+    and counting that would double the figure. A consumed row is one with a source
+    warehouse and no target."""
+    if not mip.subcontracting_order:
+        return 0.0
+    total = frappe.db.sql(
+        """
+        SELECT SUM(sed.qty)
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON se.name = sed.parent
+        WHERE se.subcontracting_order = %(sco)s
+          AND se.stock_entry_type = 'Manufacture'
+          AND se.docstatus = 1
+          AND sed.s_warehouse IS NOT NULL AND sed.s_warehouse != ''
+          AND (sed.t_warehouse IS NULL OR sed.t_warehouse = '')
+        """,
+        {"sco": mip.subcontracting_order},
+    )
+    return flt(total[0][0] if total and total[0] else 0, 3)
+
 
 def _sync_batch_remarks(mip):
     """Mirror each raw_materials row's assigned batch's own Batch Remarks
@@ -935,12 +979,35 @@ def _maybe_mark_completed(mip):
     for row in (mip.excess_return_items or []):
         if row.stock_entry_created or row.mapped_material_planning:
             continue
-        if row.billed_to_consume:
-            # Charged to this job and consumed at the supplier rather than returned,
-            # so it is never waiting on a return entry and never holds the plan open.
-            continue
         return
+
+    # And every kilo has to be somewhere. Transferred, less what the job used, less
+    # what came back, is material still standing at the supplier under this job's
+    # name -- either it comes home or it is written off as process loss with a
+    # reason. Completing the plan over the top of it would close the job with stock
+    # nobody is looking for, which is exactly how a supplier warehouse fills up with
+    # weight no plan explains.
+    if _unaccounted_weight(mip) > 0.001:
+        return
+
     mip.status = "Completed"
+
+
+def _unaccounted_weight(mip):
+    """What this job still has standing at the supplier, per the stock ledger.
+
+    Read from the ledger rather than as (transferred − used − returned − written
+    off), because that arithmetic is only as good as the summary fields feeding it,
+    and those are derived from the plan's own rows. The ledger is the thing the
+    warehouse actually believes, and it is the same figure the Process Loss dialog
+    shows -- so the two can never tell different stories about whether the job is
+    finished.
+    """
+    from manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer import (
+        _job_stock_at_supplier,
+    )
+
+    return flt(sum(_job_stock_at_supplier(mip).values()), 3)
 
 
 def recheck_mip_completion(mip_name):

@@ -87,11 +87,22 @@ function _add_io_buttons(frm, fieldname) {
 // the off-cut is still at the supplier. Mirrors MAPPED_BATCH_STATUSES in
 // material_planning.py, last two entries being the pre-rename spellings kept so
 // documents saved before the rename still total correctly.
+// Must match MAPPED_BATCH_STATUSES in material_planning.py exactly — that tuple is
+// the source of truth, and this is a hand-copy of it for the form's own sums.
+// tests/verify_mapped_status_lists_match.py compares the two and fails if they drift.
+//
+// They did drift: "Cut Sheet Mapped" was added on the server and not here, so the
+// form's Difference in Kg silently skipped every cut-sheet row. On MP-2026-00042
+// that hid the whole difference — three cut-sheet rows carrying 1,131.822 Kg of
+// excess, reported as "+0.000 Kg (17 of 20 mapped)" while the Job Work Order, which
+// totals server-side, showed the 1,131.822 correctly. Two documents disagreeing
+// about the same number, with the correct one nowhere on the plan itself.
 const _MP_MAPPED_STATUSES = [
 	"Mapped",
 	"Excess Mapped",
 	"Excess Mapped (At Supplier)",
 	"Excess Mapped (Pending Return)",
+	"Cut Sheet Mapped",
 	"Virtual (At Supplier)",
 	"Claimed (Pending Return)",
 ];
