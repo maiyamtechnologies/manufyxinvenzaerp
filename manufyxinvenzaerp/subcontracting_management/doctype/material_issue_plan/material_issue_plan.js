@@ -46,6 +46,7 @@ frappe.ui.form.on("Material Issue Plan", {
 		_add_pdf_button(frm);
 		_render_excess_action_btn(frm);
 		_add_final_stock_entry_button(frm);
+		_add_process_loss_button(frm);
 
 		// Recompute excess return totals on load so the summary fields are
 		// always in sync with the child table rows (previously only recalculated
@@ -514,6 +515,117 @@ function _check_transfer_readiness(frm, on_proceed) {
 // this batch (with its Sec Qty) is what's planned, per drawing. The preview
 // popup and the downloaded PDF render from the exact same server-built HTML
 // (get_mip_batch_plan_html), so what you see is exactly what you download.
+
+// Process Loss — the last step, and the one that lets a job close.
+//
+// 1,836 Kg went out, 116 was used, 1,450 came back. The other 270 is standing at
+// the supplier under this job's name, and until it is returned or written off the
+// warehouse says the job has material it does not have. Shown only once the Final
+// Stock Entry exists: before that, material at the supplier is work in progress.
+function _add_process_loss_button(frm) {
+	if (frm.is_new() || frm.doc.status === "Completed") return;
+
+	frappe.call({
+		method: "manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer.get_mip_process_loss_state",
+		args: { mip_name: frm.doc.name },
+		callback(r) {
+			const s = r.message;
+			if (!s || !s.final_entry_exists || s.remaining <= 0.001) return;
+
+			frm.add_custom_button(__("Process Loss"), function () {
+				_show_process_loss_dialog(frm, s);
+			}).addClass("btn-danger");
+		},
+	});
+}
+
+function _show_process_loss_dialog(frm, s) {
+	const money = (v) => format_number(v, null, 3);
+
+	// The whole chain in one place, because "where did my 1,836 Kg go" is the
+	// question being answered.
+	let html =
+		'<table class="table table-bordered" style="font-size:13px;margin-bottom:12px">' +
+		`<tr><td>${__("Transferred to supplier")}</td><td style="text-align:right">${money(s.transferred)} Kg</td></tr>` +
+		`<tr><td>${__("Used in Final Stock Entry")}</td><td style="text-align:right">${money(s.used_in_fg)} Kg</td></tr>` +
+		`<tr><td>${__("Excess actually returned")}</td><td style="text-align:right">${money(s.returned)} Kg</td></tr>` +
+		`<tr style="font-weight:700;background:#fff5f5"><td>${__("Still at the supplier — to write off")}</td>` +
+		`<td style="text-align:right;color:#c62828">${money(s.remaining)} Kg</td></tr>` +
+		"</table>";
+
+	if (s.pending_return_kg > 0.001) {
+		html +=
+			'<div style="padding:10px 12px;background:#fff8e1;border-left:3px solid #f9a825;border-radius:3px;font-size:12px;margin-bottom:10px">' +
+			"<b>" + __("{0} Kg is still declared to return and has not come back.", [money(s.pending_return_kg)]) + "</b><br>" +
+			__("Make the Return Excess entry for it — or tick below to say it is not coming, and it will be written off with the rest.") +
+			"</div>";
+	}
+
+	if (s.claimed && s.claimed.length) {
+		html +=
+			'<div style="padding:10px 12px;background:#fff5f5;border-left:3px solid #c62828;border-radius:3px;font-size:12px;margin-bottom:10px">' +
+			"<b>" + __("Another plan is counting on this material:") + "</b><br>" +
+			s.claimed.map(c => `${c.plan} — ${__("row")} ${c.idx} (${c.item_code}, ${money(c.qty)} Kg)`).join("<br>") +
+			"<br>" + __("Unallocate it there before writing it off.") +
+			"</div>";
+	}
+
+	if (s.over_threshold) {
+		html +=
+			'<div style="padding:10px 12px;background:#fff5f5;border-left:3px solid #c62828;border-radius:3px;font-size:12px;margin-bottom:10px">' +
+			"<b>" + __("This is above {0}% of what was transferred.", [s.threshold_pct]) + "</b><br>" +
+			__("A loss this size is not cutting loss — the supplier did not use the material effectively. That is a purchase return to recover payment, not a write-off. You can still proceed, but say so in the reason.") +
+			"</div>";
+	}
+
+	const d = new frappe.ui.Dialog({
+		title: __("Process Loss — Not Returned"),
+		size: "large",
+		fields: [
+			{ fieldtype: "HTML", fieldname: "summary", options: html },
+			{
+				fieldtype: "Check",
+				fieldname: "absorb_unreturned",
+				label: __("The excess still awaiting return is not coming — write it off too"),
+				depends_on: "eval:" + (s.pending_return_kg > 0.001),
+				default: 0,
+			},
+			{
+				fieldtype: "Small Text",
+				fieldname: "reason",
+				label: __("Reason"),
+				reqd: 1,
+				description: __("What the supplier said happened to it — cutting loss, burning loss, short return."),
+			},
+		],
+		primary_action_label: __("Write Off {0} Kg", [money(s.remaining)]),
+		primary_action(values) {
+			frappe.call({
+				method: "manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer.create_mip_process_loss_entry",
+				args: {
+					mip_name: frm.doc.name,
+					reason: values.reason,
+					absorb_unreturned: values.absorb_unreturned ? 1 : 0,
+				},
+				freeze: true,
+				freeze_message: __("Writing off process loss…"),
+				callback(r) {
+					if (!r.message) return;
+					d.hide();
+					frappe.msgprint({
+						title: __("Process Loss Recorded"),
+						message: __("{0} Kg written off. Stock Entry {1} created — submit it to take the material out of the supplier's warehouse.", [
+							money(r.message.process_loss_kg), r.message.stock_entry,
+						]),
+						indicator: "orange",
+					});
+					frm.reload_doc();
+				},
+			});
+		},
+	});
+	d.show();
+}
 
 function _add_open_sco_button(frm) {
 	// Counterpart of the Job Work Order's "Open MIP" button: the two documents are

@@ -171,6 +171,27 @@ manufyxinvenzaerp/
   release/restore on Stock Entry submit/cancel. The adjustment is a single atomic UPDATE
   (`_reduce_batch_sec_qty`) — never read-modify-write, or two entries consuming one batch
   lose a write between them.
+- **Every kilo sent to a supplier must land somewhere, and the ledger is the judge.**
+  The chain is: transfer → the Final Stock Entry consumes what the DRAWING needed
+  (`_consumption_for_completed` caps each share at `drawing_planned_weight`/`reqd_kg`, not
+  at what was sent — whole pieces go out, a 5 m length to make a 340 mm part) → the excess
+  return is a **Repack** that takes the off-cut OUT of the supplier warehouse and brings it
+  home as a new batch → whatever the supplier still cannot account for is **Process Loss**,
+  written off by `create_mip_process_loss_entry` with a mandatory reason.
+  Three traps live here:
+    - The return used to be a `Material Receipt` with **no source warehouse** — it created
+      stock while the same kilos stood at the supplier and were then consumed. If you touch
+      `create_mip_excess_return_entry`, keep the out rows. It falls back to a plain receipt
+      only when the plan has **no supplier warehouse** (excess claimed off another plan's
+      table), where no double-count is possible.
+    - `_get_supplier_wh_consumption_items` nets on `custom_sco_ref`/`subcontracting_order`.
+      Any entry that moves this job's material must carry one, or the netting cannot see it.
+    - `_maybe_mark_completed` gates on `_unaccounted_weight`, which reads the **stock ledger**
+      (`_job_stock_at_supplier`), not the summary fields — those are derived from the plan's
+      own rows and can be wrong. Keep it that way, or the plan closes over stranded stock.
+  **"Billed to Consume" was removed on 2026-08-29** and must not come back: material that
+  does not return is Process Loss. The cost consequence was accepted — it used to land on
+  the job's finished goods, it now lands on the write-off account.
 - **A Supplier Operation Entry is not cancellable on its own.** `before_cancel_supplier_operation_entry`
   throws unless `doc.flags.mfx_cancelled_by_sco` is set, which only the two SCO-cancel cascades
   do (`overrides.CustomSubcontractingOrder._cancel_and_delete_soes` and

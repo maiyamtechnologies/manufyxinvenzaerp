@@ -199,23 +199,17 @@ def parse_bom_excel(so_name):
     # too, at the moment the sheet is read, so it reads against the sheet the
     # user is still looking at. verify_raw_materials repeats the check and is
     # the one that blocks -- this is the earlier, friendlier sighting.
+    # Collected in the Raw Materials build loop below rather than here, because that
+    # is the only place the row number these warnings land on is known -- t2_idx is
+    # not calculated until further down, and it starts from whatever is already in
+    # the table so a reload does not restart at 1.
+    #
+    # Naming the row is the whole point: "BEAM-1B16 -SHT-16 OF 291 / ISMB250" is the
+    # drawing's name, not a place to go, and a sheet runs to hundreds of rows. Verify
+    # Raw Materials already leads with the row (see _at); loading did not, so the two
+    # messages described the same problem in two ways and only one of them could be
+    # acted on.
     dim_warn = []
-    for cdn, d in new_drawings.items():
-        for item in d["items"]:
-            idata = item_data_map.get(item["material_code"]) or frappe._dict()
-            pig = (idata.get("custom_parent_item_group") or "").strip()
-            if pig == "Plates" and not flt(item.get("thickness")):
-                dim_warn.append(_("{0} / {1}: Plates item missing Thickness in Excel").format(cdn, item["material_code"]))
-            elif pig == "Structurals" and not flt(idata.get("custom_unit_weight")):
-                dim_warn.append(_("{0} / {1}: Structurals item missing Unit Weight in Item master").format(cdn, item["material_code"]))
-            unused = _check_unused_dimensions(frappe._dict(item), pig)
-            if unused:
-                dim_warn.append(
-                    _("{0} / {1}: {2} do not use {3} — clear that column in the sheet")
-                    .format(cdn, item["material_code"], pig, ", ".join(unused))
-                )
-    if dim_warn:
-        warnings.extend(dim_warn)
 
     # --- Fetch FG item names ---
     fg_name_map = {}
@@ -310,6 +304,23 @@ def parse_bom_excel(so_name):
             unit_wt = flt(idata.get("custom_unit_weight") or 0)
             sec_qty = flt(item["sec_qty"])
             qty = _calc_qty(pig, item["length"], item["width"], item["thickness"], unit_wt, sec_qty)
+
+            # Same three checks that used to run in their own loop above, now led by
+            # the Raw Materials row they will occupy — the row Verify Raw Materials
+            # will name for the same problem.
+            _row_label = "%s / %s" % (cdn, item["material_code"])
+            if pig == "Plates" and not flt(item["thickness"]):
+                dim_warn.append(_at(RAW_MATERIALS, t2_idx,
+                    _("{0}: Plates item missing Thickness in Excel").format(_row_label)))
+            elif pig == "Structurals" and not unit_wt:
+                dim_warn.append(_at(RAW_MATERIALS, t2_idx,
+                    _("{0}: Structurals item missing Unit Weight in Item master").format(_row_label)))
+            unused = _check_unused_dimensions(frappe._dict(item), pig)
+            if unused:
+                dim_warn.append(_at(RAW_MATERIALS, t2_idx,
+                    _("{0}: {1} do not use {2} — clear that column in the sheet")
+                    .format(_row_label, pig, ", ".join(unused))))
+
             total_sec_qty = flt(sec_qty * tq, 3)
             total_weight = flt(qty * tq, 3)
             t2_values.append((
@@ -334,6 +345,9 @@ def parse_bom_excel(so_name):
                 0,
             ))
             t2_idx += 1
+
+    if dim_warn:
+        warnings.extend(dim_warn)
 
     # --- Bulk insert ---
     _bulk_insert("tabSales Order DUNO Item", t1_fields, t1_values)

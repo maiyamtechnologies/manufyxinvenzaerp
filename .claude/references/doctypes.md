@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-08-28 01:34:21_
+_Generated: 2026-08-29 23:53:06_
 
 ## drawing
 
@@ -179,6 +179,9 @@ _Generated: 2026-08-28 01:34:21_
 | ` validate` | no |
 | ` _sync_allocations_from_rows` | no |
 | ` on_trash` | no |
+| ` _block_identity_changes` | no |
+| ` claiming_rows` | no |
+| ` _block_cut_changes_while_claimed` | no |
 | ` _block_if_claimed` | no |
 | ` _block_if_transferred` | no |
 | ` _fetch_batch_dimensions` | no |
@@ -190,6 +193,9 @@ _Generated: 2026-08-28 01:34:21_
 | ` get_cut_sheet_for_batch` | no |
 | ` allocate_cut_sheet` | no |
 | ` refresh_cut_sheet_allocations` | no |
+| ` cut_sheet_warehouse_query` | no |
+| ` mark_cut_sheet_inactive` | no |
+| ` release_all_cut_sheet_allocations` | no |
 | ` release_cut_sheet_allocation` | no |
 | ` apply_w2_to_batch` | no |
 | ` revert_w2_from_batch` | no |
@@ -358,6 +364,7 @@ _Generated: 2026-08-28 01:34:21_
 | ` _recalculate_consolidate_items` | no |
 | ` _auto_update_planning_status` | no |
 | ` _validate_no_cross_table_batch_duplicate` | no |
+| ` _set_row_excess` | no |
 | ` _update_weight_summary` | no |
 | ` _apply_rwd_fractional_nos` | no |
 | ` _move_skipped_arm_to_mapping` | no |
@@ -557,8 +564,10 @@ _Generated: 2026-08-28 01:34:21_
 | ` _assert_claimed_excess_unchanged` | no |
 | ` unlink_excess_claim` | no |
 | ` _sync_excess_return_totals` | no |
+| ` _used_in_fg_weight` | no |
 | ` _sync_batch_remarks` | no |
 | ` _maybe_mark_completed` | no |
+| ` _unaccounted_weight` | no |
 | ` recheck_mip_completion` | no |
 | ` refresh_weight_summary` | no |
 | ` get_target_context` | no |

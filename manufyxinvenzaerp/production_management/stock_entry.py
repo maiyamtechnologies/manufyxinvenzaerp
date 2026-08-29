@@ -82,12 +82,19 @@ def _refresh_sco_status_for_final_entry(doc):
 	"""The Material Issue Plan's final ('Manufacture') Stock Entry is what finishes a
 	Job Work Order -- submitting it puts the finished goods in stock, cancelling it
 	takes them back out. Re-derive the order's status either way rather than latching
-	it, so a cancelled final entry drops the order back to Working on its own."""
-	if doc.stock_entry_type != "Manufacture" or not doc.get("subcontracting_order"):
+	it, so a cancelled final entry drops the order back to Working on its own.
+
+	Transfers raised from the Material Issue Plan ('Send to Subcontractor' /
+	'Material Transfer', tagged with custom_sco_ref) count here too: they are what
+	STARTS a job, and are the point the Production Plan stops being Not Started --
+	whether or not any operation has been logged against it yet. refresh_sco_status
+	carries the plan along with the order."""
+	sco_ref = doc.get("subcontracting_order") or doc.get("custom_sco_ref")
+	if not sco_ref:
 		return
 	from manufyxinvenzaerp.subcontracting_management.overrides import refresh_sco_status
 
-	refresh_sco_status(doc.subcontracting_order)
+	refresh_sco_status(sco_ref)
 
 
 def on_submit_stock_entry(doc, method):

@@ -39,6 +39,7 @@
   "col_break_batch_calc",
   "batch_sec_qty",
   "batch_calc_qty",
+  "excess_qty",
   "cnc_process",
   "col_break_batch_stock",
   "batch_total_qty",
@@ -228,7 +229,7 @@
   },
   {
    "default": "0",
-   "description": "One batch shared across several rows. Reserves the exact Required Qty in Kg, and Sec Nos becomes that weight expressed in pieces \u2014 fractional (e.g. 2.5). On a Cut Sheet row the piece is W1, so the fraction is of the CUT piece, not the whole plate. Untick it to enter a whole piece count yourself; the weight then follows, and anything above the Required Qty is excess.",
+   "description": "One batch shared across several rows. Reserves the exact Required Qty in Kg, and Sec Nos becomes that weight expressed in pieces — fractional (e.g. 2.5). On a Cut Sheet row the piece is W1, so the fraction is of the CUT piece, not the whole plate. Untick it to enter a whole piece count yourself; the weight then follows, and anything above the Required Qty is excess.",
    "fieldname": "reserve_without_dimensions",
    "fieldtype": "Check",
    "label": "Reserve stock without dimensions"
@@ -304,6 +305,15 @@
    "in_list_view": 1,
    "label": "Calc Qty (Kg)",
    "read_only": 1
+  },
+  {
+   "fieldname": "excess_qty",
+   "fieldtype": "Float",
+   "label": "Excess (Kg)",
+   "read_only": 1,
+   "in_list_view": 1,
+   "precision": "3",
+   "description": "Calc Qty minus Required Qty for this row — what this batch gives beyond what the row needs."
   },
   {
    "default": "0",
@@ -495,7 +505,7 @@
    "fieldtype": "Check",
    "label": "Excess Material",
    "depends_on": "eval:!doc.batch",
-   "description": "Fill this requirement from another job's left-over material instead of buying new. Only for rows with no batch of their own \u2014 excess is a promise against a specific off-cut, not stock in your warehouse."
+   "description": "Fill this requirement from another job's left-over material instead of buying new. Only for rows with no batch of their own — excess is a promise against a specific off-cut, not stock in your warehouse."
   },
   {
    "fieldname": "select_excess_item_btn",

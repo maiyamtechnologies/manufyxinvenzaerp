@@ -8,7 +8,9 @@
   "auto_purchase_from_material_planning",
   "cut_sheet_section",
   "cut_sheet_tolerance_percent",
-  "create_new_batch_for_cut_sheet_stock_entry"
+  "create_new_batch_for_cut_sheet_stock_entry",
+  "process_loss_section",
+  "process_loss_warning_percent"
  ],
  "fields": [
   {
@@ -20,7 +22,7 @@
    "fieldname": "auto_purchase_from_material_planning",
    "fieldtype": "Check",
    "label": "Auto Purchase from Material Planning",
-   "description": "When enabled, shows an Auto Purchase button on Material Planning to automatically create MR \u2192 PO \u2192 PR in one click for all unavailable items."
+   "description": "When enabled, shows an Auto Purchase button on Material Planning to automatically create MR → PO → PR in one click for all unavailable items."
   },
   {
    "fieldname": "cut_sheet_section",
@@ -40,6 +42,18 @@
    "fieldname": "create_new_batch_for_cut_sheet_stock_entry",
    "fieldtype": "Check",
    "label": "Create New Batch for Cut Sheet Stock Entry"
+  },
+  {
+   "fieldname": "process_loss_section",
+   "fieldtype": "Section Break",
+   "label": "Process Loss"
+  },
+  {
+   "fieldname": "process_loss_warning_percent",
+   "fieldtype": "Percent",
+   "label": "Process Loss Warning Above (%)",
+   "default": "5",
+   "description": "Warn when a job's process loss is above this share of what was transferred. Above it, the material was probably not used effectively rather than lost in cutting — that is a purchase return to recover payment from the supplier, not a write-off. A warning only; the write-off is still allowed with a reason."
   }
  ],
  "issingle": 1,

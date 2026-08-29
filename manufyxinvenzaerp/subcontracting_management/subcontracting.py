@@ -464,7 +464,8 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
 
     rows = frappe.get_all(
         "Material Issue Plan Raw Material", filters={"parent": mip_name},
-        fields=["item_code", "planned_item", "batch_no", "duno_mark_no", "transferred_qty"],
+        fields=["item_code", "planned_item", "batch_no", "duno_mark_no", "transferred_qty",
+                "drawing_planned_weight", "reqd_kg"],
     )
     if not rows or not any(r.duno_mark_no for r in rows):
         return available
@@ -485,7 +486,22 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
         if not fraction:
             continue
         key = (r.planned_item or r.item_code, r.batch_no or "")
-        share[key] = flt(share.get(key, 0)) + flt(r.transferred_qty) * fraction
+
+        # Capped at what the drawing actually NEEDS, not at what was sent.
+        #
+        # Whole pieces go to the supplier -- you cannot send 2.039 of a cut piece,
+        # and a 5 m length is issued to make a 340 mm part. Consuming the whole
+        # transfer would charge the job for every kilo that went out and leave
+        # nothing behind to return, so the off-cut could only ever be received as
+        # new stock while the same steel was also booked into finished goods. The
+        # job's real consumption is the drawing's own weight; whatever is over
+        # stays at the supplier, to come back as an excess return or be written
+        # off as process loss with a reason.
+        wanted = flt(r.drawing_planned_weight) or flt(r.reqd_kg)
+        contribution = flt(r.transferred_qty) * fraction
+        if wanted:
+            contribution = min(contribution, wanted * fraction)
+        share[key] = flt(share.get(key, 0)) + contribution
 
     if not share:
         return []

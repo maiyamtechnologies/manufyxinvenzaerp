@@ -487,23 +487,24 @@ def _excess_by_sco(mip_by_sco):
 	for r in frappe.get_all(
 		"SCO Excess Material Item",
 		filters={"parent": ["in", all_mips], "parenttype": "Material Issue Plan"},
-		fields=["parent", "qty", "stock_entry_created", "billed_to_consume"],
+		fields=["parent", "qty", "stock_entry_created"],
 	):
 		rows_by_mip.setdefault(r.parent, []).append(r)
 
 	for sco, mips in mip_by_sco.items():
-		excess = returned = billed = 0.0
+		excess = returned = 0.0
 		for mip in mips:
 			for r in rows_by_mip.get(mip, []):
 				excess += flt(r.qty)
 				if r.stock_entry_created:
 					returned += flt(r.qty)
-				elif r.billed_to_consume:
-					billed += flt(r.qty)
 		out[sco] = {
 			"excess": excess,
 			"returned": returned,
-			"difference": excess - returned - billed,
+			# Declared excess that has not come back. Billed-to-Consume used to be
+			# subtracted here as a third category; it is gone -- material that does
+			# not return is now Process Loss, declared with a reason on the plan.
+			"difference": excess - returned,
 		}
 	return out
 
@@ -727,7 +728,7 @@ def get_columns(operations):
 		{"label": _("Returned Excess Weight (Kg)"), "fieldname": "returned_excess_kg", "fieldtype": "Float", "precision": 3, "width": 160,
 		 "description": _("Job-level. The part of it already brought back in by a Return Excess Entry.")},
 		{"label": _("Difference (Kg)"), "fieldname": "excess_difference_kg", "fieldtype": "Float", "precision": 3, "width": 120,
-		 "description": _("Excess less what has been returned, less what was billed to consume -- what is still out there.")},
+		 "description": _("Excess less what has come back -- what is still out there, waiting to return or to be written off as process loss.")},
 		{"label": _("Completed Drawing Weight (Kg)"), "fieldname": "completed_drawing_weight_kg", "fieldtype": "Float", "precision": 3, "width": 175,
 		 "description": _("Completed pieces valued at the drawing's own weight per piece.")},
 		{"label": _("Completed Drawing (Nos)"), "fieldname": "completed_nos", "fieldtype": "Float", "precision": 3, "width": 150},

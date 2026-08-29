@@ -145,8 +145,24 @@ frappe.ui.form.on("Purchase Receipt", {
 });
 
 // After PR submission: show popup if any batches were auto-allocated to Material Planning
+//
+// This hung off "after_submit" for a long time and therefore never ran once: Frappe
+// has no such form event. The ones it actually triggers around a save are
+// after_save / before_submit / before_cancel / after_cancel (see
+// frappe/public/js/frappe/form/form.js), and after_save fires for a submit too --
+// the submit goes through the same savedoc path. So the receipt submitted, batches
+// were allocated into the plan, and the popup that was supposed to say so was never
+// reached; nor was the "nothing was allocated, here is why" branch below it, which
+// is the one that mattered most.
+//
+// Guarded on docstatus so an ordinary draft save says nothing, and on a per-form
+// flag so re-saving an already-submitted receipt does not show it again.
 frappe.ui.form.on("Purchase Receipt", {
-	after_submit(frm) {
+	after_save(frm) {
+		if (frm.doc.docstatus !== 1) return;
+		if (frm._mfx_alloc_popup_shown) return;
+		frm._mfx_alloc_popup_shown = true;
+
 		frappe.call({
 			method: "manufyxinvenzaerp.purchase_receipt_management.purchase_receipt.get_pr_mp_allocations",
 			args: { pr_name: frm.doc.name },

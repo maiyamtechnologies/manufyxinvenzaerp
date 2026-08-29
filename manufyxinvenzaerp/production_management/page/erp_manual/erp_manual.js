@@ -23,6 +23,12 @@
 // around closing one -- what Completed now requires, the confirm-and-submit prompt,
 // and why an operation cannot be cancelled on its own.
 //
+// Then: Process Loss. The excess return became a movement out of the supplier rather
+// than stock created from nothing, the final Stock Entry began consuming what the
+// drawings needed rather than everything sent, and the difference between the two --
+// what the supplier cannot account for -- became a declared write-off with a reason.
+// Billed to Consume was removed in the same pass; that material is Process Loss now.
+//
 // Layout/tree/scrollspy come from the shared renderer
 // (public/js/manual_renderer.js) via manufyx_render_manual_tree(); this file is
 // only the content. A leaf uses the same shape as the old flat manuals: {id,
@@ -995,7 +1001,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			"Partial transfers are why fractions matter. A Material Planning covering 10 drawings feeds a separate Material Issue Plan per drawing, and each plan only pulls its own drawings' reserved rows. So a batch planned across 5 rows (8 Nos in total) may well present as 4.5 Nos when only 3 of those drawings are being issued — that is expected. Raise it to 5 in the transfer popup if you must hand over whole bars, and the 0.5 piece of surplus is recorded for return.",
 			"Case 1 vs Case 2. Case 1 — leave “Reserve stock without dimensions” OFF, pick a batch and type Sec Qty yourself; the system reserves exactly that and never overwrites your number. Case 2 — tick it when one large bar or sheet serves several rows; the system derives the fractional Sec Nos for you from each row's required Kg.",
 			"<b>A batch with nothing left is not a match.</b> Sharing one batch across several requirements leaves an arithmetic residue — 1061.609 Kg split between two 530.804 Kg rows leaves 0.001, and the next split leaves a fraction of that. A batch is treated as having free stock only above 0.001 Kg, so a batch consumed to the last kilo is offered to nobody. Before that rule, those crumbs became Exact Match rows asking for 0.000 Kg: nothing to reserve, nothing to transfer, and a stock-check message reporting matches that were not there.",
-			"Status legend — “Mapped” (green): an ordinary purchased batch is assigned. “Excess Mapped” (blue): a real batch is assigned and it came back from another job as an off-cut. “Excess Mapped (At Supplier)” (blue): a historical status only. It came from Return Type, which no longer exists — an off-cut that is never coming back is now marked <b>Billed to Consume</b> on its own job's Excess Material Items row and cannot be claimed by another plan at all. Rows saved before that change keep this status and still count as mapped. “Excess Mapped (Pending Return)” (blue): fulfilled from another job's excess that HASN'T physically returned to stock yet, but is already promised to this row; the batch attaches itself automatically the day it does return. “Cut Sheet Mapped” (blue): fulfilled from a Cut Sheet's nesting plan, sized to the piece (W1), not the plate. “Not Mapped” (red): nothing assigned yet. Every blue status counts as mapped — it is material you already have a claim on, so it is included in the Difference in Kg figure and never sent back through purchasing.",
+			"Status legend — “Mapped” (green): an ordinary purchased batch is assigned. “Excess Mapped” (blue): a real batch is assigned and it came back from another job as an off-cut. “Excess Mapped (At Supplier)” (blue): a historical status only. It came from Return Type, which no longer exists — an off-cut that never comes back is now written off as <b>Process Loss</b> on its own job, with a reason. Rows saved before that change keep this status and still count as mapped. “Excess Mapped (Pending Return)” (blue): fulfilled from another job's excess that HASN'T physically returned to stock yet, but is already promised to this row; the batch attaches itself automatically the day it does return. “Cut Sheet Mapped” (blue): fulfilled from a Cut Sheet's nesting plan, sized to the piece (W1), not the plate. “Not Mapped” (red): nothing assigned yet. Every blue status counts as mapped — it is material you already have a claim on, so it is included in the Difference in Kg figure and never sent back through purchasing.",
 		],
 		buttons: [
 			{ name: "Reserve / Unreserve", note: "Same soft-claim mechanism as Available Raw Materials — works whether the row has a real batch, a Cut Sheet allocation, or an Excess Mapped claim." },
@@ -1147,7 +1153,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			{
 				type: "do",
 				label: "A claim turns real by itself when the off-cut comes back",
-				text: "Worked example. Job A ends with a 2000mm ISA100 off-cut (20 Kg) still at the supplier, entered in its Excess Material Items table. Job B claims it — Job B's row shows Status “Excess Mapped (Pending Return)”, Batch blank, but Reserved ticked. Weeks later Job A actually walks the material back: its “Return Excess Entry” button creates the Material Receipt as normal, and the moment that Stock Entry is submitted the new batch (ZZ-L2000-SR014) writes itself into Job B's row, Status flips to “Excess Mapped”, and a green message says so. Nobody re-picks anything, and the material is never free for a third job to grab in between.",
+				text: "Worked example. Job A ends with a 2000mm ISA100 off-cut (20 Kg) still at the supplier, entered in its Excess Material Items table. Job B claims it — Job B's row shows Status “Excess Mapped (Pending Return)”, Batch blank, but Reserved ticked. Weeks later Job A actually walks the material back: its “Return Excess Entry” button creates the return as normal, and the moment that Stock Entry is submitted the new batch (ZZ-L2000-SR014) writes itself into Job B's row, Status flips to “Excess Mapped”, and a green message says so. Nobody re-picks anything, and the material is never free for a third job to grab in between.",
 			},
 			{
 				type: "dont",
@@ -1161,7 +1167,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			},
 		],
 		notes: [
-			"“Pending Return” material is excess that hasn't been walked back to stock yet, but eventually will be — claiming it now doesn't stop that from happening later; it just reserves the outcome in advance. Material marked “Billed to Consume” never appears here at all: it is charged to its own job and consumed at the supplier, so there is nothing left for another job to take.",
+			"“Pending Return” material is excess that hasn't been walked back to stock yet, but eventually will be — claiming it now doesn't stop that from happening later; it just reserves the outcome in advance. If a job has already written its off-cut off as Process Loss, it is gone from stock and no other job can take it. And while any job is still claiming it, the write-off is refused — so it cannot vanish from under you.",
 			"Where these rows go at transfer time. A claimed off-cut still at the supplier has no batch in your source warehouse, so it can never appear in the transfer popup's list — there is physically nothing to move, and it is already sitting where the transfer would have sent it. Rather than leaving a silent gap, the popup shows a blue panel: “N item(s) are already at <supplier warehouse> — no transfer needed”, listing each one. It is information, not a problem: it never blocks the rest of the transfer.",
 			"<b>Edit dimensions in the Excess Material Items grid.</b> It is the one place an off-cut is described. Raw-material rows used to carry their own Excess Length/Width/Sec Qty that this table was recalculated from on every save — two places for one measurement, where typing in the grid got silently overwritten. Those fields are gone, and the grid is now the only end there is.",
 			"<b>Enter Weight, Not Pieces.</b> A tick on the row for when the weight is the figure you have rather than the shape and the count. Off, you type the Length/Width and Sec Nos and the weight follows. On, you type the weight and the Sec Nos is worked back out of it — left fractional on purpose, since 18 Kg of a 4.906 Kg piece is 3.669 of one, and rounding up would claim a piece that is not coming back. Offered only for Structurals and Plates, because only they have a shape to measure.",
@@ -1786,6 +1792,60 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 		],
 	},
 	{
+		id: "process-loss",
+		title: "Process Loss — Not Returned",
+		kicker: "Where the last few kilos went",
+		purpose:
+			"You send 1,836 Kg to the supplier. The job needs 116 Kg. The supplier sends " +
+			"back 1,450 Kg. So where are the other 270 Kg? This is where you answer that " +
+			"and close it. Until you do, the plan cannot be marked Completed.",
+		fields: [
+			{ name: "Used in FG (Kg)", note: "How much the job really used. Not how much you sent. You send whole pieces — a 5 metre bar to make a 340 mm part — but only the 340 mm belongs to the job. The rest is still yours." },
+			{ name: "Actual Excess Returned (Kg)", note: "How much really came back. It is often not what you planned, because the off-cut gets measured again on the way back. You planned 1,500 Kg at 150×50; it came back as 1,450 Kg at 140×50." },
+			{ name: "Process Loss — Not Returned (Kg)", note: "Sent, minus used, minus returned. This is real stock still sitting in the supplier's warehouse in your name. It stays there until you write it off." },
+			{ name: "Process Loss Reason", note: "What the supplier told you happened to it. You must type something — a write-off with no reason is not a reason." },
+			{ name: "Process Loss Warning Above (%)", note: "In Manufyxinvenza Settings, 5% to start. If the loss is bigger than this share of what you sent, the screen warns you: this is too much to be cutting loss. It only warns — you can still go ahead." },
+		],
+		steps: [
+			"Make the Final Stock Entry first. The button does not show before that. Until the finished goods are booked, material at the supplier is still work in progress, not loss.",
+			"Click <b>Process Loss</b>. It shows you the full picture: sent, used, returned, and what is left.",
+			"If some excess was promised back but never came, it tells you. You choose: return it now, or tick the box to say it is not coming and write it off with the rest.",
+			"If another Material Planning has already claimed that material, it stops and names the plan and the row. Free it there first — another job is counting on that steel.",
+			"Type the reason and confirm. A Material Issue is created to take the weight out of the supplier's warehouse. Submit it.",
+			"Now nothing of this job is left at the supplier, so the plan can move to Completed.",
+		],
+		calcs: [
+			{
+				title: "Where 1,836 Kg went",
+				item: "NPB600", group: "Structurals",
+				formula:
+					"Transferred 1,836.934 · Used in FG 116.681 · Returned 1,450 (re-measured 140×50, " +
+					"not the 1,500 planned at 150×50)",
+				result: "Process Loss 270.253 Kg",
+				note:
+					"1,836.934 − 116.681 − 1,450 = 270.253 Kg. It is made of two things: 220 Kg that " +
+					"was never going to come back, and 50 Kg that was promised but came back short. " +
+					"You write off both together, with one reason.",
+			},
+		],
+		examples: [
+			{
+				type: "do",
+				label: "Ask the supplier before you write anything off",
+				text: "That is what the reason box is for. “Cutting loss on 12 m plate, supplier confirmed” tells the next person what happened. A blank box tells them nothing, and the system will not accept one.",
+			},
+			{
+				type: "dont",
+				label: "Don't write off 1,000 Kg as process loss",
+				text: "Over 5% of what you sent, the screen tells you straight: a loss that big is not cutting loss. The supplier did not use the material properly. That is a purchase return, so you get your money back — not a write-off. You can still go ahead if you really mean to, but write down why.",
+			},
+		],
+		notes: [
+			"<b>Billed to Consume has been removed.</b> It used to mean “this off-cut is never coming back” — it stayed at the supplier and the final Stock Entry swallowed it. Anything that does not come back is Process Loss now, and you say why. One change to note: with the old tick the cost went onto the job. As Process Loss it goes to the write-off account instead.",
+			"Every kilo has to land somewhere: <b>Sent = Used in FG + Returned + Process Loss</b>. The plan will not close until those add up. And it checks the real stock in the warehouse, not the numbers on the screen — so it cannot be fooled by a stale figure.",
+		],
+	},
+	{
 		id: "excess-return",
 		title: "Excess Material Items",
 		kicker: "Getting the leftovers back",
@@ -1797,8 +1857,7 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			"another job while it is still at the supplier.",
 		fields: [
 			{ name: "Length / Width / Sec Nos", note: "The off-cut's real dimensions. Rows planned on the transfer popup's second tab arrive with what you measured there. Rounding-surplus rows arrive with placeholder dimensions (one standard piece) — overwrite them with what you actually measure." },
-			{ name: "Billed to Consume", note: "Tick it when the off-cut is not coming back: it stays where it is, is charged to this job, and the job's final Stock Entry consumes it out of the supplier's warehouse. No return entry is made for it, and no other plan can claim it. Everything not ticked is simply returned." },
-			{ name: "Return Reason", note: "Mandatory before a return entry can be created. It is what makes the returned stock explainable months later." },
+			{ name: "Return Reason", note: "Mandatory before a return entry can be created — it is what makes the returned stock explainable months later." },
 			{ name: "Availability", note: "Allocated and Available, in Sec Nos and Kg — how much of this off-cut other jobs have claimed and how much is still free." },
 			{ name: "Unlink Claim", note: "Releases a Material Planning's claim so the dimensions can be corrected. The off-cut then goes back into the picker for anyone to claim." },
 		],
@@ -1849,7 +1908,7 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 		steps: [
 			"<b>Make Final Stock Entry</b> appears as soon as the <b>last operation exists</b>, and books whatever that operation has finished — you do not wait for the whole job. It first shows you what it is about to book: one line per drawing, with how many pieces are planned, how many the last operation has completed, how many are already in finished goods, and how many this entry would book. Agree with it and it creates a draft Manufacture Stock Entry to review and submit.",
 			"<b>Four drawings of ten books four drawings.</b> Only the raw material belonging to those four is consumed — the rest stays at the supplier for the next entry — and only those four appear as finished goods. Finish the other six later and press it again; pieces already booked are never booked twice.",
-			"The plan moves to <b>Completed</b> by itself once finished goods have been received AND every Excess Material Items row is resolved: returned, claimed by another job, or marked Billed to Consume.",
+			"The plan moves to <b>Completed</b> by itself once finished goods have been received AND every Excess Material Items row is resolved: returned, or claimed by another job — and nothing of the job is still sitting at the supplier. Anything that did not come back must have been written off as Process Loss first.",
 			"Completed is one-way. The document locks; nothing later moves it back.",
 		],
 		notes: [
@@ -1886,7 +1945,7 @@ const ERP_MANUAL_REPORTS_CHILDREN = [
 			"use the reports below instead of piecing it together from individual plans.",
 		steps: [
 			"<b>Manufyxinvenza Stock Balance</b> — open from the Awesomebar. Item-and-batch-wise on-hand quantity, what's reserved against which Material Planning, and what's genuinely free — the same free-Kg figures the Exact Match and Excess Material Mapping pickers use internally, but for every item and warehouse at once.",
-			"<b>Excess Material Return Report</b> — the chase-list for off-cuts. Defaults to “Pending Return” (still out there AND actually coming back — drops anything already returned or marked Billed to Consume) over the last three months, and names every Material Planning holding a piece of each off-cut.",
+			"<b>Excess Material Return Report</b> — the chase-list for off-cuts. Defaults to “Pending Return” (still out there) over the last three months, and names every Material Planning holding a piece of each off-cut.",
 			"<b>Cut Sheet Report</b> — which plates are cut, who is drawing from them, and what is left. “W2 Not Written” filters to sheets that have been cut but never had their balance written back to the batch — the state where the plate in the rack and the system disagree.",
 		],
 	},
@@ -1918,7 +1977,7 @@ const ERP_MANUAL_REPORTS_CHILDREN = [
 			"<b>Created On is the Job Work Order’s own date</b>, not the date each operation entry happened to be raised — so one job reads as one date instead of four.",
 			"<b>Waste % is the quickest read on the whole report.</b> Every drawing on a job is cut the same way, so the figures should sit close together. When they do not — one drawing at 104% beside another at 1.6% — it is rarely the cutting: it is two columns being compared on different bases, which is exactly the fault it was added after.",
 			"<b>The consumable and excess figures are job-level</b> and repeat on every drawing row of the job. An off-cut belongs to a batch and a welding rod to a job; neither can honestly be split between drawings, so they are shown whole rather than apportioned. Read them once per job.",
-			"<b>Difference</b> leaves out material marked Billed to Consume. That is scrapped by decision rather than awaiting collection, which is the same line the Excess Material Return Report draws for its chase-list.",
+			"<b>Difference</b> is the excess you declared, less what has come back. It is what is still out there — either waiting to be returned, or waiting to be written off as Process Loss.",
 		],
 	},
 	{
@@ -1990,7 +2049,7 @@ const ERP_MANUAL_GLOSSARY_CHILDREN = [
 			{ name: "Sec Qty / Sec Nos", note: "The same idea under two names used interchangeably across the app — a count of physical pieces (bars, plates, cut pieces). Fractional at planning time, whole when material actually moves." },
 			{ name: "Alternate Item", note: "A substitute item used in place of what was originally required." },
 			{ name: "Consolidated", note: "Multiple drawings' requirements for the same item code, combined into one purchasing line." },
-			{ name: "Pending Return", note: "An off-cut claimed by a job while it is still at the supplier. No batch, no stock entry — a promise, until it physically returns. An off-cut that is never coming back is marked Billed to Consume instead, and cannot be claimed at all." },
+			{ name: "Pending Return", note: "An off-cut claimed by a job while it is still at the supplier. No batch, no stock entry — a promise, until it physically returns. If an off-cut is never coming back, its own job writes it off as Process Loss instead." },
 			{ name: "CNC Process", note: "Marks that a piece needs CNC cutting at your own facility before it can go to the supplier — routes it through the Material Issue Plan's CNC Warehouse first." },
 			{ name: "W1 / W2", note: "On a Cut Sheet: W1 is the piece being cut, W2 the remnant left on the plate afterwards." },
 			{ name: "DUNO / Mark No", note: "The drawing-level identifier that keeps every row traceable back to exactly which piece, on which drawing, it belongs to." },

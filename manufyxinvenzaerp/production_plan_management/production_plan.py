@@ -976,6 +976,95 @@ def after_save_production_plan(doc, method):
 		_recalculate_sec_qty(row)
 
 
+def refresh_production_plan_status(pp_name):
+	"""Move a plan's Status along with the work its Job Work Order is doing.
+
+	ERPNext derives a Production Plan's status from total_produced_qty and
+	all_items_completed(), both of which read Work Orders. This app's plans are
+	executed through a Job Work Order and a Material Issue Plan instead -- no Work
+	Order is ever created -- so total_produced_qty stays 0 forever and the plan sat
+	on "Not Started" from submit to the end of the job, however much had been
+	transferred, made and booked.
+
+	  In Process   material has been transferred against the plan's Material Issue
+	               Plan, or any operation on the Job Work Order has quantity logged
+	  Completed    the Material Issue Plan's final Stock Entry is submitted, i.e.
+	               the finished goods are actually in stock
+
+	Completed waits for that entry to be SUBMITTED, not merely created: the button
+	hands back a draft, and a draft can still be edited or deleted. Like the Job
+	Work Order's own status this is derived on each event rather than latched, so
+	cancelling the final entry drops the plan back to In Process.
+
+	Written with db_set so it does not fight ERPNext's set_status during a save, and
+	only for plans that actually have a Job Work Order -- a standard plan keeps
+	ERPNext's own Work-Order-driven status untouched.
+	"""
+	if not pp_name:
+		return
+
+	pp = frappe.db.get_value(
+		"Production Plan", pp_name, ["name", "docstatus", "status"], as_dict=True
+	)
+	if not pp or pp.docstatus != 1:
+		return
+	# Closed and Cancelled are deliberate stops; never talk over them.
+	if pp.status in ("Closed", "Cancelled"):
+		return
+
+	sco_names = frappe.get_all(
+		"Subcontracting Order",
+		filters={"custom_production_plan": pp_name, "docstatus": 1},
+		pluck="name",
+	)
+	if not sco_names:
+		return
+
+	from manufyxinvenzaerp.subcontracting_management.overrides import (
+		_any_operation_started,
+		_final_stock_entry_submitted,
+	)
+
+	if any(_final_stock_entry_submitted(sco) for sco in sco_names):
+		status = "Completed"
+	elif _plan_material_transferred(pp_name, sco_names) or any(
+		_any_operation_started(sco) for sco in sco_names
+	):
+		status = "In Process"
+	else:
+		return  # nothing has happened yet -- leave ERPNext's own value alone
+
+	if pp.status != status:
+		frappe.db.set_value("Production Plan", pp_name, "status", status, update_modified=False)
+
+
+def _plan_material_transferred(pp_name, sco_names):
+	"""True once any submitted Stock Entry has moved material for this plan.
+
+	Matches on the Material Issue Plan reference the transfer carries
+	(custom_mip_ref, set by _tag_stock_entry) as well as the Job Work Order one,
+	because a transfer can be raised against either side of the same job."""
+	mip_names = frappe.get_all(
+		"Material Issue Plan", filters={"production_plan": pp_name}, pluck="name"
+	)
+	conditions, values = [], {}
+	if mip_names:
+		conditions.append("custom_mip_ref IN %(mips)s")
+		values["mips"] = tuple(mip_names)
+	if sco_names:
+		conditions.append("custom_sco_ref IN %(scos)s")
+		values["scos"] = tuple(sco_names)
+	if not conditions:
+		return False
+
+	return bool(frappe.db.sql(
+		"SELECT 1 FROM `tabStock Entry` WHERE docstatus = 1 AND ({0}) LIMIT 1".format(
+			" OR ".join(conditions)
+		),
+		values,
+	))
+
+
 def validate_process_planning_contiguity(doc, method):
 	"""custom_process_planning must be Subcontractor rows first, then Internal Jobcard
 	rows — no interleaving, and every row must have a work_type set. A subcontractor
