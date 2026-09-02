@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-08-29 23:53:06_
+_Generated: 2026-09-03 00:57:06_
 
 ## drawing
 
@@ -137,6 +137,77 @@ _Generated: 2026-08-29 23:53:06_
 | Module | drawing_management |
 | Path | `drawing_management/doctype/sales_order_duno_item` |
 | Controller | `drawing_management/doctype/sales_order_duno_item/sales_order_duno_item.py` |
+| Client script | none |
+
+---
+
+## delivery_challan
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/delivery_challan` |
+| Controller | `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py` |
+| Client script | `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.js` |
+
+### Methods
+
+| Method | Whitelisted |
+|--------|-------------|
+| ` validate` | no |
+| ` on_submit` | no |
+| ` on_cancel` | no |
+| ` _set_defaults` | no |
+| ` _validate_type_rules` | no |
+| ` _validate_against_gate_pass` | no |
+| ` _validate_items` | no |
+| ` _calculate_totals` | no |
+| ` _validate_return_quantities` | no |
+| ` _set_status` | no |
+| ` _compute_status` | no |
+| ` _status_for_returnable` | no |
+| ` _returned_by_row` | no |
+| ` _refresh_source_gate_pass` | no |
+| ` refresh_overdue_gate_passes` | no |
+| ` make_return_entry` | no |
+| ` postprocess` | no |
+| ` update_item` | no |
+| ` _pending_by_row` | no |
+| ` gate_pass_return_query` | no |
+| ` _default_address` | no |
+| ` _party_display_name` | no |
+| ` _party_address` | no |
+| ` _html_to_lines` | no |
+| ` get_delivery_challan_html` | no |
+| ` download_delivery_challan_pdf` | no |
+| ` _esc` | no |
+| ` _date` | no |
+| ` _num` | no |
+| ` _company_header` | no |
+| ` _title_bar` | no |
+| ` _render_delivery_challan_html` | no |
+| ` sign_cell` | no |
+
+---
+
+## delivery_challan_item
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/delivery_challan_item` |
+| Controller | `manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py` |
+| Client script | none |
+
+---
+
+## gate_pass_purpose
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/gate_pass_purpose` |
+| Controller | `manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.py` |
 | Client script | none |
 
 ---

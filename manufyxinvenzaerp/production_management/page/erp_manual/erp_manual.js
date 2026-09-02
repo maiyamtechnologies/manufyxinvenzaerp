@@ -29,6 +29,12 @@
 // what the supplier cannot account for -- became a declared write-off with a reason.
 // Billed to Consume was removed in the same pass; that material is Process Loss now.
 //
+// Then: Delivery Challan (Gate Pass) -- the pre-printed pad as a document. Its own
+// category, because it is not part of the production chain: it records what left the
+// gate for any reason, delivery-note or subcontract alike, and moves no stock at all.
+// Returnable passes are chased through Return Entries that net off row by row, and the
+// status goes Overdue on its own once the return date passes.
+//
 // Layout/tree/scrollspy come from the shared renderer
 // (public/js/manual_renderer.js) via manufyx_render_manual_tree(); this file is
 // only the content. A leaf uses the same shape as the old flat manuals: {id,
@@ -2257,6 +2263,7 @@ const ERP_MANUAL_REFERENCE_CHILDREN = [
 			{ name: "Inspection Status (on Supplier Operation Entry and Purchase Receipt)", note: "<b>Open → Working → Completed</b>. Not set by hand — it mirrors the status of the Inspection Entry that answered the latest round when that entry is submitted." },
 			{ name: "Inspection Call Log — Round Status", note: "<b>Pending → Completed</b>, per round. Pending until that round's Inspection Entry is submitted." },
 			{ name: "Cut Sheet", note: "<b>Draft → Active → Fully Allocated → Consumed</b>. Active once the cutting plan is set, Fully Allocated when every piece on the sheet has been claimed by a job, Consumed once the material has actually moved." },
+			{ name: "Delivery Challan (Gate Pass)", note: "<b>Draft → Material Out → Partially Returned / Overdue → Returned</b>, with <b>Material In</b> for a Return Entry. Derived, never chosen. Overdue outranks Partially Returned so anything past its return date still reads Overdue; Returned outranks Overdue, so a late but complete return clears the flag. Cancelling a Return Entry reopens its source." },
 		],
 		notes: [
 			"Statuses on this app's own documents are driven by what has happened to them, not chosen from a dropdown — the two exceptions are Supplier Operation Entry, where the operator marks Completed before submitting, and Inspection Entry, where the inspector sets the status and the Feedback.",
@@ -2337,6 +2344,137 @@ const ERP_MANUAL_REFERENCE_CHILDREN = [
 	},
 ];
 
+// ─── Delivery Challan — the pre-printed gate pass pad, in the system. Separate
+// from the Material Issue Plan on purpose: this records what physically left the
+// gate and whether it came back, and moves no stock at all. ─────────────────────
+const ERP_MANUAL_DELIVERY_CHALLAN_CHILDREN = [
+	{
+		id: "overview",
+		title: "Delivery Challan (Gate Pass)",
+		kicker: "The paper pad, in the system",
+		purpose:
+			"A digital copy of the printed DELIVERY CHALLAN pad. It records what left the gate, " +
+			"for whom, on whose vehicle, when it is due back, and whether it ever returned. It is " +
+			"used for plain delivery-note movements and for subcontracting alike.",
+		fields: [
+			{ name: "Challan Type", note: "<b>Returnable</b> — material you expect back, so it needs a return date and gets chased. <b>Non Returnable</b> — it is gone for good. <b>Return Entry</b> — the inbound counterpart, raised against a Returnable pass to bring material back. Set once, when the document is created." },
+			{ name: "GP No.", note: "The document name, on the <b>GP-00001</b> series. It is the gate pass number quoted on the supplier's paperwork, so it is never reused or renumbered." },
+			{ name: "Status", note: "Worked out from what has happened to the document — never picked from a list. See <b>Status flow</b> below." },
+			{ name: "Company", note: "Drives the printed letterhead: name, address and GST number come from this company's address record." },
+		],
+		notes: [
+			"<b>A gate pass moves no stock.</b> Submitting one creates no Stock Entry, no Stock Ledger Entry and no reservation — it is a paper document held in the database, for gate reference and return chasing. This is deliberate and is covered by a test.",
+			"It does <i>not</i> replace the Material Issue Plan. Material issued to a supplier for a job still moves through the MIP transfer; the gate pass is the slip that travels with the lorry alongside it.",
+		],
+	},
+	{
+		id: "filling",
+		title: "Filling one in",
+		kicker: "The form reads in the pad's own order",
+		purpose:
+			"The form is laid out to match the printed pad, so it can be filled straight from a " +
+			"written slip without hunting for fields.",
+		fields: [
+			{ name: "To (Party Type / Party)", note: "Supplier, Customer, or Other for anyone not on file. <b>Name</b> fills itself the moment a party is chosen and is what prints in the To box — edit it freely if the printed name should read differently." },
+			{ name: "Address", note: "Pulled from the party's own Address record. A party with no Address record leaves it blank — type it in by hand." },
+			{ name: "Reference and Vehicle", note: "Read this section <i>across</i> and it is the pad's own grid: Job No. / Production Plan No / Vehicle No, then Ref. DC. No. / WO Date / Driver Name, then Expected Date of Return / Total Value of Goods / Mobile No. <b>Job No.</b> is free text; <b>Production Plan No</b> links to a real plan." },
+			{ name: "Total Value of Goods", note: "Typed by hand. It is deliberately never computed from the item rows — the declared value on a gate pass is not always the stock value." },
+			{ name: "Items", note: "Sl No, Material Description, UOM, Qty, Weight in Kgs, Purpose and Remarks — the pad's columns exactly. <b>Item</b> and <b>Batch</b> are extra, are not printed, and are optional: pick an Item and the description and UOM fill themselves." },
+			{ name: "Terms and Conditions", note: "The pad's four clauses, filled in on save. Editable per challan if a particular consignment needs different wording." },
+			{ name: "Sign-off", note: "Material Received By is free text; Production / Planning, Stores Incharge and Factory Head link to users. All four print as the four signature boxes along the bottom." },
+		],
+		steps: [
+			"Pick the Challan Type first — it decides whether a return date is required and whether the Against Gate Pass field appears.",
+			"Choose the party, then fill the reference and vehicle details from the slip.",
+			"Add the material rows. Total Qty and Total Weight add themselves up as you type.",
+			"Save, then Submit. Submitting is what puts the challan on the gate record — a draft is not yet a gate pass.",
+		],
+		notes: [
+			"The Items table opens with one <b>blank row already in it</b>. Fill it or delete it — saving with an empty row is refused, because Material Description is required on every line.",
+			"<b>Expected Date of Return</b> is required on a Returnable pass and cannot be earlier than the GP Date. It is cleared automatically on the other two types.",
+		],
+	},
+	{
+		id: "returns",
+		title: "Returnable and Return Entry",
+		kicker: "Bringing material back, in part or in full",
+		purpose:
+			"Material that goes out Returnable is chased until it comes back. The return is its own " +
+			"gate pass — a Return Entry — pointing at the original, and it can be raised as many " +
+			"times as it takes.",
+		steps: [
+			"Open the submitted Returnable gate pass and use <b>Create → Return Entry</b>. The new document opens pre-filled with everything still outstanding, row by row.",
+			"If only part came back, reduce the quantities — or zero a row entirely — before saving.",
+			"Submit it. The original updates itself immediately: Returned Qty, Pending Qty and Status all move.",
+			"Repeat for each later delivery until nothing is pending, at which point the original reads Returned.",
+		],
+		buttons: [
+			{ name: "Return Entry (under Create)", note: "Only on a submitted <b>Returnable</b> gate pass that is not yet fully Returned. Pre-fills the pending quantity per row." },
+			{ name: "Original Gate Pass", note: "On a Return Entry — jumps straight back to the pass it is returning against." },
+		],
+		notes: [
+			"Each return row is tied to <b>the row it came from</b>, not just to the item code. Two lines carrying the same item on one challan are therefore netted apart correctly — which is why returns should be raised with the button rather than built by hand.",
+			"Returning more than is still out is refused, and the message names the row and the quantity actually outstanding.",
+			"<b>Cancelling a Return Entry puts the material back on the original's books</b> — the source returns to Material Out or Overdue and the quantity is pending again.",
+			"A Return Entry can only be raised against a <b>submitted Returnable</b> pass. Non Returnable material is gone for good, so the button refuses it.",
+		],
+	},
+	{
+		id: "status",
+		title: "Status flow",
+		kicker: "Draft → Material Out → Returned",
+		purpose:
+			"The status is derived from the document, never chosen. It answers one question: is " +
+			"anything still sitting outside that should not be?",
+		fields: [
+			{ name: "Draft", note: "Saved but not submitted. Nothing has left the gate yet." },
+			{ name: "Material Out", note: "A submitted Returnable or Non Returnable pass. For Non Returnable this is where it stays — nothing is expected back." },
+			{ name: "Material In", note: "A submitted Return Entry. The inbound counterpart of Material Out." },
+			{ name: "Partially Returned", note: "Some but not all of a Returnable pass has come back. Returned Qty and Pending Qty show the split." },
+			{ name: "Overdue", note: "A Returnable pass past its Expected Date of Return with something still outstanding. Shown in red in the list and with a banner on the form." },
+			{ name: "Returned", note: "Everything is back. This wins over Overdue — a late but complete return clears the red flag." },
+			{ name: "Cancelled", note: "The document was cancelled. Cancelling a Return Entry also reopens its source." },
+		],
+		notes: [
+			"<b>Overdue outranks Partially Returned.</b> A part-return that is past its date still reads Overdue, because the point of the status is to flag what is outside — the exact split stays readable in Returned Qty and Pending Qty.",
+			"Overdue is refreshed by a daily background job <i>and</i> every time the Delivery Challan list is opened. That belt-and-braces is deliberate: on a bench whose scheduler is paused, a job-only implementation would look correct and silently never run.",
+		],
+	},
+	{
+		id: "printing",
+		title: "Printing the challan",
+		kicker: "A copy that matches the pad",
+		purpose:
+			"Both buttons render from the same layout, so what is previewed on screen and what " +
+			"downloads as a PDF can never differ.",
+		buttons: [
+			{ name: "Print Preview", note: "Opens the challan on screen exactly as it will print — letterhead, To box, reference grid, item table with the Total row, the four terms and the four signature boxes." },
+			{ name: "PDF", note: "Downloads the same thing as a single-page A4 PDF, named after the gate pass." },
+		],
+		notes: [
+			"The letterhead — company name, address and GST number — comes from the <b>Company's own Address record</b>. If a company has several addresses and none is ticked <b>Is Primary Address</b>, one is chosen for you; tick the right one so the printed address is the one you intend.",
+			"On a submitted Returnable pass the printout carries a status line underneath — Status, Returned and Pending — so a printed copy still says how much is outstanding.",
+			"Purpose prints only if Gate Pass Purpose records exist to choose from — see the next page.",
+		],
+	},
+	{
+		id: "purpose-master",
+		title: "Gate Pass Purpose",
+		kicker: "The Purpose list on the item rows",
+		purpose:
+			"A small master holding the reasons material leaves — the values offered in the " +
+			"Purpose column on every gate pass line.",
+		fields: [
+			{ name: "Purpose", note: "The name, and what prints in the Purpose column. Must be unique." },
+			{ name: "Description", note: "Optional note for whoever is picking from the list." },
+			{ name: "Disabled", note: "Retires a purpose. Old challans keep it; new ones are no longer offered it." },
+		],
+		notes: [
+			"The list starts empty on purpose — these are your own words for why material goes out, not a guessed set. Add them once and they are available on every challan.",
+		],
+	},
+];
+
 const ERP_MANUAL_CATEGORIES = [
 	...ERP_MANUAL_STUB_CATEGORIES,
 	{ id: "bom", label: "BOM", children: ERP_MANUAL_BOM_CHILDREN },
@@ -2345,6 +2483,7 @@ const ERP_MANUAL_CATEGORIES = [
 	{ id: "production-plan", label: "Production Plan", children: ERP_MANUAL_PRODUCTION_PLAN_CHILDREN },
 	{ id: "job-work-order", label: "Job Work Order", children: ERP_MANUAL_JOB_WORK_ORDER_CHILDREN },
 	{ id: "material-issue-plan", label: "Material Issue Plan", children: ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN },
+	{ id: "delivery-challan", label: "Delivery Challan (Gate Pass)", children: ERP_MANUAL_DELIVERY_CHALLAN_CHILDREN },
 	{ id: "supplier-operation-entry", label: "Supplier Operation Entry", children: ERP_MANUAL_SOE_CHILDREN },
 	{ id: "inspection", label: "Inspection", children: ERP_MANUAL_INSPECTION_CHILDREN },
 	{ id: "reports", label: "Reports & Stock Checking", children: ERP_MANUAL_REPORTS_CHILDREN },

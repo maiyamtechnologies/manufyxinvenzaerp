@@ -1,6 +1,6 @@
 {
  "charts": [],
- "content": "[{\"id\":\"IIbkfbfSCY\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Sales Planning</span>\",\"col\":12}},{\"id\":\"U6RnFtr2Vb\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"ERP-manual\",\"col\":3}},{\"id\":\"i_70rc-wZd\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item\",\"col\":3}},{\"id\":\"YjJ9iBrjYu\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"0mfjl-AC5k\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"lgc14qADee\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Stock Planning</b></span>\",\"col\":12}},{\"id\":\"SKmmL5L8_q\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Stock Entry\",\"col\":3}},{\"id\":\"mbUfjH74vM\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Manufyxinvenza Stock Balance\",\"col\":3}},{\"id\":\"KkYUKJ5lCd\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"7qDMAI3l82\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Manufacturing Planning</b></span>\",\"col\":12}},{\"id\":\"LPoRBN7MgV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Drawing\",\"col\":3}},{\"id\":\"D5Ic3kEZo9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"BOM\",\"col\":3}},{\"id\":\"uM0AZ_cjL4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Planning\",\"col\":3}},{\"id\":\"E_tNLHSWpk\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Plan\",\"col\":3}},{\"id\":\"LEkk_456c_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Issue Plan\",\"col\":3}},{\"id\":\"DTs4YM3rZ0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Job work order\",\"col\":3}},{\"id\":\"6o2eECUw0d\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Operation Entry\",\"col\":3}},{\"id\":\"nc1YdGxNa9\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"VeQOkb5Gy4\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Purchase Planning</b></span>\",\"col\":12}},{\"id\":\"0-uLwek55M\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Request\",\"col\":3}},{\"id\":\"5fM9K_6xf_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"TZtJVncTMe\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Receipt\",\"col\":3}},{\"id\":\"7UDoNbcrsx\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"bIJG_dn7JI\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Custom Reports</b></span>\",\"col\":12}},{\"id\":\"eNiSol7_iG\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports\",\"col\":4}},{\"id\":\"868byWtsK4\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"qvgm7svxxX\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Finance - Advance payment tracking</b></span>\",\"col\":12}},{\"id\":\"9UpJgfYB0t\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"cxWRYTRc8G\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"vfMuUrCk6j\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Request\",\"col\":3}},{\"id\":\"JPUo75BYpj\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":3}},{\"id\":\"XcJcwJwi8i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer Fund Usage\",\"col\":3}}]",
+ "content": "[{\"id\":\"IIbkfbfSCY\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Sales Planning</span>\",\"col\":12}},{\"id\":\"U6RnFtr2Vb\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"ERP-manual\",\"col\":3}},{\"id\":\"i_70rc-wZd\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Item\",\"col\":3}},{\"id\":\"YjJ9iBrjYu\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"0mfjl-AC5k\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"lgc14qADee\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Stock Planning</b></span>\",\"col\":12}},{\"id\":\"SKmmL5L8_q\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Stock Entry\",\"col\":3}},{\"id\":\"mbUfjH74vM\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Manufyxinvenza Stock Balance\",\"col\":3}},{\"id\":\"KkYUKJ5lCd\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"7qDMAI3l82\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Manufacturing Planning</b></span>\",\"col\":12}},{\"id\":\"LPoRBN7MgV\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Drawing\",\"col\":3}},{\"id\":\"D5Ic3kEZo9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"BOM\",\"col\":3}},{\"id\":\"uM0AZ_cjL4\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Planning\",\"col\":3}},{\"id\":\"E_tNLHSWpk\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Plan\",\"col\":3}},{\"id\":\"LEkk_456c_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Issue Plan\",\"col\":3}},{\"id\":\"DTs4YM3rZ0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Job work order\",\"col\":3}},{\"id\":\"6o2eECUw0d\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Operation Entry\",\"col\":3}},{\"id\":\"nc1YdGxNa9\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"VeQOkb5Gy4\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Purchase Planning</b></span>\",\"col\":12}},{\"id\":\"0-uLwek55M\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Request\",\"col\":3}},{\"id\":\"5fM9K_6xf_\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"TZtJVncTMe\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Receipt\",\"col\":3}},{\"id\":\"7UDoNbcrsx\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"bIJG_dn7JI\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Custom Reports</b></span>\",\"col\":12}},{\"id\":\"eNiSol7_iG\",\"type\":\"card\",\"data\":{\"card_name\":\"Reports\",\"col\":4}},{\"id\":\"868byWtsK4\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"qvgm7svxxX\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Finance - Advance payment tracking</b></span>\",\"col\":12}},{\"id\":\"9UpJgfYB0t\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Order\",\"col\":3}},{\"id\":\"cxWRYTRc8G\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purchase Order\",\"col\":3}},{\"id\":\"vfMuUrCk6j\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Request\",\"col\":3}},{\"id\":\"JPUo75BYpj\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Payment Entry\",\"col\":3}},{\"id\":\"XcJcwJwi8i\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Customer Fund Usage\",\"col\":3}},{\"id\":\"UrVrzoD0kv\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"rId7VYKvEN\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Gate Pass</b></span>\",\"col\":12}},{\"id\":\"FPG4qVqRN5\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Delivery Challan\",\"col\":3}},{\"id\":\"OvggH273u0\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Gate Pass Purpose\",\"col\":3}}]",
  "creation": "2026-08-15 23:02:42.058609",
  "custom_blocks": [],
  "docstatus": 0,
@@ -91,9 +91,38 @@
    "link_type": "Report",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Gate Pass",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Delivery Challan",
+   "link_count": 0,
+   "link_to": "Delivery Challan",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Gate Pass Purpose",
+   "link_count": 0,
+   "link_to": "Gate Pass Purpose",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-08-18 15:50:47.730922",
+ "modified": "2026-09-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Manufyxinvenzaerp",
  "name": "Manufyx",
@@ -241,6 +270,22 @@
    "doc_view": "List",
    "label": "Material Planning",
    "link_to": "Material Planning",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Delivery Challan",
+   "link_to": "Delivery Challan",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Gate Pass Purpose",
+   "link_to": "Gate Pass Purpose",
    "stats_filter": "[]",
    "type": "DocType"
   }

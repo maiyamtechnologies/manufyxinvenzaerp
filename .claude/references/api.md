@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-08-29 23:53:06_
+_Generated: 2026-09-03 00:57:06_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -55,6 +55,15 @@ All `@frappe.whitelist()` methods. Call from JS:
 | Method | Line |
 |--------|------|
 | `has_item_transactions` | 125 |
+## manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py
+
+| Method | Line |
+|--------|------|
+| `refresh_overdue_gate_passes` | 367 |
+| `make_return_entry` | 402 |
+| `@frappe.validate_and_sanitize_search_inputs` | 496 |
+| `get_delivery_challan_html` | 603 |
+| `download_delivery_challan_pdf` | 610 |
 ## material_request_management/material_request.py
 
 | Method | Line |
@@ -229,4 +238,4 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 ## Total
 
-_133 whitelisted methods_
+_138 whitelisted methods_

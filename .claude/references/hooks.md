@@ -1,6 +1,6 @@
 # hooks — manufyxinvenzaerp
 
-_Generated: 2026-08-29 23:53:06_
+_Generated: 2026-09-03 00:57:06_
 
 ## doc_events
 
@@ -140,5 +140,10 @@ after_migrate = "manufyxinvenzaerp.setup.after_migrate"
 
 ## scheduler_events
 
-_None registered (all commented out)._
+```python
+scheduler_events = {
+	"daily": [
+		"manufyxinvenzaerp.manufyxinvenzaerp.doctype.delivery_challan.delivery_challan.refresh_overdue_gate_passes"
+	],
+```
 

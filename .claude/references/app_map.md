@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-08-29 23:53:06_
+_Generated: 2026-09-03 00:57:06_
 
 ## Modules
 
@@ -25,7 +25,7 @@ _Generated: 2026-08-29 23:53:06_
 
 ## Python files
 
-_Total: 279_
+_Total: 287_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -64,6 +64,12 @@ _Total: 279_
 - __init__.py
 - item_management/__init__.py
 - item_management/item.py
+- manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py
+- manufyxinvenzaerp/doctype/delivery_challan/__init__.py
+- manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py
+- manufyxinvenzaerp/doctype/delivery_challan_item/__init__.py
+- manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.py
+- manufyxinvenzaerp/doctype/gate_pass_purpose/__init__.py
 - manufyxinvenzaerp/doctype/__init__.py
 - manufyxinvenzaerp/doctype/manufyxinvenza_settings/__init__.py
 - manufyxinvenzaerp/doctype/manufyxinvenza_settings/manufyxinvenza_settings.py
@@ -196,6 +202,7 @@ _Total: 279_
 - tests/move_fixtures_to_custom_json.py
 - tests/_probe_ab.py
 - tests/_probe_tmp.py
+- tests/_render_challan.py
 - tests/reset_transactions.py
 - tests/revert_wo_jc_cleanup.py
 - tests/_t_close.py
@@ -239,6 +246,7 @@ _Total: 279_
 - tests/verify_cutsheet_status_and_load_fixes.py
 - tests/verify_cut_sheet_w2_derived.py
 - tests/verify_decision_log.py
+- tests/verify_delivery_challan.py
 - tests/verify_drawing_create_revision.py
 - tests/verify_drawing_import_savepoint.py
 - tests/verify_drawing_weight_cascade2.py
@@ -309,10 +317,12 @@ _Total: 279_
 
 ## JavaScript files
 
-_Total: 24_
+_Total: 26_
 
 - accounts_management/report/customer_fund_usage/customer_fund_usage.js
 - drawing_management/doctype/drawing/drawing.js
+- manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.js
+- manufyxinvenzaerp/doctype/delivery_challan/delivery_challan_list.js
 - manufyxinvenzaerp/page/bulk_permissions/bulk_permissions.js
 - production_management/doctype/cut_sheet/cut_sheet.js
 - production_management/doctype/material_planning/material_planning.js
@@ -338,7 +348,7 @@ _Total: 24_
 
 ## JSON files
 
-_Total: 163_
+_Total: 166_
 
 - accounts_management/custom/payment_entry.json
 - accounts_management/custom/payment_request.json
@@ -440,6 +450,9 @@ _Total: 163_
 - manufyxinvenzaerp/custom/timesheet.json
 - manufyxinvenzaerp/custom/user.json
 - manufyxinvenzaerp/custom/warranty_claim.json
+- manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.json
+- manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.json
+- manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.json
 - manufyxinvenzaerp/doctype/manufyxinvenza_settings/manufyxinvenza_settings.json
 - manufyxinvenzaerp/page/bulk_permissions/bulk_permissions.json
 - manufyxinvenzaerp/workspace/manufyx/manufyx.json
@@ -575,6 +588,55 @@ _Total: 163_
 ### sales_order_duno_item
 - Path: `drawing_management/doctype/sales_order_duno_item`
 - Controller: `drawing_management/doctype/sales_order_duno_item/sales_order_duno_item.py`
+- Client script: none
+
+### delivery_challan
+- Path: `manufyxinvenzaerp/doctype/delivery_challan`
+- Controller: `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py`
+- Client script: `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.js`
+- Methods:
+  - validate:
+  - on_submit:
+  - on_cancel:
+  - _set_defaults:
+  - _validate_type_rules:
+  - _validate_against_gate_pass:
+  - _validate_items:
+  - _calculate_totals:
+  - _validate_return_quantities:
+  - _set_status:
+  - _compute_status:
+  - _status_for_returnable:
+  - _returned_by_row:
+  - _refresh_source_gate_pass:
+  - refresh_overdue_gate_passes:
+  - make_return_entry:
+  - postprocess:
+  - update_item:
+  - _pending_by_row:
+  - gate_pass_return_query:
+  - _default_address:
+  - _party_display_name:
+  - _party_address:
+  - _html_to_lines:
+  - get_delivery_challan_html:
+  - download_delivery_challan_pdf:
+  - _esc:
+  - _date:
+  - _num:
+  - _company_header:
+  - _title_bar:
+  - _render_delivery_challan_html:
+  - sign_cell:
+
+### delivery_challan_item
+- Path: `manufyxinvenzaerp/doctype/delivery_challan_item`
+- Controller: `manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py`
+- Client script: none
+
+### gate_pass_purpose
+- Path: `manufyxinvenzaerp/doctype/gate_pass_purpose`
+- Controller: `manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.py`
 - Client script: none
 
 ### manufyxinvenza_settings
@@ -1338,6 +1400,10 @@ Functions:
 Functions:
   - 2:run:
 
+### tests/_render_challan.py
+Functions:
+  - 7:run:
+
 ### tests/reset_transactions.py
 Functions:
   - 68:run:
@@ -1616,6 +1682,17 @@ Functions:
   - 33:check:
   - 39:_source:
   - 43:run:
+
+### tests/verify_delivery_challan.py
+Functions:
+  - 35:check:
+  - 41:_throws:
+  - 55:_company:
+  - 59:_supplier:
+  - 70:_challan:
+  - 91:_status:
+  - 95:_pending:
+  - 99:run:
 
 ### tests/verify_drawing_create_revision.py
 Functions:
@@ -2119,6 +2196,11 @@ Functions:
 - `production_management/doctype/cut_sheet/cut_sheet.py:634` — `@frappe.validate_and_sanitize_search_inputs`
 - `production_management/doctype/cut_sheet/cut_sheet.py:675` — `mark_cut_sheet_inactive`
 - `production_management/doctype/cut_sheet/cut_sheet.py:737` — `release_all_cut_sheet_allocations`
+- `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py:367` — `refresh_overdue_gate_passes`
+- `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py:402` — `make_return_entry`
+- `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py:496` — `@frappe.validate_and_sanitize_search_inputs`
+- `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py:603` — `get_delivery_challan_html`
+- `manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py:610` — `download_delivery_challan_pdf`
 - `purchase_receipt_management/purchase_receipt.py:16` — `get_pr_item_uom`
 - `purchase_receipt_management/purchase_receipt.py:275` — `get_mp_for_pr`
 - `purchase_receipt_management/purchase_receipt.py:296` — `diagnose_mp_allocation`
