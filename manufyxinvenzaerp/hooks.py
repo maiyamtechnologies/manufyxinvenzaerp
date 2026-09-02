@@ -259,6 +259,18 @@ override_doctype_dashboards = {
 # Scheduled Tasks
 # ---------------
 
+# This is the app's ONLY scheduled task, and it must not be relied on alone:
+# sites/common_site_config.json on this bench sets "pause_scheduler": 1, so
+# nothing registered here actually fires locally. refresh_overdue_gate_passes is
+# therefore also called from the Delivery Challan list view's onload (see
+# delivery_challan_list.js) and directly by the tests. This hook is what makes
+# Overdue correct on a live server whose scheduler is running.
+scheduler_events = {
+	"daily": [
+		"manufyxinvenzaerp.manufyxinvenzaerp.doctype.delivery_challan.delivery_challan.refresh_overdue_gate_passes"
+	],
+}
+
 # scheduler_events = {
 # 	"all": [
 # 		"manufyxinvenzaerp.tasks.all"

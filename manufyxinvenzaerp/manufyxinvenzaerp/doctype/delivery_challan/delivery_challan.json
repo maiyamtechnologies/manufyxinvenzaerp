@@ -1,0 +1,436 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-09-02 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "is_submittable": 1,
+ "field_order": [
+  "naming_series",
+  "challan_type",
+  "gp_date",
+  "col_break_head",
+  "company",
+  "status",
+  "col_break_head_2",
+  "against_gate_pass",
+  "section_party",
+  "party_type",
+  "party",
+  "col_break_party",
+  "party_display_name",
+  "col_break_party_2",
+  "party_address",
+  "section_reference",
+  "job_no",
+  "ref_dc_no",
+  "expected_return_date",
+  "col_break_ref",
+  "production_plan",
+  "wo_date",
+  "total_value_of_goods",
+  "col_break_ref_2",
+  "vehicle_no",
+  "driver_name",
+  "mobile_no",
+  "section_items",
+  "items",
+  "section_totals",
+  "total_qty",
+  "col_break_totals",
+  "total_weight_kg",
+  "section_return",
+  "returned_qty",
+  "returned_weight_kg",
+  "col_break_return",
+  "pending_qty",
+  "pending_weight_kg",
+  "section_terms",
+  "terms",
+  "section_signoff",
+  "material_received_by",
+  "col_break_signoff",
+  "production_planning_by",
+  "col_break_signoff_2",
+  "stores_incharge",
+  "col_break_signoff_3",
+  "factory_head",
+  "section_amend",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "GP-.#####",
+   "default": "GP-.#####",
+   "reqd": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Returnable",
+   "fieldname": "challan_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Challan Type",
+   "options": "Returnable\nNon Returnable\nReturn Entry",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "gp_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "GP Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nMaterial Out\nMaterial In\nPartially Returned\nOverdue\nReturned\nCancelled",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_break_head_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.challan_type=='Return Entry'",
+   "mandatory_depends_on": "eval:doc.challan_type=='Return Entry'",
+   "fieldname": "against_gate_pass",
+   "fieldtype": "Link",
+   "label": "Against Gate Pass",
+   "options": "Delivery Challan",
+   "search_index": 1,
+   "description": "Lists only SUBMITTED Returnable gate passes for this company that still have something outstanding. A Non Returnable pass, a draft, and one already fully Returned are all excluded -- nothing is expected back against them."
+  },
+  {
+   "fieldname": "section_party",
+   "fieldtype": "Section Break",
+   "label": "To"
+  },
+  {
+   "default": "Supplier",
+   "fieldname": "party_type",
+   "fieldtype": "Select",
+   "label": "Party Type",
+   "options": "Supplier\nCustomer\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Party",
+   "options": "party_type",
+   "mandatory_depends_on": "eval:doc.party_type!='Other'",
+   "depends_on": "eval:doc.party_type!='Other'",
+   "search_index": 1
+  },
+  {
+   "fieldname": "col_break_party",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "party_display_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "description": "Auto-filled from the party. This is what prints in the To box -- edit it freely."
+  },
+  {
+   "fieldname": "col_break_party_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "party_address",
+   "fieldtype": "Small Text",
+   "label": "Address"
+  },
+  {
+   "fieldname": "section_reference",
+   "fieldtype": "Section Break",
+   "label": "Reference and Vehicle"
+  },
+  {
+   "fieldname": "job_no",
+   "fieldtype": "Data",
+   "label": "Job No."
+  },
+  {
+   "fieldname": "ref_dc_no",
+   "fieldtype": "Data",
+   "label": "Ref. DC. No."
+  },
+  {
+   "depends_on": "eval:doc.challan_type=='Returnable'",
+   "mandatory_depends_on": "eval:doc.challan_type=='Returnable'",
+   "fieldname": "expected_return_date",
+   "fieldtype": "Date",
+   "label": "Expected Date of Return"
+  },
+  {
+   "fieldname": "col_break_ref",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "production_plan",
+   "fieldtype": "Link",
+   "label": "Production Plan No",
+   "options": "Production Plan"
+  },
+  {
+   "fieldname": "wo_date",
+   "fieldtype": "Date",
+   "label": "WO Date"
+  },
+  {
+   "fieldname": "total_value_of_goods",
+   "fieldtype": "Currency",
+   "label": "Total Value of Goods",
+   "description": "Entered by hand -- never computed from the item rows."
+  },
+  {
+   "fieldname": "col_break_ref_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vehicle_no",
+   "fieldtype": "Data",
+   "label": "Vehicle No"
+  },
+  {
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name"
+  },
+  {
+   "fieldname": "mobile_no",
+   "fieldtype": "Data",
+   "label": "Mobile No",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Materials"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Delivery Challan Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_totals",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_break_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_weight_kg",
+   "fieldtype": "Float",
+   "label": "Total Weight (Kgs)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "depends_on": "eval:doc.challan_type=='Returnable' && doc.docstatus==1",
+   "fieldname": "section_return",
+   "fieldtype": "Section Break",
+   "label": "Return Tracking"
+  },
+  {
+   "fieldname": "returned_qty",
+   "fieldtype": "Float",
+   "label": "Returned Qty",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "returned_weight_kg",
+   "fieldtype": "Float",
+   "label": "Returned Weight (Kgs)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "col_break_return",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pending_qty",
+   "fieldtype": "Float",
+   "label": "Pending Qty",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pending_weight_kg",
+   "fieldtype": "Float",
+   "label": "Pending Weight (Kgs)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "section_terms",
+   "fieldtype": "Section Break",
+   "label": "Terms and Conditions",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "terms",
+   "fieldtype": "Text Editor",
+   "label": "Terms and Conditions"
+  },
+  {
+   "fieldname": "section_signoff",
+   "fieldtype": "Section Break",
+   "label": "Sign-off",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "material_received_by",
+   "fieldtype": "Data",
+   "label": "Material Received By"
+  },
+  {
+   "fieldname": "col_break_signoff",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "production_planning_by",
+   "fieldtype": "Link",
+   "label": "Production / Planning",
+   "options": "User"
+  },
+  {
+   "fieldname": "col_break_signoff_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stores_incharge",
+   "fieldtype": "Link",
+   "label": "Stores Incharge",
+   "options": "User"
+  },
+  {
+   "fieldname": "col_break_signoff_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "factory_head",
+   "fieldtype": "Link",
+   "label": "Factory Head",
+   "options": "User"
+  },
+  {
+   "fieldname": "section_amend",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Delivery Challan",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-03 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufyxinvenzaerp",
+ "name": "Delivery Challan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing Manager",
+   "share": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Manufacturing User",
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock User"
+  }
+ ],
+ "search_fields": "challan_type,party,gp_date,status",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -1,0 +1,130 @@
+{
+ "actions": [],
+ "creation": "2026-09-02 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "material_description",
+  "uom",
+  "qty",
+  "weight_kg",
+  "purpose",
+  "remarks",
+  "section_trace",
+  "batch_no",
+  "col_break_trace",
+  "returned_qty",
+  "returned_weight_kg",
+  "against_challan_item"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "columns": 2,
+   "description": "Optional. Not on the printed pad -- fills the description and UOM when set."
+  },
+  {
+   "fieldname": "material_description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Material Description",
+   "reqd": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "UOM",
+   "options": "UOM",
+   "columns": 1
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "weight_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weight in Kgs",
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Purpose",
+   "options": "Gate Pass Purpose",
+   "columns": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "section_trace",
+   "fieldtype": "Section Break",
+   "label": "Traceability and Return"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "label": "Batch",
+   "options": "Batch",
+   "description": "Optional. Not on the printed pad -- recorded for traceability only; no stock is moved."
+  },
+  {
+   "fieldname": "col_break_trace",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "returned_qty",
+   "fieldtype": "Float",
+   "label": "Returned Qty",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "returned_weight_kg",
+   "fieldtype": "Float",
+   "label": "Returned Weight (Kgs)",
+   "precision": "3",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "against_challan_item",
+   "fieldtype": "Data",
+   "label": "Against Challan Row",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "description": "On a Return Entry row: the row name on the original gate pass this return is netted against."
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufyxinvenzaerp",
+ "name": "Delivery Challan Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
