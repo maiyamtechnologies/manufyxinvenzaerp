@@ -706,7 +706,15 @@ class MaterialPlanning(Document):
             batch_stock = _get_batch_total_stock(row.batch, self.for_warehouse)
             reserved_by_others = _get_batch_reserved_by_others(row.batch, mp_name, exclude_table="material_mapping")
             allocated_so_far = batch_allocated.get(row.batch, 0.0)
-            available = max(0.0, batch_stock - reserved_by_others - allocated_so_far)
+            # Rounded to the 3 decimals this table stores, and compared that way
+            # below. A batch shared by many rows is checked by re-adding every
+            # row's claim, and summing ten unrounded floats drifts: a receipt
+            # that filled a batch EXACTLY to the last row (2826 Kg over the
+            # PLATE8 rows of MP-2026-00015) left 239.6899999999996 free against
+            # a required 239.690 and was refused for a difference the message
+            # itself printed as "0.0 Kg". The whole receipt's allocation went
+            # down with it (PR-26-00008).
+            available = flt(max(0.0, batch_stock - reserved_by_others - allocated_so_far), 3)
 
             # Skip stock-coverage check when the batch has no stock in the source
             # warehouse — it was either already transferred out or not yet received.
@@ -721,8 +729,8 @@ class MaterialPlanning(Document):
                 # Required Qty is reserved (see _apply_rwd_fractional_nos), so
                 # that is what has to fit in free stock.
                 required_qty = flt(row.qty)
-                if required_qty > available:
-                    difference = flt(required_qty - available, 3)
+                difference = flt(required_qty - available, 3)
+                if difference > 0:
                     frappe.throw(
                         _("Row {0} — Batch <b>{1}</b><br>"
                           "Total available qty &nbsp;— {2} Kg<br>"
@@ -737,7 +745,7 @@ class MaterialPlanning(Document):
                         ),
                         title=_("Material Mapping Quantity Difference"),
                     )
-                batch_allocated[row.batch] = allocated_so_far + required_qty
+                batch_allocated[row.batch] = flt(allocated_so_far + required_qty, 3)
                 continue
 
             if not flt(row.batch_sec_qty):
@@ -800,8 +808,8 @@ class MaterialPlanning(Document):
                 )
                 shortfall_warnings.append(message)
 
-            if batch_calc_qty > available:
-                difference = flt(batch_calc_qty - available, 3)
+            difference = flt(batch_calc_qty - available, 3)
+            if difference > 0:
                 frappe.throw(
                     _("Row {0} — Batch <b>{1}</b><br>"
                       "Total available qty &nbsp;— {2} Kg<br>"
@@ -816,7 +824,7 @@ class MaterialPlanning(Document):
                     ),
                     title=_("Material Mapping Quantity Difference"),
                 )
-            batch_allocated[row.batch] = allocated_so_far + batch_calc_qty
+            batch_allocated[row.batch] = flt(allocated_so_far + batch_calc_qty, 3)
 
         if shortfall_warnings:
             frappe.msgprint(

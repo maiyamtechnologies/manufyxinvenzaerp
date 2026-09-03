@@ -353,9 +353,20 @@ def retry_mp_allocation(pr_name):
     report = diagnose_mp_allocation(pr_name)
     results = []
     for mp_name in report["plans"]:
-        added = allocate_pr_stock_to_mp(pr_name, mp_name)
-        _archive_consolidate_items(mp_name, pr_name)
-        results.append(dict(added, material_planning=mp_name))
+        try:
+            added = allocate_pr_stock_to_mp(pr_name, mp_name) or {}
+            failed_items = []
+        except Exception:
+            # Same rule as the submit hook: a line the plan refuses costs
+            # that line only. Retrying used to re-raise the first refusal and
+            # allocate nothing at all, which made the recovery button useless
+            # in exactly the case it exists for.
+            frappe.log_error(
+                title=f"Retry allocation failed for {pr_name} -> {mp_name}",
+                message=frappe.get_traceback(),
+            )
+            added, failed_items = _allocate_pr_items_individually(pr_name, mp_name)
+        results.append(dict(added, material_planning=mp_name, failed_items=failed_items))
     frappe.db.commit()
     report["results"] = results
     return report
@@ -377,6 +388,33 @@ def _pr_dimensions_match(pr_item, mp_row):
         and flt(pr_item.custom_width) == flt(mp_row.width)
         and flt(pr_item.custom_thickness) == flt(mp_row.thickness)
     )
+
+
+def _receivable_qty(pr_item, batch_total_qty, batch_reserved_qty):
+    """How much of a received line this plan may actually claim.
+
+    Normally the whole line: the batch was created by this very receipt and
+    nothing else has touched it, so free stock and received qty are the same
+    number. They come apart when another plan reserved part of the batch
+    between the receipt and this allocation, and then claiming the full line
+    writes Material Mapping rows adding up to more of the batch than exists --
+    which _validate_batch_calc_qty refuses, taking the WHOLE receipt's
+    allocation down with it rather than just the surplus.
+
+    Capping here turns that into the ordinary short-delivery outcome the
+    caller already handles: the plan takes what is free and the remainder
+    stays a blank-batch "Not Mapped" row to purchase or map by hand.
+
+    A batch with no stock in the plan's warehouse is not capped -- there is
+    nothing to divide up and _validate_batch_calc_qty skips such rows too
+    (already transferred out, or received elsewhere), so a cap of 0 would
+    block a legitimate allocation instead of protecting one.
+    """
+    received_qty = flt(pr_item.qty)
+    if flt(batch_total_qty) <= 0:
+        return received_qty
+    free_qty = flt(max(0.0, flt(batch_total_qty) - flt(batch_reserved_qty)), 3)
+    return flt(min(received_qty, free_qty), 3)
 
 
 def _build_mapping_row(
@@ -498,7 +536,7 @@ def _fill_mapping_row_from_receipt(
 
 
 @frappe.whitelist()
-def allocate_pr_stock_to_mp(pr_name, mp_name):
+def allocate_pr_stock_to_mp(pr_name, mp_name, only_items=None):
     """
     Allocate batches received on a PR into the linked Material Planning.
     - Received in the requirement's own dimensions → Available Raw Materials (Exact Match)
@@ -535,9 +573,18 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
     each call rebuilds its match candidates from mp.unavailable_items as it
     currently stands, and a fully-fulfilled row is already gone from that
     table by the time any second call could happen.
+
+    only_items limits the pass to the named Purchase Receipt Item rows. The
+    whole receipt is allocated in ONE save, so a single row the plan refuses
+    discards the allocation of every other item on it as well -- five items
+    received, four of them perfectly allocatable, and the plan keeps all five
+    unmapped (PR-26-00008). _allocate_pr_items_individually uses this to
+    retry the receipt one line at a time under a savepoint each, so the lines
+    that can land still do.
     """
     pr = frappe.get_doc("Purchase Receipt", pr_name)
     mp = frappe.get_doc("Material Planning", mp_name)
+    only_items = set(only_items or [])
 
     # Index MP unavailable_items two ways: precise (item_code, duno_mark_no) when the
     # PR item carries a DUNO reference, and a legacy item-code-only fallback for PRs
@@ -698,6 +745,8 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
             mr_to_mp[rec.name] = rec.custom_material_planning
 
     for pr_item in pr.items:
+        if only_items and pr_item.name not in only_items:
+            continue
         if not pr_item.purchase_order_item:
             continue
 
@@ -768,7 +817,7 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
             ) or {}
             batch_total_qty    = _get_batch_total_stock(batch_no, mp.for_warehouse) if batch_no else 0.0
             batch_reserved_qty = _get_batch_reserved_by_others(batch_no, mp_name) if batch_no else 0.0
-            received_qty = flt(pr_item.qty)
+            received_qty = _receivable_qty(pr_item, batch_total_qty, batch_reserved_qty)
 
             for mp_row, alloc_qty in _split_allocation(matched_alternate, received_qty, sequential):
                 _consume(mp_row, alloc_qty)
@@ -801,7 +850,7 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
             ) or {}
             batch_total_qty    = _get_batch_total_stock(batch_no, mp.for_warehouse) if batch_no else 0.0
             batch_reserved_qty = _get_batch_reserved_by_others(batch_no, mp_name) if batch_no else 0.0
-            received_qty = flt(pr_item.qty)
+            received_qty = _receivable_qty(pr_item, batch_total_qty, batch_reserved_qty)
 
             splits = list(_split_allocation(matched_original, received_qty, sequential))
 
@@ -876,7 +925,7 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
             ) or {}
             batch_total_qty    = _get_batch_total_stock(batch_no, mp.for_warehouse) if batch_no else 0.0
             batch_reserved_qty = _get_batch_reserved_by_others(batch_no, mp_name) if batch_no else 0.0
-            received_qty = flt(pr_item.qty)
+            received_qty = _receivable_qty(pr_item, batch_total_qty, batch_reserved_qty)
 
             for mp_row, alloc_qty in _split_allocation(matched_mapping, received_qty, sequential):
                 # _split_allocation hands a lone matched row the WHOLE receipt
@@ -1001,12 +1050,28 @@ def allocate_pr_stock_to_mp(pr_name, mp_name):
         mp.flags.mfx_saved_by_another_document = True
         mp.save(ignore_permissions=True)
 
+    # What the plan is still waiting for, by item: every Material Mapping row
+    # left without a batch, whether this receipt shrank it to a shortfall or
+    # never covered it at all (the item was dropped at the Purchase Order, or
+    # cut back at the receipt). The caller shows this on submit so the
+    # shortfall is visible then and there -- to purchase the balance, or to
+    # map another batch against it -- rather than only to whoever next opens
+    # the plan and reads the table.
+    pending_by_item = {}
+    for row in (mp.material_mapping or []):
+        if row.batch:
+            continue
+        pending_by_item[row.item_code] = flt(
+            pending_by_item.get(row.item_code, 0.0) + flt(row.qty), 3
+        )
+
     return {
         "added_exact": added_exact,
         "added_mapping": added_mapping,
         "filled_mapping": filled_mapping,
         "fulfilled": len(fulfilled_row_names - mapping_row_names),
         "partial": len([n for n in remaining_qty_by_row if n not in mapping_row_names]),
+        "pending_by_item": pending_by_item,
     }
 
 
@@ -1075,6 +1140,86 @@ def _archive_consolidate_items(mp_name, pr_name):
     return archived
 
 
+def _allocate_pr_items_individually(pr_name, mp_name):
+    """Allocate a receipt one line at a time, each under its own savepoint.
+
+    The fallback for a whole-receipt pass the plan refused. Allocation writes
+    every item in a single save, so one row the plan will not accept discards
+    the allocation of every other item on the receipt: PR-26-00008 delivered
+    five plate sizes, four of them allocatable without argument, and all five
+    stayed unmapped because the PLATE8 rows filled their batch to the last
+    kilo and tripped a rounding check.
+
+    A receipt is not an all-or-nothing document -- items get dropped at the
+    Purchase Order, dropped again at the receipt, and re-cut to whatever the
+    supplier actually sent -- so what CAN be matched must land, and only the
+    line that genuinely cannot must be left for someone to look at. Each line
+    is rolled back to its own savepoint, so a refusal costs that item and
+    nothing else.
+
+    Returns (combined result, list of item_codes that failed).
+    """
+    combined = {
+        "added_exact": 0, "added_mapping": 0, "filled_mapping": 0,
+        "fulfilled": 0, "partial": 0, "pending_by_item": {},
+    }
+    failed_items = []
+
+    pr_rows = frappe.get_all(
+        "Purchase Receipt Item",
+        filters={"parent": pr_name},
+        fields=["name", "item_code"],
+        order_by="idx",
+    )
+    for seq, pr_row in enumerate(pr_rows):
+        savepoint = "mfx_pr_alloc_%d" % seq
+        frappe.db.savepoint(savepoint)
+        try:
+            result = allocate_pr_stock_to_mp(pr_name, mp_name, only_items=[pr_row.name]) or {}
+        except Exception:
+            # Back to this line's own savepoint, not the start of the submit.
+            frappe.db.rollback(save_point=savepoint)
+            failed_items.append(pr_row.item_code)
+            frappe.log_error(
+                title=f"Allocation failed for {pr_row.item_code} on {pr_name} -> {mp_name}",
+                message=frappe.get_traceback(),
+            )
+            continue
+
+        for key in ("added_exact", "added_mapping", "filled_mapping", "fulfilled", "partial"):
+            combined[key] += result.get(key) or 0
+        # A whole-plan snapshot taken after each save, so the most recent one
+        # is the current state -- not something to add up across lines.
+        combined["pending_by_item"] = result.get("pending_by_item") or {}
+
+    return combined, failed_items
+
+
+def _msgprint_pending_mapping(mp_name, pending_by_item):
+    """Say what the plan is still short of, at the moment of receipt.
+
+    A short delivery is the normal case, not an error: the plan keeps a
+    blank-batch "Not Mapped" row for the balance. But nothing announced it,
+    so the shortfall was only discovered by opening the plan and reading the
+    table -- and a receipt that allocated most of what was needed looked
+    exactly like one that allocated all of it.
+    """
+    if not pending_by_item:
+        return
+    lines = ", ".join(
+        "<b>{0}</b> {1} Kg".format(item_code, flt(qty, 3))
+        for item_code, qty in sorted(pending_by_item.items())
+    )
+    frappe.msgprint(
+        _(
+            "Material Planning {0} still has unmapped requirements after this receipt — {1}. "
+            "Purchase the balance, or map another batch against those rows in Material Mapping."
+        ).format(mp_name, lines),
+        indicator="orange",
+        title=_("Material Mapping Pending"),
+    )
+
+
 def on_submit_purchase_receipt(doc, method):
     """Auto-allocate received batches back to every Material Planning this PR traces to,
     then refresh any Material Issue Plans that link to those MPs so their raw-material
@@ -1085,36 +1230,26 @@ def on_submit_purchase_receipt(doc, method):
 
     affected_mps = get_mp_for_pr(doc.name)
     for mp_name in affected_mps:
+        result, failed_items = {}, []
         try:
             result = allocate_pr_stock_to_mp(doc.name, mp_name) or {}
-            if not (
-                result.get("added_exact")
-                or result.get("added_mapping")
-                or result.get("filled_mapping")
-            ):
-                # Tracing to a plan but allocating nothing into it is not a
-                # normal outcome -- it means every requirement this receipt
-                # could have covered has already been mapped, or none of them
-                # could be matched at all. Both used to look identical to a
-                # successful allocation from the outside: the receipt
-                # submitted, no error was raised, and the plan quietly stayed
-                # unmapped.
-                frappe.msgprint(
-                    _(
-                        "Nothing was allocated into Material Planning {0} from this receipt — "
-                        "no requirement row was left waiting for these items. Check the plan's "
-                        "Material Mapping and Unavailable Items tables before treating the "
-                        "material as planned."
-                    ).format(mp_name),
-                    indicator="orange",
-                    title=_("No Material Planning Rows Matched"),
-                )
-            _archive_consolidate_items(mp_name, doc.name)
         except Exception:
             frappe.log_error(
                 title=f"Material Planning auto-allocation failed for {doc.name} -> {mp_name}",
                 message=frappe.get_traceback(),
             )
+            # One refused line used to cost the whole receipt its allocation.
+            # Retry line by line so everything that can be matched still is,
+            # and only the line that cannot is reported.
+            result, failed_items = _allocate_pr_items_individually(doc.name, mp_name)
+
+        allocated_anything = bool(
+            result.get("added_exact")
+            or result.get("added_mapping")
+            or result.get("filled_mapping")
+        )
+
+        if failed_items and not allocated_anything:
             # Report 3 Finding H-01 / Phase 1 HP-04: this failure previously
             # had zero user-visible signal -- the PR submit still succeeds
             # (intentionally, so a downstream planning-sync problem never
@@ -1131,6 +1266,45 @@ def on_submit_purchase_receipt(doc, method):
                 ).format(mp_name),
                 indicator="orange",
                 title=_("Material Planning Allocation Failed"),
+            )
+        elif failed_items:
+            frappe.msgprint(
+                _(
+                    "Material Planning {0} was allocated from this receipt, except for "
+                    "<b>{1}</b> — that item was refused and left unmapped. The rest has been "
+                    "allocated; check the Error Log for why that one did not."
+                ).format(mp_name, ", ".join(sorted(set(failed_items)))),
+                indicator="orange",
+                title=_("Partly Allocated"),
+            )
+        elif not allocated_anything:
+            # Tracing to a plan but allocating nothing into it is not a
+            # normal outcome -- it means every requirement this receipt
+            # could have covered has already been mapped, or none of them
+            # could be matched at all. Both used to look identical to a
+            # successful allocation from the outside: the receipt
+            # submitted, no error was raised, and the plan quietly stayed
+            # unmapped.
+            frappe.msgprint(
+                _(
+                    "Nothing was allocated into Material Planning {0} from this receipt — "
+                    "no requirement row was left waiting for these items. Check the plan's "
+                    "Material Mapping and Unavailable Items tables before treating the "
+                    "material as planned."
+                ).format(mp_name),
+                indicator="orange",
+                title=_("No Material Planning Rows Matched"),
+            )
+
+        if allocated_anything:
+            _msgprint_pending_mapping(mp_name, result.get("pending_by_item") or {})
+
+        try:
+            _archive_consolidate_items(mp_name, doc.name)
+        except Exception:
+            frappe.log_error(
+                title=f"Consolidate Item archive failed for {doc.name} -> {mp_name}",
+                message=frappe.get_traceback(),
             )
 
     # Refresh MIP raw-material snapshots for any MIPs linked to affected MPs

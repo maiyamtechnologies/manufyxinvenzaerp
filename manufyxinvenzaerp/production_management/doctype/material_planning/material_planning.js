@@ -1,3 +1,73 @@
+// ── Stock Details action buttons ───────────────────────────────────────────
+// Every action on the Stock Details tab -- the two section buttons and the
+// grid toolbars -- ships in Frappe's default button colour: a near-white
+// btn-default on a white form, and btn-secondary grey on the grids. People
+// could not find them (reported as "unable to focus"), which matters most
+// here because this is the tab where the whole stock analysis is driven from.
+//
+// They are filled instead, in three tones that say what the button does
+// rather than decorating it:
+//   blue   -- the forward actions (Check Stock, Reserve, Create Material Request)
+//   amber  -- the ones that undo or push work back (Unreserve, Move to Unavailable)
+//   plain  -- everything else on the tab, left alone
+//
+// The palette is Frappe's own CSS variables, so it follows the desk theme
+// instead of hard-coding a hex that goes unreadable in dark mode.
+const _MFX_BTN_STYLE_ID = "mfx-mp-action-btn-style";
+const _MFX_BTN_CSS = `
+.mfx-action-btn, .mfx-action-btn:focus {
+	background-color: var(--blue-500) !important;
+	border-color: var(--blue-500) !important;
+	color: var(--white, #fff) !important;
+}
+.mfx-action-btn:hover { filter: brightness(0.92); }
+.mfx-action-btn-alt, .mfx-action-btn-alt:focus {
+	background-color: var(--orange-500) !important;
+	border-color: var(--orange-500) !important;
+	color: var(--white, #fff) !important;
+}
+.mfx-action-btn-alt:hover { filter: brightness(0.92); }
+.mfx-action-btn .icon, .mfx-action-btn-alt .icon { filter: brightness(0) invert(1); }
+`;
+
+function _mfx_inject_button_style() {
+	if (document.getElementById(_MFX_BTN_STYLE_ID)) return;
+	$("<style>").attr("id", _MFX_BTN_STYLE_ID).text(_MFX_BTN_CSS).appendTo("head");
+}
+
+// Grid toolbar buttons are keyed by the label they were added with, and that
+// key carries an icon prefix -- so match on the label text, not equality.
+// Only the named buttons are touched: Download/Upload sit on the same
+// toolbars and are housekeeping, not actions to draw the eye to.
+function _mfx_highlight_grid_buttons(frm, fieldname, primary_labels, alt_labels) {
+	let grid = frm.fields_dict[fieldname] && frm.fields_dict[fieldname].grid;
+	if (!grid || !grid.custom_buttons) return;
+	Object.keys(grid.custom_buttons).forEach(function (label) {
+		let $btn = grid.custom_buttons[label];
+		if (!$btn || !$btn.length) return;
+		let is_alt = (alt_labels || []).some(function (t) { return label.indexOf(t) !== -1; });
+		let is_primary = (primary_labels || []).some(function (t) { return label.indexOf(t) !== -1; });
+		if (!is_alt && !is_primary) return;
+		$btn.removeClass("btn-secondary mfx-action-btn mfx-action-btn-alt")
+			.addClass(is_alt ? "mfx-action-btn-alt" : "mfx-action-btn");
+	});
+}
+
+// Fill in the Stock Details grid toolbars, for the same reason the section
+// buttons are filled in: btn-secondary grey on a grey toolbar is not a button
+// anyone finds. Unreserve and Reassign Batch take the amber tone -- they undo
+// or overwrite a decision already made, so they should not read as the
+// obvious next click.
+function _mfx_highlight_stock_details_grids(frm) {
+	_mfx_inject_button_style();
+	_mfx_highlight_grid_buttons(frm, "available_raw_materials",
+		["Reserve"], ["Unreserve", "Reassign Batch"]);
+	_mfx_highlight_grid_buttons(frm, "material_mapping",
+		["Reserve", "Excess Material Mapping"], ["Unreserve"]);
+	_mfx_highlight_grid_buttons(frm, "consolidate_items",
+		["Create Material Request", "Update & Map Exact Matches"], []);
+}
+
 // ── Upload / Download helper for child table toolbars ──────────────────────
 function _add_io_buttons(frm, fieldname) {
 	var grid = frm.fields_dict[fieldname] && frm.fields_dict[fieldname].grid;
@@ -295,18 +365,23 @@ frappe.ui.form.on("Material Planning", {
 		frm.set_df_property("so_bom_import",     "read_only", so_locked ? 1 : 0);
 		frm.set_df_property("show_drawings_btn", "hidden",    so_locked ? 1 : 0);
 
-		// Add icons to inline form buttons (no color override)
-		function _style_btn(fieldname, icon, label) {
+		// Add icons to inline form buttons. The Stock Details ones are filled in
+		// as well (the variant argument): Frappe's default button colour left
+		// them impossible to pick out on that tab -- see _MFX_BTN_CSS.
+		function _style_btn(fieldname, icon, label, variant) {
 			let $btn = frm.fields_dict[fieldname] && frm.fields_dict[fieldname].$input;
 			if (!$btn || !$btn.length) return;
 			$btn.html(frappe.utils.icon(icon, "sm") + "&nbsp;" + __(label));
+			$btn.removeClass("mfx-action-btn mfx-action-btn-alt");
+			if (variant) $btn.addClass(variant);
 		}
 		setTimeout(function () {
+			_mfx_inject_button_style();
 			_style_btn("get_raw_materials_btn",  "refresh", "Get Raw Materials");
 			_style_btn("verify_raw_materials_btn", "check", "Verify Raw Materials");
-			_style_btn("check_stock_btn",        "search",  "Check Stock Availability");
-			_style_btn("update_exact_match_btn", "tick",    "Update & Map Exact Matches");
-			_style_btn("finalize_mapping_btn",   "move",    "Move to Unavailable Items");
+			_style_btn("check_stock_btn",        "search",  "Check Stock Availability",   "mfx-action-btn");
+			_style_btn("update_exact_match_btn", "tick",    "Update & Map Exact Matches", "mfx-action-btn");
+			_style_btn("finalize_mapping_btn",   "move",    "Move to Unavailable Items",  "mfx-action-btn-alt");
 
 			// "View All" injected next to each section's action button
 			function _inject_view_all($anchor_input, css_class, fieldname) {
@@ -327,6 +402,10 @@ frappe.ui.form.on("Material Planning", {
 			_inject_view_all($chk_btn,  "view-all-arm-btn", "available_raw_materials");
 			_inject_view_all($fin_btn,  "view-all-mm-btn",  "material_mapping");
 			_inject_view_all($upd_btn,  "view-all-ui-btn",  "unavailable_items");
+
+			// Re-applied on every refresh, not just the first: the grid
+			// toolbars are rebuilt whenever their table re-renders.
+			_mfx_highlight_stock_details_grids(frm);
 		}, 50);
 
 		// Colour-coded Status badge on Material Mapping rows
@@ -411,6 +490,8 @@ frappe.ui.form.on("Material Planning", {
 					function () { _update_exact_match_from_consolidate(frm); }
 				);
 			}
+
+			_mfx_highlight_stock_details_grids(frm);
 
 			// Auto Purchase section — visible only when Manufyxinvenza Settings enables it
 			frappe.db.get_single_value("Manufyxinvenza Settings", "auto_purchase_from_material_planning")
