@@ -150,8 +150,11 @@
   {
    "fieldname": "so_bom_import",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sales Order",
-   "options": "Sales Order"
+   "options": "Sales Order",
+   "search_index": 1
   },
   {
    "fieldname": "column_break_bom_import",
