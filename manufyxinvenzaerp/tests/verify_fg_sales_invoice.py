@@ -119,7 +119,9 @@ def _make_so(lines):
 			for line in lines
 		],
 	})
-	so.insert(ignore_permissions=True)
+	# Named outright like the invoices: the SAL-ORD- series numbers the client's
+	# real orders.
+	so.insert(ignore_permissions=True, set_name="ZZFG-A6-SO" + frappe.generate_hash(length=6).upper())
 	return _submit(so)
 
 
@@ -279,6 +281,10 @@ def _dn_cases():
 	print("\n=== 6. DN -> SI ===")
 	so = _make_so([{"item_code": FG_ITEM, "qty": 300, "rate": 100, "custom_sec_qty": 10}])
 	line = so.items[0].name
+	# A Delivery Note only takes FG pieces from a batch tied to the row's Sales Order
+	# (A5), as every batch the Final Stock Entry makes is. The test batch is reused
+	# run after run, so it is pointed at this run's order.
+	frappe.db.set_value("Batch", BATCH, "custom_sales_order", so.name, update_modified=False)
 	frappe.db.savepoint("zzfg_a6_receipt")
 	try:
 		_receive_fg(so, 211.5, 7)

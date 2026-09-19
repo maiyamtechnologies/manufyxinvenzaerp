@@ -552,11 +552,32 @@ frappe.ui.form.on("Sales Order", {
 		_so_render_duno_view_all_btn(frm);
 		_so_render_bom_summary(frm);
 		_so_warn_cancelled_drawings(frm);
+		_so_fg_pending_nos_dn_btn(frm);
 	},
 	custom_bom_excel_file(frm) {
 		_so_render_file_buttons(frm);
 	}
 });
+
+// Finished goods are delivered by the piece, but ERPNext decides "fully delivered" by
+// Kg -- and weighed pieces are often heavier than ordered, so the Kg can be used up
+// with pieces still to go. ERPNext then hides Create > Delivery Note (it only shows
+// while per_delivered < 100). This puts the button back while any line still has Nos
+// pending; the mapping it calls is the app's override, which offers those lines.
+function _so_fg_pending_nos_dn_btn(frm) {
+	if (frm.doc.docstatus !== 1 || flt(frm.doc.per_delivered) < 100) return;
+	if (["Closed", "On Hold"].includes(frm.doc.status)) return;
+	let pending = (frm.doc.items || []).some(function(d) {
+		return flt(d.custom_sec_qty) > flt(d.custom_delivered_sec_qty);
+	});
+	if (!pending) return;
+	frm.add_custom_button(__("Delivery Note (pending Nos)"), function() {
+		frappe.model.open_mapped_doc({
+			method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note",
+			frm: frm,
+		});
+	}, __("Create"));
+}
 
 // A drawing that was cancelled leaves its DUNO row pointing at a dead document, and
 // Frappe then refuses to save OR submit the order -- reporting it as a row number
