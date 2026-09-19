@@ -68,6 +68,41 @@ def _material_planning(d, bom):
     check("old row on save: Kg filled", flt(row.qty_to_manufacture_kg, 3), flt(d.customer_provided_wt, 3))
 
 
+def _picker_uom(d):
+    """The drawing picker hands the Production Plan the ITEM's stock UOM (Kg).
+
+    The Material Planning row's own UOM is Nos -- the unit of its Qty to Manufacture --
+    and passing that through labelled Planned Qty (Kg) "Nos", which ERPNext then refused
+    as a fraction of a whole-number UOM ("Quantity (890.08) cannot be a fraction")."""
+    from manufyxinvenzaerp.production_plan_management.production_plan import (
+        _picker_rows_from_mp, _picker_rows_from_so,
+    )
+
+    print("\n=== the drawing picker's UOM ===")
+    # Any plan row will do, as long as its drawing carries a per-Nos weight (the borrowed
+    # drawing above is not necessarily on a plan).
+    mpbi = None
+    for cand in frappe.get_all(
+        "Material Planning BOM Item", filters={"drawing": ["is", "set"]},
+        fields=["parent", "sales_order", "uom", "drawing", "item_code"],
+        order_by="modified desc", limit=50,
+    ):
+        if flt(frappe.db.get_value("Drawing", cand.drawing, "weight_per_pcs")):
+            mpbi = cand
+            break
+    if not mpbi:
+        print("  SKIP no Material Planning row on a drawing with a per-Nos weight")
+        return
+    d = frappe._dict(name=mpbi.drawing, fg_item_code=mpbi.item_code)
+    stock_uom = frappe.db.get_value("Item", mpbi.item_code, "stock_uom")
+    check("the Material Planning row itself says Nos", mpbi.uom, "Nos")
+    for label, rows in (("from Material Planning", _picker_rows_from_mp(mpbi.parent, None)),
+                        ("from the Sales Order", _picker_rows_from_so(mpbi.sales_order, None) if mpbi.sales_order else [])):
+        row = next((r for r in rows if r.get("drawing") == d.name), None)
+        if row:
+            check("%s: the plan row's UOM is the item's stock UOM" % label, row["uom"], stock_uom)
+
+
 def _plan_to_job(d, bom):
     from manufyxinvenzaerp.drawing_management.drawing_utils import create_production_plan_from_bom
     from manufyxinvenzaerp.subcontracting_management.subcontracting import (
@@ -122,6 +157,7 @@ def run():
             print("  borrowing %s (%s Nos, %s Kg) and %s, read-only" % (
                 d.name, flt(d.no_of_qty_to_manufacture), flt(d.customer_provided_wt, 3), bom))
             _material_planning(d, bom)
+            _picker_uom(d)
             _plan_to_job(d, bom)
         _patch_is_idempotent()
     finally:

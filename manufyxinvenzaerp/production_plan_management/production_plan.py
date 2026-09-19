@@ -742,6 +742,17 @@ def get_pp_drawings_for_picker(search_type, search_value, pp_name=""):
 	return []
 
 
+def _item_stock_uoms(item_codes):
+	"""stock_uom for a set of items, in one query."""
+	codes = sorted({c for c in (item_codes or []) if c})
+	if not codes:
+		return {}
+	return {
+		r.name: r.stock_uom
+		for r in frappe.get_all("Item", filters={"name": ["in", codes]}, fields=["name", "stock_uom"])
+	}
+
+
 def _picker_rows_from_mp(mp_name, pp_name):
 	mp = frappe.get_doc("Material Planning", mp_name)
 	if mp.docstatus == 2:
@@ -761,6 +772,12 @@ def _picker_rows_from_mp(mp_name, pp_name):
 		)
 		customer_weights = {(r.parent, r.duno_mark_no): flt(r.total_weight) for r in wt_rows}
 
+	# The Production Plan row's UOM is the finished-goods item's stock UOM (Kg), which is
+	# what Planned Qty is in. The Material Planning row's own UOM is Nos, the unit of its
+	# Qty to Manufacture -- passing that through labelled Planned Qty (Kg) "Nos" and
+	# ERPNext then refused it as a fraction of a whole-number UOM.
+	stock_uoms = _item_stock_uoms(r.item_code for r in mp.bom_items)
+
 	rows = []
 	for row in mp.bom_items:
 		cust_name = ""
@@ -777,7 +794,7 @@ def _picker_rows_from_mp(mp_name, pp_name):
 			"customer": row.customer or "",
 			"customer_name": cust_name,
 			"qty_to_manufacture": flt(row.qty_to_manufacture) or 1,
-			"uom": row.uom or "",
+			"uom": stock_uoms.get(row.item_code) or row.uom or "",
 			"material_planning": mp_name,
 			"for_warehouse": mp.for_warehouse or "",
 			"mp_complete": True,
@@ -825,6 +842,8 @@ def _picker_rows_from_so(so_name, pp_name):
 			"for_warehouse": mp_vals.get("for_warehouse") or "",
 		}
 
+	stock_uoms = _item_stock_uoms(r.item_code for r in mp_bom_items)  # see _picker_rows_from_mp
+
 	rows = []
 	for r in mp_bom_items:
 		cust_name = ""
@@ -832,6 +851,7 @@ def _picker_rows_from_so(so_name, pp_name):
 			cust_name = frappe.db.get_value("Customer", r.customer, "customer_name") or r.customer
 		mp_info = mp_completion.get(r.material_planning, {"complete": False, "docstatus": 0, "for_warehouse": ""})
 		row = dict(r)
+		row["uom"] = stock_uoms.get(r.item_code) or r.uom or ""
 		row["customer_name"] = cust_name
 		row["mp_complete"] = mp_info["complete"]
 		row["mp_docstatus"] = mp_info["docstatus"]
