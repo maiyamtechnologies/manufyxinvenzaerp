@@ -143,6 +143,24 @@ def _patch_is_idempotent():
     )[0][0]
     check("a drawing from before Kg / Nos keeps its Kg blank", old, 0)
 
+    # A site taking this release for the first time runs patches BEFORE after_migrate,
+    # where the app creates its custom fields -- so the columns can be missing. Reading
+    # one that is not there aborted the whole migrate on the live server ("Unknown column
+    # 'tabProduction Plan Item.custom_sec_qty' in 'WHERE'").
+    real_has_column = frappe.db.has_column
+    for missing in ("custom_sec_qty", "qty_to_manufacture_kg"):
+        frappe.db.has_column = (
+            lambda dt, col, _m=missing, _real=real_has_column: False if col == _m else _real(dt, col)
+        )
+        try:
+            execute()
+            ran = True
+        except Exception as e:
+            ran = "%s: %s" % (type(e).__name__, e)
+        finally:
+            frappe.db.has_column = real_has_column
+        check("runs without the %s column (fields not created yet)" % missing, ran, True)
+
 
 def run():
     print("=== verify_fg_planning_nos_kg ===")

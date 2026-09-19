@@ -14,6 +14,13 @@ This fills both on rows written before the change:
 Kg is left at 0 for a drawing made before Kg and Nos were tracked separately: its Cust
 Weight (Total) holds one piece's weight, so a Kg worked from it would be wrong. Figures
 only -- no stock, reservation or amount is touched. Safe to run again.
+
+Every column is checked before it is read. Patches run BEFORE after_migrate, which is
+where this app creates its custom fields, so on a site taking this release for the first
+time Production Plan Item.custom_sec_qty does not exist yet and reading it aborted the
+whole migrate ("Unknown column 'tabProduction Plan Item.custom_sec_qty' in 'WHERE'").
+A column that is not there yet holds no data either, so skipping it loses nothing: the
+rows it would have filled are written by the form's own validate on the next save.
 """
 
 import frappe
@@ -24,6 +31,10 @@ from manufyxinvenzaerp.production_plan_management.production_plan import drawing
 
 def execute():
     cache = {}
+
+    if not (frappe.db.has_column("Material Planning BOM Item", "qty_to_manufacture_kg")
+            and frappe.db.has_column("Material Planning BOM Item", "uom")):
+        return
 
     for r in frappe.get_all(
         "Material Planning BOM Item",
@@ -44,13 +55,19 @@ def execute():
             plan_of[(doctype, d.name)] = d.get(field)
 
     planned_kg = {}  # (Production Plan, drawing) -> Planned Qty (Kg), plans made in Nos
-    for p in frappe.get_all(
-        "Production Plan Item",
-        filters={"custom_drawing": ["is", "set"], "custom_sec_qty": [">", 0]},
-        fields=["parent", "custom_drawing", "planned_qty"],
-    ):
-        key = (p.parent, p.custom_drawing)
-        planned_kg[key] = flt(planned_kg.get(key, 0) + flt(p.planned_qty), 3)
+    # No Qty (Nos) column yet means no plan was made in pieces, so there is no Kg to take
+    # from one; the drawing's own weight below answers for every row.
+    if frappe.db.has_column("Production Plan Item", "custom_sec_qty"):
+        for p in frappe.get_all(
+            "Production Plan Item",
+            filters={"custom_drawing": ["is", "set"], "custom_sec_qty": [">", 0]},
+            fields=["parent", "custom_drawing", "planned_qty"],
+        ):
+            key = (p.parent, p.custom_drawing)
+            planned_kg[key] = flt(planned_kg.get(key, 0) + flt(p.planned_qty), 3)
+
+    if not frappe.db.has_column("SCO Drawing Item", "qty_to_manufacture_kg"):
+        return
 
     for r in frappe.get_all(
         "SCO Drawing Item",
