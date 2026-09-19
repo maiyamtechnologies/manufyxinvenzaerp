@@ -588,6 +588,8 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
         return []
 
     already = _rm_already_consumed(sco.name, supplier_warehouse)
+    # Whatever the plan has already booked to come back is not ours to consume.
+    set_aside = _excess_booked_to_return(mip_name)
     out = []
     for row in available:
         key = (row["item_code"], row.get("batch_no") or "")
@@ -597,10 +599,49 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
         # Never more than is actually there: an off-cut returned to stores, or material
         # already consumed some other way, has to reduce what this can take.
         qty = min(due, flt(row["qty"], 3))
+        keep = flt(set_aside.get(row["item_code"], 0))
+        if keep > 0:
+            # Leave the booked off-cut behind. What this row would not have consumed
+            # anyway counts towards it first; only what is still missing comes off the
+            # consumption, and anything this row cannot cover is left for the item's
+            # other rows. Without this the entry consumed every kilo at the supplier --
+            # the measured off-cut included -- and the return then had nothing to move
+            # (MIP-2026-00007: PLATE8 666.308 Kg, PLATE25 130.467 Kg short).
+            spare = max(0.0, flt(row["qty"], 3) - qty)
+            keep = max(0.0, flt(keep - spare, 3))
+            held_back = min(keep, qty)
+            qty = flt(qty - held_back, 3)
+            set_aside[row["item_code"]] = flt(keep - held_back, 3)
         if qty <= 0:
             continue
         out.append(dict(row, qty=flt(qty, 3)))
     return out
+
+
+def _excess_booked_to_return(mip_name):
+    """Kg per item the Material Issue Plan has booked to come back, and not yet returned.
+
+    An Excess Material Items row is a promise: that steel is at the supplier waiting to
+    be returned to stock (or claimed by another job). The finished-goods entry must leave
+    it there -- consuming it books the same kilos into finished goods AND leaves the
+    return with nothing to move, which is what MIP-2026-00007 hit ("There is not enough
+    of this material left ... PLATE8: 666.308 Kg short").
+
+    Rows already turned into a Stock Entry, or claimed by another plan, are past: they no
+    longer hold anything back."""
+    if not mip_name:
+        return {}
+    out = defaultdict(float)
+    for r in frappe.get_all(
+        "SCO Excess Material Item",
+        filters={"parent": mip_name, "parenttype": "Material Issue Plan",
+                 "stock_entry_created": 0},
+        fields=["item_code", "qty", "mapped_material_planning"],
+    ):
+        if r.mapped_material_planning:
+            continue
+        out[r.item_code] += flt(r.qty)
+    return {k: flt(v, 3) for k, v in out.items() if flt(v, 3) > 0}
 
 
 @frappe.whitelist()

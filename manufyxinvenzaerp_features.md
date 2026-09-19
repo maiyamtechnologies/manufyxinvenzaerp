@@ -891,3 +891,28 @@ reserved, then unreserved, and a re-check sent 76 requirements back to purchase.
 4. Test: `verify_mp_stock_without_dimensions` (29 checks: the real `check_stock_availability`
    with stand-in stock, and `allocate_receipt_to_plan` on a real draft plan in a rolled-back
    transaction).
+
+---
+
+## 25. The Final Stock Entry leaves booked excess behind (2026-09-20)
+
+MIP-2026-00007: the transfer sent more than the drawings called for and the popup's
+consolidated excess tab booked the off-cut to return (PLATE8 666.308 Kg, PLATE25 130.467,
+FLAT 30.222). The Manufacture entry then consumed every kilo at the supplier, so Return
+Excess Entry refused: *"There is not enough of this material left ... PLATE8: 666.308 Kg
+short ... It has already been consumed by the final Stock Entry."*
+
+The per-drawing cap in `_consumption_for_completed` could not help: that plan's rows carry
+`drawing_planned_weight` equal to `transferred_qty`, so there was nothing to cap.
+
+- `_excess_booked_to_return(mip)` returns Kg per item from Excess Material Items rows that
+  are not yet a Stock Entry (`stock_entry_created = 0`) and not claimed
+  (`mapped_material_planning` empty).
+- `_consumption_for_completed` holds that back per item: what a row would not have
+  consumed anyway counts first, then the consumption itself, and any remainder carries to
+  the item's other rows.
+- Test `verify_fg_entry_leaves_excess` (7 checks) replays MIP-2026-00007 through the real
+  function: 3,931.705 Kg at the supplier with 666.201 booked leaves exactly 666.201, and
+  nothing changes when nothing is booked.
+- Entries already made are not corrected: their material is consumed. Write the difference
+  off as Process Loss, or cancel and re-make the entry.

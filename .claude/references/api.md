@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-20 04:05:28_
+_Generated: 2026-09-20 04:58:23_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -163,9 +163,9 @@ All `@frappe.whitelist()` methods. Call from JS:
 | `get_items_for_material_requests` | 284 |
 | `get_mp_planned_weights` | 679 |
 | `get_pp_drawings_for_picker` | 731 |
-| `get_operations_from_routing` | 916 |
-| `get_standard_routing_operations` | 929 |
-| `make_material_request` | 942 |
+| `get_operations_from_routing` | 936 |
+| `get_standard_routing_operations` | 949 |
+| `make_material_request` | 962 |
 ## purchase_order_management/purchase_order.py
 
 | Method | Line |
@@ -253,19 +253,19 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `` | 2182 |
-| `` | 2185 |
-| `` | 2188 |
-| `` | 2191 |
-| `` | 2194 |
+| `` | 2223 |
+| `` | 2226 |
+| `` | 2229 |
+| `` | 2232 |
+| `` | 2235 |
 | `create_sco_from_production_plan` | 26 |
 | `create_sco_and_mip_from_production_plan` | 264 |
 | `delete_sco_and_mip_for_production_plan` | 289 |
 | `` | 369 |
 | `create_supplier_operation_entries` | 372 |
 | `get_soe_summary` | 394 |
-| `get_final_stock_entry_preview` | 607 |
-| `create_finished_goods_entry` | 673 |
+| `get_final_stock_entry_preview` | 648 |
+| `create_finished_goods_entry` | 714 |
 ## tests/test_whitelist_coverage.py
 
 | Method | Line |
