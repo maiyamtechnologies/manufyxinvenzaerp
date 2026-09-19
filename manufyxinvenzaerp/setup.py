@@ -613,6 +613,57 @@ frappe.ui.form.on("Sales Order Drawing Raw Material", {
 	length(frm, cdt, cdn)    { _so_reset_verification(frm); _so_calc_rm_qty(frm, cdt, cdn); }
 });
 
+// ── Finished goods: order lines in Kg, drawings in Nos (sep14 plan D1-D3) ────
+//
+// Verify Raw Materials checks each FG line against its Drawing List rows, so a change
+// to either side after a pass means the pass no longer holds. The server clears the
+// flag on save (sales_order.clear_verified_on_fg_change); this only shows it straight
+// away instead of after the save.
+//
+// Only lines whose item has Drawing List rows are treated as drawing-built lines:
+// the browser does not know which items are finished goods, and clearing the flag
+// for an unrelated line would send it to the server as 0 on the next save.
+
+frappe.ui.form.on("Sales Order Item", {
+	qty(frm, cdt, cdn)            { _so_fg_line_changed(frm, cdt, cdn); },
+	custom_sec_qty(frm, cdt, cdn) { _so_fg_line_changed(frm, cdt, cdn); },
+	item_code(frm, cdt, cdn)      { _so_fg_line_changed(frm, cdt, cdn); }
+});
+
+function _so_fg_line_changed(frm, cdt, cdn) {
+	var line = locals[cdt][cdn];
+	var drawn = (frm.doc.custom_duno_items || []);
+	if (!drawn.some(function(r) { return !r.drawing; })) return;
+	if (!line.item_code || drawn.some(function(r) { return r.item === line.item_code; })) {
+		_so_reset_verification(frm);
+	}
+}
+
+// A pending Drawing List row: its Total is per Nos x Nos (D2), so typing either
+// fills the Total, the same product Verify Raw Materials checks. A typed Total is left
+// as it is -- Verify reports it if it does not agree. Rows with a Drawing are locked
+// (read-only here, refused on the server) and change only through Update Customer
+// Weight on the Drawing.
+frappe.ui.form.on("Sales Order DUNO Item", {
+	weight_per_pcs(frm, cdt, cdn) { _so_duno_weight_changed(frm, cdt, cdn, true); },
+	total_quantity(frm, cdt, cdn) { _so_duno_weight_changed(frm, cdt, cdn, true); },
+	total_weight(frm, cdt, cdn)   { _so_duno_weight_changed(frm, cdt, cdn, false); },
+	item(frm, cdt, cdn)           { _so_duno_weight_changed(frm, cdt, cdn, false); }
+});
+
+function _so_duno_weight_changed(frm, cdt, cdn, recalc_total) {
+	var row = locals[cdt][cdn];
+	if (row.drawing) return;
+	_so_reset_verification(frm);
+	if (recalc_total && flt(row.weight_per_pcs) > 0 && flt(row.total_quantity) > 0) {
+		var total = flt(flt(row.weight_per_pcs) * flt(row.total_quantity), 3);
+		if (flt(row.total_weight, 3) !== total) {
+			frappe.model.set_value(cdt, cdn, "total_weight", total);
+		}
+	}
+	_so_render_bom_summary(frm);
+}
+
 function _so_calc_rm_qty(frm, cdt, cdn) {
 	var row = locals[cdt][cdn];
 	if (row.is_locked) return;
@@ -711,7 +762,7 @@ function _so_render_bom_summary(frm) {
 		row(__("Raw material rows"), rows.length) +
 		row(__("By group"), group_text) +
 		'<hr style="margin:8px 0;border-top:1px solid var(--border-color)">' +
-		row(__("Customer weight"), format_number(customer, null, 2) + " Kg") +
+		row(__("Cust Weight (Total)"), format_number(customer, null, 2) + " Kg") +
 		row(__("Calculated weight"), format_number(calculated, null, 2) + " Kg") +
 		row(__("Difference"), (diff >= 0 ? "+" : "") + format_number(diff, null, 2) + " Kg (" +
 			(pct >= 0 ? "+" : "") + format_number(pct, null, 1) + "%)") +
@@ -722,7 +773,7 @@ function _so_render_bom_summary(frm) {
 		row(__("Raw materials"), verified ? __("Verified") : __("Not verified"),
 			verified ? "var(--green-600)" : "var(--orange-500)") +
 		'<div style="color:var(--text-muted);margin-top:8px;line-height:1.5">' +
-			__("Customer weight is the finished weight typed in the sheet. Calculated weight is what the raw materials listed under each drawing add up to — normally the heavier of the two, since stock is cut down to the part.") +
+			__("Cust Weight (Total) is the finished weight of all the pieces, typed in the sheet. Calculated weight is what the raw materials listed under each drawing add up to — normally the heavier of the two, since stock is cut down to the part.") +
 		'</div></div>';
 
 	$w.html(html);
@@ -1361,7 +1412,10 @@ const _SO_TABLE_VIEW_CONFIG = {
 			{ fieldname: "duno_mark_no",        label: "DUNO/Mark No" },
 			{ fieldname: "drawing_number",      label: "Cust Drawing Number" },
 			{ fieldname: "total_quantity",      label: "Total Quantity" },
-			{ fieldname: "total_weight",        label: "Customer Provided Weight (Kg)" },
+			// Same labels as the grid and the upload template (sep14 plan D30).
+			{ fieldname: "weight_per_pcs",      label: "Cust Weight (per Nos)" },
+			{ fieldname: "total_weight",        label: "Cust Weight (Total)" },
+			{ fieldname: "calculated_weight",   label: "Calculated Weight (Kg)" },
 			{ fieldname: "difference_kg",       label: "Difference Kg" },
 			{ fieldname: "drawing",             label: "Drawing" },
 			{ fieldname: "create_drawing",      label: "Create Drawing" },

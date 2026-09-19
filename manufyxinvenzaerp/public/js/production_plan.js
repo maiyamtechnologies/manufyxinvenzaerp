@@ -130,10 +130,16 @@ frappe.ui.form.on("Production Plan Item", {
 				frappe.model.set_value(cdt, cdn, "custom_drawing", d.custom_drawing || "");
 				frappe.model.set_value(cdt, cdn, "custom_duno_mark_no", d.custom_duno_mark_no || "");
 				frappe.model.set_value(cdt, cdn, "custom_customer_drawing_number", d.custom_customer_drawing_number || "");
+				_pp_mirror_fg_kg(frm, cdt, cdn);
 			}
 		);
 		// Auto-fill Process Planning table from BOM routing operations
 		_pp_autofill_operations(frm, row.bom_no);
+	},
+
+	// The planner types pieces; the Kg follows (sep14 FG plan, D5).
+	custom_sec_qty(frm, cdt, cdn) {
+		_pp_mirror_fg_kg(frm, cdt, cdn);
 	},
 
 	// Same contract as the BOM's own handler: the Rate Schedule belongs to the
@@ -152,6 +158,31 @@ frappe.ui.form.on("Production Plan Item", {
 		});
 	},
 });
+
+// Planned Qty (Kg) = Cust Weight (Total) x Qty (Nos) / drawing Nos, for display
+// only. The server (production_plan.apply_fg_nos) recalculates it on every save and
+// is the one that counts; this just saves the planner a round trip to see the Kg.
+function _pp_mirror_fg_kg(frm, cdt, cdn) {
+	let row = locals[cdt][cdn];
+	if (!row || !row.custom_drawing) return;
+	frappe.db.get_value("Drawing", row.custom_drawing,
+		["no_of_qty_to_manufacture", "customer_provided_wt", "weight_per_pcs"],
+		function(d) {
+			if (!d) return;
+			let drawing_nos = flt(d.no_of_qty_to_manufacture);
+			let total = flt(d.customer_provided_wt, 3);
+			if (!drawing_nos || !total) return;
+			let per_nos = flt(d.weight_per_pcs, 3) || flt(total / drawing_nos, 3);
+			frappe.model.set_value(cdt, cdn, "custom_sec_uom", "Nos");
+			frappe.model.set_value(cdt, cdn, "custom_customer_weight_kg", total);
+			frappe.model.set_value(cdt, cdn, "custom_cust_weight_per_nos", per_nos);
+			if (flt(row.custom_sec_qty) > 0) {
+				frappe.model.set_value(cdt, cdn, "planned_qty",
+					flt(total * flt(row.custom_sec_qty) / drawing_nos, 3));
+			}
+		}
+	);
+}
 
 function _pp_autofill_operations(frm, bom_no) {
 	if (!bom_no) return;
@@ -384,7 +415,7 @@ function _ppd_render_results(d, all_rows, search_mode, pp_name) {
 			<div style="margin-top:14px;" id="_ppd_other_pp_section">
 				<div style="font-size:12px;font-weight:600;color:#e65100;padding:6px 4px 4px;display:flex;align-items:center;gap:6px;">
 					<span>&#9888;</span>
-					${__("{0} drawing(s) already in another Production Plan — cannot be selected", [other_pp_rows.length])}
+					${__("{0} drawing(s) fully planned in other Production Plans — no pieces left", [other_pp_rows.length])}
 				</div>
 				<div style="overflow-x:auto;">
 					<div style="min-width:${_ref_min}px;">
@@ -569,8 +600,17 @@ const _PPD_COLS = [
 	{ label: "Sales Order",  w: 155, key: "so"   },
 	{ label: "Customer",     w: 95,  key: "cust" },
 	{ label: "Mat. Planning",w: 110, key: "mp"   },
-	{ label: "Qty",          w: 45,  key: "qty", align: "center" },
+	{ label: "Nos Left",     w: 70,  key: "qty", align: "center" },
 ];
+// "left / drawing" in pieces for a drawing row, e.g. "6 / 10": a drawing can be
+// split over several plans (D16), so what matters is what is still unplanned.
+function _ppd_qty_text(r) {
+	if (r.fg_nos_tracked) {
+		return String(flt(r.nos_left || 0, 3)) + " / " + String(flt(r.drawing_nos || 0, 3));
+	}
+	return String(flt(r.qty_to_manufacture || 0, 2));
+}
+
 const _PPD_COL_GAP = 8;   // gap between columns
 const _PPD_PAD     = 8;   // left/right padding inside header and rows
 
@@ -622,7 +662,7 @@ function _ppd_free_rows_html(rows, show_mp_col) {
 		let so   = frappe.utils.escape_html(r.sales_order || "—");
 		let cust = frappe.utils.escape_html(r.customer_name || r.customer || "");
 		let mp   = frappe.utils.escape_html(r.material_planning || "—");
-		let qty  = String(flt(r.qty_to_manufacture || 0, 2));
+		let qty  = _ppd_qty_text(r);
 		return `<label style="display:flex;align-items:center;gap:${_PPD_COL_GAP}px;padding:6px ${_PPD_PAD}px;cursor:pointer;border-bottom:1px solid #f0f0f0;user-select:none;">
 			<input type="checkbox" class="ppd-chk" data-orig="${r._orig_idx}" style="flex:0 0 ${C_CHK.w}px;width:${C_CHK.w}px;height:${C_CHK.w}px;cursor:pointer;">
 			${_ppd_cell(cdn,  C_CDN,  "font-size:12px;font-weight:500;color:#212529;")}
@@ -647,7 +687,7 @@ function _ppd_disabled_rows_html(rows, show_mp_col, type, pp_name) {
 		let so   = frappe.utils.escape_html(r.sales_order || "—");
 		let cust = frappe.utils.escape_html(r.customer_name || r.customer || "");
 		let mp   = frappe.utils.escape_html(r.material_planning || "—");
-		let qty  = String(flt(r.qty_to_manufacture || 0, 2));
+		let qty  = _ppd_qty_text(r);
 
 		let badge = "";
 		let chk_checked = "";
@@ -752,7 +792,6 @@ function _ppd_do_insert(frm, d, all_rows) {
 			child.item_code                      = s.item_code || "";
 			child.item_name                      = s.item_name || "";
 			child.bom_no                         = s.bom_no || "";
-			child.planned_qty                    = flt(s.qty_to_manufacture) || 1;
 			child.stock_uom                      = s.uom || "";
 			child.sales_order                    = s.sales_order || "";
 			child.custom_customer                = s.customer || "";
@@ -760,13 +799,19 @@ function _ppd_do_insert(frm, d, all_rows) {
 			child.custom_duno_mark_no            = s.duno_mark_no || "";
 			child.custom_customer_drawing_number = s.customer_drawing_number || "";
 			child.custom_material_planning       = s.material_planning || "";
-			// Customer weight is held PER PIECE on the Sales Order DUNO row, next to a
-			// Total Quantity of its own -- while every planned and transferred weight
-			// downstream is for the whole row. Scaling it here is what makes the three
-			// comparable: without it a drawing making two pieces reported 890 Kg of
-			// customer weight against 1,814 Kg planned and read as 100% waste, while
-			// the single-piece drawing beside it read 1.6%.
-			child.custom_customer_weight_kg      = flt(flt(s.customer_weight || 0) * flt(child.planned_qty), 3);
+			if (s.fg_nos_tracked) {
+				// Planned in pieces (sep14 FG plan, D5/D16): default to every piece no
+				// other plan has claimed. The Kg shown here mirrors the server, which
+				// recalculates it on save (apply_fg_nos) -- the one place it is decided.
+				child.custom_sec_qty             = flt(s.nos_left);
+				child.custom_sec_uom             = "Nos";
+				child.custom_customer_weight_kg  = flt(s.cust_weight_total, 3);
+				child.custom_cust_weight_per_nos = flt(s.cust_weight_per_nos, 3);
+				child.planned_qty                = s.drawing_nos
+					? flt(flt(s.cust_weight_total) * flt(s.nos_left) / flt(s.drawing_nos), 3) : 0;
+			} else {
+				child.planned_qty                = flt(s.qty_to_manufacture) || 1;
+			}
 			child.custom_planned_rm_weight_kg    = flt(weights[wt_key] || 0, 3);
 		});
 		frm.refresh_field("po_items");

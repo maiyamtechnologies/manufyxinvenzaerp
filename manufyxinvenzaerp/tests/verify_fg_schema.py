@@ -327,10 +327,11 @@ def _check_fg_stock():
                  "fg_batch_available", "kg_for_nos"):
         fn = getattr(fg_stock, name, None)
         check("fg_stock.%s defined and documented" % name, bool(fn and fn.__doc__), True)
-    # The two hooked entry points must be harmless until A4 fills them in.
-    dummy = frappe._dict(items=[], doctype="Stock Entry", stock_entry_type="Material Transfer")
-    check("validate_fg_stock_entry_rows is a no-op", fg_stock.validate_fg_stock_entry_rows(dummy), None)
-    check("on_fg_stock_entry_change is a no-op", fg_stock.on_fg_stock_entry_change(dummy), None)
+    # Wave 0 checked these two were harmless no-ops; A4 has since implemented them (its
+    # own test, verify_fg_final_stock_entry, covers their behaviour), so only their
+    # presence is a schema-level fact now.
+    for name in ("validate_fg_stock_entry_rows", "on_fg_stock_entry_change"):
+        check("fg_stock.%s is callable" % name, callable(getattr(fg_stock, name, None)), True)
 
 
 def run():

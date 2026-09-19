@@ -101,52 +101,9 @@ frappe.ui.form.on("Drawing", {
 			});
 		}
 
-		if (!frm.is_new()) {
+		if (!frm.is_new() && frm.doc.docstatus < 2) {
 			frm.add_custom_button(__("Update Customer Weight"), function () {
-				frappe.prompt(
-					[{
-						fieldname: "new_weight",
-						fieldtype: "Float",
-						label: __("New Customer Provided Weight (Kg)"),
-						reqd: 1,
-						default: frm.doc.customer_provided_wt,
-						description: __("Current value: {0} Kg", [frm.doc.customer_provided_wt || 0]),
-					}],
-					function (values) {
-						frappe.call({
-							method: "manufyxinvenzaerp.drawing_management.drawing_utils.update_customer_provided_weight",
-							args: { drawing_name: frm.doc.name, new_weight: values.new_weight },
-							freeze: true,
-							freeze_message: __("Updating weight and cascading to linked documents…"),
-							callback: function (r) {
-								if (!r.message) return;
-								var m = r.message;
-								frappe.msgprint({
-									title: __("Customer Weight Updated"),
-									indicator: "green",
-									message: __(
-										"Weight changed from {0} Kg to {1} Kg.<br>Sales Order updated: {2}<br>" +
-										"Production Plan Items updated: {3}<br>Drawing rows (Subcontracting Order / " +
-										"Material Issue Plan) updated: {4}<br>Subcontracting Orders re-totalled: {5}<br>" +
-										"Material Issue Plans refreshed: {6}<br>" +
-										"Operation Entry drawing rows updated: {7}<br><br>" +
-										"Batch allocation/reservation was <b>not</b> changed automatically — " +
-										"reallocate manually if needed.",
-										[
-											m.old_weight, m.new_weight, m.sales_order_updated ? __("Yes") : __("No"),
-											m.production_plan_items_updated, m.drawing_rows_updated,
-											m.subcontracting_orders_updated, m.material_issue_plans_updated,
-											m.operation_entry_rows_updated,
-										]
-									),
-								});
-								frm.reload_doc();
-							},
-						});
-					},
-					__("Update Customer Provided Weight"),
-					__("Update")
-				);
+				_drawing_update_customer_weight(frm);
 			});
 		}
 
@@ -233,6 +190,96 @@ frappe.ui.form.on("Drawing", {
 		});
 	},
 });
+
+// Update Customer Weight (sep14 FG plan, D15). The customer states the weight of
+// ONE piece, so that is what is asked for; the Total over all pieces -- the figure
+// every downstream document carries -- is worked out and shown live before saving.
+function _drawing_update_customer_weight(frm) {
+	var nos = flt(frm.doc.no_of_qty_to_manufacture);
+	var cur_per = flt(frm.doc.weight_per_pcs) || (nos ? flt(flt(frm.doc.customer_provided_wt) / nos, 3) : 0);
+	var cur_total = flt(frm.doc.customer_provided_wt);
+	var fmt = function (v) { return format_number(flt(v, 3), null, 3); };
+
+	var d = new frappe.ui.Dialog({
+		title: __("Update Customer Weight"),
+		fields: [
+			{
+				fieldname: "new_weight_per_nos",
+				fieldtype: "Float",
+				precision: 3,
+				label: __("New Cust Weight (per Nos)"),
+				reqd: 1,
+				default: cur_per,
+				description: __("Enter the weight of ONE piece. Total = this × {0} Nos. Current: {1} Kg per Nos, {2} Kg total.",
+					[nos, fmt(cur_per), fmt(cur_total)]),
+				onchange: function () { _show_new_total(); },
+			},
+			{ fieldname: "new_total_html", fieldtype: "HTML" },
+		],
+		primary_action_label: __("Update"),
+		primary_action: function (values) {
+			d.hide();
+			frappe.call({
+				method: "manufyxinvenzaerp.drawing_management.drawing_utils.update_customer_provided_weight",
+				args: { drawing_name: frm.doc.name, new_weight_per_nos: values.new_weight_per_nos },
+				freeze: true,
+				freeze_message: __("Updating weight and cascading to linked documents…"),
+				callback: function (r) {
+					if (!r.message) return;
+					_drawing_weight_result(r.message);
+					frm.reload_doc();
+				},
+			});
+		},
+	});
+
+	function _show_new_total() {
+		var per = flt(d.get_value("new_weight_per_nos"));
+		d.fields_dict.new_total_html.$wrapper.html(
+			'<div style="font-size:13px;">' + __("New total") + ": <b>" + fmt(per * nos) + " Kg</b> (" +
+			fmt(per) + " × " + nos + " Nos)</div>"
+		);
+	}
+	d.show();
+	_show_new_total();
+}
+
+function _drawing_weight_result(m) {
+	var esc = frappe.utils.escape_html;
+	var fmt = function (v) { return format_number(flt(v, 3), null, 3); };
+	var html = __("Cust Weight (per Nos) changed from {0} to {1} Kg; Cust Weight (Total) from {2} to {3} Kg ({4} Nos).",
+		[fmt(m.old_weight_per_nos), fmt(m.new_weight_per_nos), fmt(m.old_weight), fmt(m.new_weight), m.nos]);
+	html += "<br><br>" + __("Sales Order updated: {0}", [m.sales_order_updated ? __("Yes") : __("No")]) +
+		"<br>" + __("Production Plan Items updated: {0} (draft plans recalculated in Kg: {1})",
+			[m.production_plan_items_updated, m.draft_production_plans_recalculated]) +
+		"<br>" + __("Drawing rows (Job Work Order / Material Issue Plan) updated: {0}", [m.drawing_rows_updated]) +
+		"<br>" + __("Job Work Orders re-totalled: {0}", [m.subcontracting_orders_updated]) +
+		"<br>" + __("Material Issue Plans refreshed: {0}", [m.material_issue_plans_updated]) +
+		"<br>" + __("Operation Entry drawing rows updated: {0}", [m.operation_entry_rows_updated]) +
+		"<br>" + __("BOMs updated: {0}", [m.boms_updated]);
+
+	if ((m.draft_job_work_orders_recalculated || []).length) {
+		html += "<br><br>" + __("Draft Job Work Orders recalculated (Kg, rate and amount): {0}",
+			[m.draft_job_work_orders_recalculated.map(esc).join(", ")]);
+	}
+	if ((m.submitted_job_work_orders || []).length) {
+		html += '<br><br><span style="color:var(--orange-600,#d97706);">' +
+			__("Submitted Job Work Orders keep their quantity and amount: {0}. Amend them if they must follow the new weight.",
+				[m.submitted_job_work_orders.map(esc).join(", ")]) + "</span>";
+	}
+	// The order was taken on the old weight, so a difference is expected: reported
+	// in orange, never blocked.
+	(m.sales_order_lines || []).forEach(function (l) {
+		if (!flt(l.difference_kg, 3) && !flt(l.difference_nos, 3)) return;
+		html += '<br><br><span style="color:var(--orange-600,#d97706);">' +
+			__("Sales Order {0}, {1}: ordered {2} Kg / {3} Nos, drawings now {4} Kg / {5} Nos — difference {6} Kg, {7} Nos.",
+				[esc(l.sales_order), esc(l.item_code), fmt(l.ordered_kg), l.ordered_nos, fmt(l.drawings_kg),
+				 l.drawings_nos, fmt(l.difference_kg), l.difference_nos]) + "</span>";
+	});
+	html += "<br><br>" + __("Batch allocation/reservation was <b>not</b> changed automatically — reallocate manually if needed.");
+
+	frappe.msgprint({ title: __("Customer Weight Updated"), indicator: "green", message: html });
+}
 
 frappe.ui.form.on("Drawing Item", {
 	material_code(frm, cdt, cdn) {

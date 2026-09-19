@@ -22,6 +22,8 @@ def validate_stock_entry(doc, method):
 	if doc.stock_entry_type == "Manufacture":
 		_populate_manufacture_sec_qty(doc)
 
+	_set_nuts_and_bolts_kg(doc)
+
 	# Always compute header totals regardless of SE type
 	doc.custom_total_qty     = flt(sum(flt(r.qty) for r in doc.items), 3)
 	doc.custom_total_sec_qty = flt(sum(flt(r.get("custom_sec_qty") or 0) for r in doc.items), 3)
@@ -120,6 +122,8 @@ def on_submit_stock_entry(doc, method):
 				_reduce_batch_sec_qty(row.batch_no, row.custom_sec_qty)
 
 	elif doc.stock_entry_type == "Material Receipt":
+		_add_receipt_sec_qty_to_existing_batches(doc)
+
 		# Off-cuts coming back from a Return Excess Entry may already be spoken for:
 		# another job can claim one through Excess Material Mapping's virtual picker
 		# while it is still physically at the supplier. Collected here and reported
@@ -980,6 +984,88 @@ def _restore_batch_sec_qty(doc):
 			batch_no = _cancelled_row_batch_no(row, doc.name)
 			if batch_no and flt(row.get("custom_sec_qty")):
 				_reduce_batch_sec_qty(batch_no, -flt(row.custom_sec_qty))
+
+	elif doc.stock_entry_type == "Material Receipt":
+		# The receipt's pieces leave the batch with its Kg. This covers both kinds
+		# of batch: one this receipt created (before_insert_batch gave it the row's
+		# Nos) and one it topped up (_add_receipt_sec_qty_to_existing_batches added
+		# them). Without it a cancelled receipt left a batch of 0 Kg still claiming
+		# its pieces. FG rows are fg_stock's (refresh_fg_batch recomputes them).
+		for row in doc.items:
+			if _is_fg_row(row):
+				continue
+			batch_no = _cancelled_row_batch_no(row, doc.name)
+			if batch_no and flt(row.get("custom_sec_qty")):
+				_reduce_batch_sec_qty(batch_no, flt(row.custom_sec_qty))
+
+
+def _is_fg_row(row):
+	from manufyxinvenzaerp.production_management.fg_stock import is_fg_item
+
+	return is_fg_item(row.get("item_code"))
+
+
+def _add_receipt_sec_qty_to_existing_batches(doc):
+	"""A Material Receipt into a batch that already exists adds its Nos to it.
+
+	With Stock Reconciliation blocked (sep14 FG plan, D21) a correction is a
+	Material Issue out of the batch and a Material Receipt back into it. The issue
+	took its Nos off, and the receipt put the Kg back but not the Nos, so the batch
+	ended up with every kilo and fewer pieces than it holds.
+
+	A batch this receipt created is skipped: before_insert_batch already copied
+	the row's Nos onto it (only for items with a Custom Batch Abbreviation --
+	without one ERPNext names the batch and nothing copied the Nos, so it is added
+	here). FG rows are left to fg_stock.
+	"""
+	for row in doc.items:
+		if _is_fg_row(row) or not flt(row.get("custom_sec_qty")):
+			continue
+		batch_no = _cancelled_row_batch_no(row, doc.name)
+		if not batch_no:
+			continue
+		ref_doctype, ref_name = frappe.db.get_value(
+			"Batch", batch_no, ["reference_doctype", "reference_name"]
+		) or (None, None)
+		created_here = ref_doctype == "Stock Entry" and ref_name == doc.name
+		if created_here and frappe.db.get_value("Item", row.item_code, "custom_batch_prefix"):
+			continue
+		_reduce_batch_sec_qty(batch_no, -flt(row.custom_sec_qty))
+
+
+# Movements whose Nuts and Bolts rows get their Kg from the Nos (see below).
+_NUTS_AND_BOLTS_KG_SE_TYPES = {"Material Transfer", "Material Issue", "Material Receipt"}
+
+
+def _set_nuts_and_bolts_kg(doc):
+	"""Nuts and Bolts are stocked in Nos with the Kg as Sec Qty; fill that Kg.
+
+	Nothing filled it on a Stock Entry -- not the form, not the server -- so every
+	Material Transfer, Issue and Receipt of bolts carried 0 Kg, while the Purchase
+	Receipt that brought them in (purchase_receipt._recalculate_qty) always sets
+	it. Same rule as there: Kg = Nos x the item's Unit Weight, 3 dp, recomputed on
+	every save because it is derived, not typed.
+
+	Limited to the three plain movements. Manufacture works its consumed Sec Qty
+	out from the batch (_populate_manufacture_sec_qty), and the Material Issue Plan
+	entries (Send to Subcontractor) build their own rows.
+	"""
+	if doc.stock_entry_type not in _NUTS_AND_BOLTS_KG_SE_TYPES:
+		return
+	from manufyxinvenzaerp.utils.dimension_formula import calculate_sec_qty_from_qty
+
+	for row in doc.items:
+		group = (row.get("custom_parent_item_group") or "").strip() or frappe.get_cached_value(
+			"Item", row.item_code, "custom_parent_item_group"
+		)
+		if group != "Nuts and Bolts":
+			continue
+		unit_weight = flt(row.get("custom_unit_weight")) or flt(
+			frappe.get_cached_value("Item", row.item_code, "custom_unit_weight")
+		)
+		kg = calculate_sec_qty_from_qty(unit_weight, flt(row.qty))
+		if kg is not None:
+			row.custom_sec_qty = flt(kg, 3)
 
 
 def _restore_material_planning_reservations(doc):

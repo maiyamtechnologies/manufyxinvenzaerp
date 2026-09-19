@@ -75,6 +75,14 @@ def create_sco_from_production_plan(pp_name):
         fg_warehouse = pp_item.warehouse or ""
         bom_no = pp_item.bom_no
 
+    # A plan made in pieces (sep14 FG plan, D5) is carried in Kg: the order's one item
+    # line holds the Kg of every drawing on the plan, with their pieces as Qty (Nos).
+    # A plan from before the change has no Nos, and its first row's quantity stays
+    # the order quantity, as it always was (D13).
+    fg_nos = sum(flt(pi.get("custom_sec_qty")) for pi in (pp.po_items or []))
+    if fg_nos and not wo_name:
+        fg_qty = flt(sum(flt(pi.planned_qty) for pi in pp.po_items), 3)
+
     company = (
         frappe.defaults.get_user_default("Company")
         or frappe.db.get_single_value("Global Defaults", "default_company")
@@ -114,6 +122,8 @@ def create_sco_from_production_plan(pp_name):
             mapped = _get_mp_total_weight(mp_name)
             excess = sum(_excess_cache[mp_name].values())
 
+        # Cust Weight (Total) is the whole drawing's, all pieces (D2) -- the same
+        # basis as the planned and mapped raw-material weights beside it.
         customer = flt(pi.get("custom_customer_weight_kg"), 3)
         total_customer += customer
         total_planned  += planned
@@ -131,8 +141,26 @@ def create_sco_from_production_plan(pp_name):
             "total_weight_kg": flt(planned, 3),
             "mapped_weight_kg": flt(mapped, 3),
             "excess_weight_kg": flt(excess, 3),
-            "qty_to_manufacture": flt(pi.get("planned_qty"), 3),
+            # Pieces: every operation entry counts this drawing in Nos. planned_qty is
+            # Kg on a plan made in pieces, so it is only the fallback for an old one.
+            "qty_to_manufacture": flt(pi.get("custom_sec_qty") or pi.get("planned_qty"), 3),
+            "cust_weight_per_nos": flt(pi.get("custom_cust_weight_per_nos"), 3),
+            "_kg": flt(pi.planned_qty, 3),
         })
+
+    # Job work is paid per Kg of each drawing at its own schedule's rate (D31). The
+    # order has one item line and several drawings, so that line's rate is the
+    # Kg-weighted average and its amount the sum of the drawings' amounts (R3).
+    item_rate = 0
+    if fg_nos:
+        figures = _job_work_figures([
+            frappe._dict(drawing=r["drawing"], kg=r["_kg"], name=i) for i, r in enumerate(drawing_rows)
+        ])
+        for r in figures.rows:
+            drawing_rows[r.name].update({"rate_per_kg": r.rate_per_kg, "job_work_amount": r.amount})
+        item_rate = figures.rate
+    for r in drawing_rows:
+        r.pop("_kg", None)
 
     sco = frappe.get_doc({
         "doctype": "Subcontracting Order",
@@ -147,11 +175,18 @@ def create_sco_from_production_plan(pp_name):
             "uom": uom,
             "warehouse": fg_warehouse or "",
             "bom": bom_no,
-            "rate": 0,
+            "rate": item_rate,
+            "amount": flt(flt(fg_qty) * item_rate, 2),
+            "custom_sec_qty": fg_nos or None,
+            "custom_sec_uom": "Nos" if fg_nos else None,
             "subcontracting_conversion_factor": 1,
         }],
         "custom_production_plan": pp_name,
         "custom_work_order": wo_name or "",
+        # Set here because the insert below skips validate, which is what would
+        # otherwise total them (_pp_calculate_amounts).
+        "total_qty": flt(fg_qty) or 1,
+        "total": flt(flt(fg_qty) * item_rate, 2),
         "custom_customer_weight_kg": flt(total_customer, 3),
         "custom_total_weight_kg": flt(total_planned, 3),
         "custom_mapped_weight_kg": flt(total_mapped, 3),
@@ -183,6 +218,43 @@ def create_sco_from_production_plan(pp_name):
         frappe.get_doc(row_data).insert(ignore_permissions=True)
 
     return sco.name
+
+
+def _job_work_figures(rows):
+    """Job work Kg, rate and amount for a Job Work Order's drawing rows (D31, R3).
+
+    Each row is a dict with `drawing` and either `kg` (the Kg this order makes of it,
+    e.g. the Production Plan's Planned Qty) or `nos` (pieces; the Kg is then worked
+    from the drawing's current Cust Weight (Total)). `rate_per_kg` is the drawing's
+    Rate/KG unless the row already carries one.
+
+    Returns rows with kg / rate_per_kg / amount (2 dp), the totals, and the weighted
+    rate = total amount / total Kg -- kept unrounded so that Kg x rate gives the
+    amount back to the paisa on the order's single item line."""
+    from manufyxinvenzaerp.production_plan_management.production_plan import (
+        drawing_fg_weights, fg_kg_for_nos,
+    )
+
+    out, total_kg, total_amount, cache = [], 0.0, 0.0, {}
+    for r in rows:
+        drawing = r.get("drawing")
+        if drawing and drawing not in cache:
+            cache[drawing] = drawing_fg_weights(drawing)
+        info = cache.get(drawing)
+        kg = r.get("kg")
+        if kg is None:
+            kg = fg_kg_for_nos(info.total, r.get("nos"), info.nos) if info else 0.0
+        kg = flt(kg, 3)
+        rate = flt(r.get("rate_per_kg")) or (flt(info.rate_per_kg) if info else 0.0)
+        amount = flt(kg * rate, 2)
+        total_kg += kg
+        total_amount += amount
+        out.append(frappe._dict(name=r.get("name"), drawing=drawing, kg=kg, rate_per_kg=rate, amount=amount))
+    total_kg, total_amount = flt(total_kg, 3), flt(total_amount, 2)
+    return frappe._dict(
+        rows=out, kg=total_kg, amount=total_amount,
+        rate=(total_amount / total_kg) if total_kg else 0.0,
+    )
 
 
 @frappe.whitelist()
@@ -403,11 +475,17 @@ def _fg_already_booked(sco_name):
 
     Read off the finished-goods rows of submitted Manufacture entries, which carry the
     drawing they were made for. Without it a second run would re-book pieces the first
-    run had already produced."""
+    run had already produced.
+
+    Pieces are the row's Sec Qty (Nos): finished goods are stocked in Kg now, so qty is
+    a weight. A row with no Sec Qty is an entry from before that change, when qty held
+    the piece count, so qty is what it counts."""
     booked = {}
     for r in frappe.db.sql(
         """
-        SELECT sed.custom_drawing AS drawing, SUM(sed.qty) AS qty
+        SELECT sed.custom_drawing AS drawing,
+               SUM(CASE WHEN IFNULL(sed.custom_sec_qty, 0) != 0 THEN sed.custom_sec_qty
+                        ELSE sed.qty END) AS qty
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON se.name = sed.parent
         WHERE se.subcontracting_order = %(sco)s AND se.stock_entry_type = 'Manufacture'
@@ -549,12 +627,17 @@ def get_final_stock_entry_preview(sco_name):
         if d.drawing
     }
 
+    from manufyxinvenzaerp.production_management.fg_stock import planned_kg_per_nos
+
     drawings, total_ready = [], 0.0
     for drawing, d in completed.items():
         done = flt(d.completed_qty_nos, 3)
         already = flt(booked.get(drawing), 3)
         ready = flt(done - already, 3)
         total_ready += max(ready, 0.0)
+        # Finished goods are booked in Kg: the pieces ready x the drawing's Cust Weight
+        # (per Nos) is what the entry will propose (sep14 FG plan, D7).
+        per_nos = planned_kg_per_nos(drawing)
         drawings.append({
             "drawing": drawing,
             "duno_mark_no": d.duno_mark_no or "",
@@ -563,6 +646,8 @@ def get_final_stock_entry_preview(sco_name):
             "completed_qty_nos": done,
             "already_booked": already,
             "ready_to_book": max(ready, 0.0),
+            "cust_weight_per_nos": per_nos,
+            "planned_kg": flt(max(ready, 0.0) * per_nos, 3),
         })
 
     total_ready = flt(total_ready, 3)
@@ -683,28 +768,7 @@ def create_finished_goods_entry(sco_name):
     #
     # Each row carries the drawing it was made for, which is what _fg_already_booked
     # reads on the next run so the same piece is never booked twice.
-    item_by_drawing = {
-        d.drawing: d for d in (sco.get("custom_drawing_items") or []) if d.get("drawing")
-    }
-    fg_rows = []
-    for row in preview["drawings"]:
-        if flt(row["ready_to_book"]) <= 0:
-            continue
-        d = item_by_drawing.get(row["drawing"])
-        item_code = (d.item_code if d else None) or (sco.items[0].item_code if sco.items else None)
-        if not item_code:
-            continue
-        fg_rows.append({
-            "item_code": item_code,
-            "qty": flt(row["ready_to_book"], 3),
-            "uom": frappe.db.get_value("Item", item_code, "stock_uom") or "Nos",
-            "t_warehouse": fg_warehouse,
-            "is_finished_item": 1,
-            "custom_drawing": row["drawing"],
-            "custom_duno_mark_no": row["duno_mark_no"],
-            "custom_customer_drawing_number": row["customer_drawing_number"],
-            "description": row["duno_mark_no"] or row["customer_drawing_number"] or "",
-        })
+    fg_rows = _final_fg_rows(sco, preview, fg_warehouse)
     if not fg_rows:
         frappe.throw(_("No finished-good item found for the drawings that are complete."))
 
@@ -719,6 +783,89 @@ def create_finished_goods_entry(sco_name):
     })
     se.insert(ignore_permissions=True)
     return {"name": se.name, "already_existed": False}
+
+
+def _final_fg_rows(sco, preview, fg_warehouse):
+    """The finished-goods rows of a Final Stock Entry, one per drawing ready to book.
+
+    Finished goods are stocked in Kg and counted in Nos (sep14 FG plan): each row is
+    Nos x the drawing's Cust Weight (per Nos) in Kg -- the user may overwrite it with
+    the weighed figure when Edit FG Stock Kg is on -- with the Nos as Sec Qty, and goes
+    into the drawing's own batch FG-<Sales Order>-<DUNO>, created here on the first
+    entry and reused by every later one. The batch is named on the row with
+    use_serial_batch_fields, as the consumption rows are, so ERPNext builds the
+    Serial and Batch Bundle on submit.
+
+    The batch is made before the entry exists, so it carries no reference yet;
+    fg_stock.on_fg_stock_entry_change points it at the entry that submits first. A
+    batch referencing a draft would stop that draft ever being deleted."""
+    from manufyxinvenzaerp.production_management.fg_stock import (
+        get_or_create_fg_batch,
+        is_fg_item,
+    )
+
+    item_by_drawing = {
+        d.drawing: d for d in (sco.get("custom_drawing_items") or []) if d.get("drawing")
+    }
+    fg_rows = []
+    for row in preview["drawings"]:
+        nos = flt(row["ready_to_book"], 3)
+        if nos <= 0:
+            continue
+        d = item_by_drawing.get(row["drawing"])
+        item_code = (d.item_code if d else None) or (sco.items[0].item_code if sco.items else None)
+        if not item_code:
+            continue
+
+        item = frappe.db.get_value(
+            "Item", item_code, ["stock_uom", "has_batch_no"], as_dict=True) or frappe._dict()
+        if not (is_fg_item(item_code) and item.stock_uom == "Kg" and cint(item.has_batch_no)):
+            frappe.throw(
+                _("Finished-goods item {0} must be a Finished Goods item stocked in Kg with "
+                  "Has Batch No ticked: its pieces are counted per drawing batch.").format(item_code),
+                title=_("Finished-Goods Item Not Set Up"),
+            )
+
+        drg = frappe.db.get_value(
+            "Drawing", row["drawing"],
+            ["sales_order", "customer", "weight_per_pcs", "duno_mark_no", "customer_drawing_number"],
+            as_dict=True,
+        ) or frappe._dict()
+        per_nos = flt(drg.weight_per_pcs) or flt(d.get("cust_weight_per_nos") if d else 0)
+        if not per_nos:
+            frappe.throw(
+                _("Drawing {0} has no Cust Weight (per Nos), so its finished goods cannot be "
+                  "weighed. Set it with Update Customer Weight on the Drawing.").format(row["drawing"]),
+                title=_("Cust Weight Missing"),
+            )
+        sales_order = drg.sales_order or (d.get("sales_order") if d else None)
+        customer = drg.customer or (
+            frappe.db.get_value("Sales Order", sales_order, "customer") if sales_order else None)
+        duno = row["duno_mark_no"] or drg.duno_mark_no or ""
+        customer_drawing_number = row["customer_drawing_number"] or drg.customer_drawing_number or ""
+
+        batch_no = get_or_create_fg_batch(
+            item_code, sales_order, row["drawing"], duno, customer,
+            customer_drawing_number, sco.name, per_nos, None,
+        )
+        fg_rows.append({
+            "item_code": item_code,
+            "qty": flt(nos * per_nos, 3),
+            "uom": "Kg",
+            "conversion_factor": 1,
+            "custom_sec_qty": nos,
+            "custom_sec_uom": "Nos",
+            "batch_no": batch_no,
+            "use_serial_batch_fields": 1,
+            "t_warehouse": fg_warehouse,
+            "is_finished_item": 1,
+            "custom_drawing": row["drawing"],
+            "custom_duno_mark_no": duno,
+            "custom_customer_drawing_number": customer_drawing_number,
+            "custom_sales_order": sales_order,
+            "description": duno or customer_drawing_number or "",
+        })
+    return fg_rows
 
 
 # ─────────────────────────────────────────────────────────────────────────────

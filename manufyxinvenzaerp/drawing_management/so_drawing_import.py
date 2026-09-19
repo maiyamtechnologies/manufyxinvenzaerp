@@ -1,6 +1,6 @@
 import frappe
 from frappe import _
-from frappe.utils import flt, now as frappe_now, generate_hash
+from frappe.utils import cint, flt, now as frappe_now, generate_hash
 from manufyxinvenzaerp.utils.dimension_formula import calculate_qty as _shared_calculate_qty
 
 
@@ -93,7 +93,17 @@ def _parse_excel(file_path):
                 "duno_mark_no": _sstr(_get(row, "duno/mark no", "duno mark no")),
                 "fg_item_code": _sstr(fg_raw) if fg_raw else "",
                 "total_quantity": _sflt(_get(row, "total qty")),
-                "total_weight": _sflt(_get(row, "total weight (kg)", "total weight")),
+                # Customer weight comes as two figures (sep14 plan D2, §4.2): one piece,
+                # and all the pieces of the drawing. Both are read as typed and never
+                # derived from each other -- Verify Raw Materials checks that
+                # per Nos x Total Qty = Total, which only means something if the two
+                # came from the sheet independently. Sheets made from the old template
+                # still load: "Weight per Pcs (KG)" is the per Nos figure and
+                # "Total Weight (KG)" the Total.
+                "weight_per_pcs": _sflt(_get(row, "cust weight (per nos)",
+                                             "weight per pcs (kg)", "weight per pcs")),
+                "total_weight": _sflt(_get(row, "cust weight (total)",
+                                           "total weight (kg)", "total weight")),
                 # Both are Drawing-level and are carried through as typed. They are
                 # NOT validated here: the import stages rows with a raw SQL insert
                 # that bypasses Link validation, so an unknown value has to reach the
@@ -267,7 +277,7 @@ def parse_bom_excel(so_name):
         "name", "parent", "parenttype", "parentfield", "idx",
         "creation", "modified", "modified_by", "owner", "docstatus",
         "assembly_group", "item", "item_name", "duno_mark_no", "drawing_number",
-        "total_quantity", "total_weight", "calculated_weight",
+        "total_quantity", "weight_per_pcs", "total_weight", "calculated_weight",
         "nature_of_work", "rate_schedule",
         "create_drawing", "submit_drawing", "mark_final_revision", "create_bom",
     ]
@@ -280,7 +290,8 @@ def parse_bom_excel(so_name):
             now, now, user, user, 0,
             d["assembly_group"], fg, fg_name_map.get(fg, ""),
             d["duno_mark_no"], cdn,
-            d["total_quantity"], d["total_weight"], calc_weight_by_cdn.get(cdn, 0.0),
+            d["total_quantity"], flt(d.get("weight_per_pcs"), 3), flt(d["total_weight"], 3),
+            calc_weight_by_cdn.get(cdn, 0.0),
             d.get("nature_of_work") or "", d.get("rate_schedule") or "",
             1, 1, 1, 1,
         ))
@@ -391,10 +402,25 @@ def create_drawings_from_import(so_name, batch_start=0, batch_size=30):
     batch_start = int(batch_start)
     batch_size = int(batch_size)
 
+    # The Verify gate, on the server (sep14 plan D25). The form already refuses to
+    # start without it, but this method is whitelisted, so a direct call or a stale
+    # form would otherwise build drawings from rows nobody verified -- including FG
+    # weights that do not add up to the order. Checked on the first batch only: the
+    # later batches are the same run continuing, and the drawings it has just
+    # created must not be stranded half-way by a re-check.
+    if batch_start == 0 and not cint(
+        frappe.db.get_value("Sales Order", so_name, "custom_raw_materials_verified")
+    ):
+        frappe.throw(
+            _("Raw materials on {0} are not verified. Click <b>Verify Raw Materials</b> "
+              "and resolve every issue before creating drawings.").format(so_name),
+            title=_("Verification Required"),
+        )
+
     # Lightweight SQL — never load the full SO doc with all child tables
     all_pending = frappe.db.sql(
         """SELECT name, drawing_number, item, duno_mark_no, total_quantity, total_weight
-           , nature_of_work, rate_schedule
+           , weight_per_pcs, nature_of_work, rate_schedule
            FROM `tabSales Order DUNO Item`
            WHERE parent = %s AND create_drawing = 1
              AND (drawing IS NULL OR drawing = '')
@@ -482,7 +508,11 @@ def create_drawings_from_import(so_name, batch_start=0, batch_size=30):
                 "no_of_qty_to_manufacture": flt(dr.total_quantity),
                 "duno_mark_no": dr.duno_mark_no or "",
                 "customer_drawing_number": cdn or "",
-                "customer_provided_wt": flt(dr.total_weight),
+                # Cust Weight (Total) -- every piece of the drawing -- and one piece
+                # beside it (D2). The Total is what goes downstream everywhere (D30);
+                # the per Nos figure is what Update Customer Weight edits later.
+                "customer_provided_wt": flt(dr.total_weight, 3),
+                "weight_per_pcs": flt(dr.get("weight_per_pcs"), 3),
                 # Carried from the import sheet. verify_raw_materials has already
                 # confirmed both exist in their masters, so these are safe to set as
                 # Links here.
@@ -710,6 +740,8 @@ def _at(table, idx, text):
 # request and would pin the message to whatever language the worker started in.
 DRAWING_LIST = "Drawing List"
 RAW_MATERIALS = "Raw Materials"
+# The order's own lines, for the finished-goods totals (_check_fg_weights).
+ITEMS = "Items"
 
 
 def _check_drawing_masters(so):
@@ -852,6 +884,71 @@ def _check_drawing_headers(so):
     return issues
 
 
+def _check_fg_weights(so):
+    """Finished-goods weights and piece counts (sep14 plan D2-D4). Every one blocks.
+
+    Run only while some Drawing List row is still waiting for its Drawing: that is
+    all Verify gates. An order whose drawings all exist has nothing left to create,
+    and its rows can no longer be corrected from the sheet anyway.
+
+    For each pending row of an FG item:
+      - Cust Weight (per Nos) and Cust Weight (Total) are both given, and
+        per Nos x Total Qty = Total at 3 decimals (D14 -- no other tolerance);
+      - its FG item is on the order's items table (D4). A second FG item that the
+        order does not sell would produce drawings nothing can be delivered against.
+    For each FG item on the items table, over ALL its Drawing List rows (created or
+    not): the Totals add up to the line Quantity in Kg and the Total Qtys to the line
+    Qty (Nos). A sheet that describes 245 Kg of a 250 Kg order is short by a drawing
+    or a weight, and every plan built from it would be short too.
+
+    Rows of items that are not finished goods are left to the older checks.
+    """
+    from manufyxinvenzaerp.drawing_management.sales_order import (
+        fg_line_mismatch_text, fg_line_totals, fmt_qty,
+    )
+    from manufyxinvenzaerp.production_management.fg_stock import is_fg_item
+
+    rows = so.get("custom_duno_items") or []
+    pending = [r for r in rows if not r.get("drawing")]
+    if not pending:
+        return []
+
+    ordered_items = {d.item_code for d in (so.get("items") or []) if d.get("item_code")}
+    issues = []
+    for r in pending:
+        if not r.get("item") or not is_fg_item(r.item):
+            continue
+        label = r.get("drawing_number") or r.get("duno_mark_no") or "?"
+
+        def _issue(text, _r=r, _label=label):
+            issues.append(_at(DRAWING_LIST, _r.idx,
+                              _("Drawing {0}: {1}").format(_label, text)))
+
+        if r.item not in ordered_items:
+            _issue(_("FG Item <b>{0}</b> is not on this Sales Order's items table. "
+                     "Add a line for it, or correct the FG Item in the sheet.").format(r.item))
+
+        per_nos = flt(r.get("weight_per_pcs"))
+        total = flt(r.get("total_weight"))
+        nos = flt(r.get("total_quantity"))
+        if per_nos <= 0:
+            _issue(_("Cust Weight (per Nos) is missing — fill the weight of one piece in the "
+                     "sheet's Cust Weight (per Nos) column."))
+        if total <= 0:
+            _issue(_("Cust Weight (Total) is missing — fill the weight of all {0} pieces in the "
+                     "sheet's Cust Weight (Total) column.").format(fmt_qty(nos)))
+        if per_nos > 0 and total > 0 and nos > 0 and flt(per_nos * nos, 3) != flt(total, 3):
+            _issue(_("Cust Weight (per Nos) {0} Kg × {1} Nos = {2} Kg, but Cust Weight (Total) "
+                     "is {3} Kg — difference {4} Kg. Correct one of them in the sheet.")
+                   .format(fmt_qty(per_nos), fmt_qty(nos), fmt_qty(per_nos * nos),
+                           fmt_qty(total), fmt_qty(total - per_nos * nos)))
+
+    for t in fg_line_totals(so):
+        if not t.matches:
+            issues.append(_at(ITEMS, t.idx, fg_line_mismatch_text(t)))
+    return issues
+
+
 def _check_duno_reuse(so):
     """Marks on this Sales Order that another Sales Order already uses.
 
@@ -906,7 +1003,7 @@ def verify_raw_materials(so_name):
     # Drawings were re-verified and could fail on a sheet correction that no
     # longer applies to them.
     unlocked = [r for r in (so.custom_so_raw_materials or []) if not r.get("is_locked")]
-    issues = _check_drawing_masters(so) + _check_drawing_headers(so)
+    issues = _check_drawing_masters(so) + _check_drawing_headers(so) + _check_fg_weights(so)
     # Kept OUT of `issues` on purpose. `verified` is `not issues`, so anything added
     # there blocks drawing creation -- and a mark reused by an unrelated customer is
     # not a fault in this sheet. It is reported separately so it is seen at import
@@ -1027,9 +1124,12 @@ def download_bom_template():
     # header columns and repeat on every row of a drawing, same as Assembly Group.
     # Both must be the master record's NAME exactly as it reads there -- Rate Schedule
     # is named by its own RS No, so what the client types IS the record.
+    # Customer weight is two columns (sep14 plan §4.2): one piece, and all Total Qty
+    # pieces. Verify Raw Materials checks per Nos x Total Qty = Total, so the sample
+    # below is a set that passes: 5 Nos x 50 Kg = 250 Kg.
     headers = [
         "Assembly Group", "Customer Drawing Number", "DUNO/Mark No",
-        "FG Item", "Total Qty", "Total Weight (KG)",
+        "FG Item", "Total Qty", "Cust Weight (per Nos)", "Cust Weight (Total)",
         "Nature of Work", "Rate Schedule",
         "Item No", "Material Code", "Grade", "Thickness", "Width", "Length",
         "Reqd Raw Material Qty",
@@ -1044,13 +1144,13 @@ def download_bom_template():
 
     # Sample row 1 — drawing CDN-001, item 1
     ws.append([
-        "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 250.0,
+        "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
         "1", "MAT-STRUCT-001", "A36", 0, 0, 3000, 2,
     ])
     # Sample row 2 — same drawing CDN-001, item 2 (same header columns repeated)
     ws.append([
-        "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 250.0,
+        "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
         "2", "MAT-PLATE-001", "IS2062", 10, 200, 1500, 1,
     ])

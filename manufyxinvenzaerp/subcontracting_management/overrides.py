@@ -290,7 +290,10 @@ class CustomSubcontractingOrder(SubcontractingOrder):
     def _pp_calculate_amounts(self):
         total_qty = total = 0
         for item in self.items:
-            item.amount = flt(item.qty) * flt(item.rate)
+            # Rounded to the field: the rate of a Job Work Order is a Kg-weighted
+            # average of its drawings' rates (sep14 FG plan, R3) and is stored
+            # unrounded so that Kg x rate lands back on the drawings' summed amount.
+            item.amount = flt(flt(item.qty) * flt(item.rate), item.precision("amount"))
             total_qty += flt(item.qty)
             total += flt(item.amount)
         self.total_qty = total_qty

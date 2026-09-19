@@ -178,6 +178,9 @@ doc_events = {
 	},
 	"Sales Order": {
 		"validate": "manufyxinvenzaerp.drawing_management.sales_order.recalculate_raw_material_qty",
+		# A submitted order skips validate, and the Drawing List stays editable after
+		# submit (allow_on_submit), so the lock on drawn rows has to run here as well.
+		"before_update_after_submit": "manufyxinvenzaerp.drawing_management.sales_order.lock_drawn_rows",
 	},
 	"Purchase Order": {
 		"validate": "manufyxinvenzaerp.purchase_order_management.purchase_order.validate_purchase_order",

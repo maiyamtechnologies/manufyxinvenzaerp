@@ -127,10 +127,30 @@ def create_bom_from_drawing(drawing_name):
         "Global Defaults", "default_company"
     )
 
+    # The BOM is in Kg like every other finished-goods document (sep14 FG plan, D12):
+    # its quantity is the drawing's Cust Weight (Total), and the piece count rides
+    # along as Qty (Nos). Every consumer scales by a ratio against this quantity, so
+    # raw material per Kg planned stays right; the ones that plan in pieces
+    # (Material Planning) scale against Qty (Nos) instead.
+    cust_total = flt(drawing.customer_provided_wt, 3)
+    drawing_nos = flt(drawing.no_of_qty_to_manufacture)
+    if not cust_total or not drawing_nos:
+        frappe.throw(
+            _("Drawing {0} has no {1}. Set it with Update Customer Weight before creating the BOM, "
+              "because the BOM quantity is the Cust Weight (Total) in Kg.").format(
+                drawing_name,
+                _("Cust Weight (Total)") if not cust_total else _("No of Qty to Manufacture")),
+            title=_("Customer Weight Missing"),
+        )
+
     bom = frappe.new_doc("BOM")
     bom.item = drawing.fg_item_code
     bom.item_name = drawing.fg_item_name
-    bom.quantity = drawing.no_of_qty_to_manufacture or 1
+    bom.quantity = cust_total
+    bom.custom_sec_qty = drawing_nos
+    bom.custom_sec_uom = "Nos"
+    bom.custom_cust_weight_total = cust_total
+    bom.custom_cust_weight_per_nos = flt(drawing.get("weight_per_pcs"), 3) or flt(cust_total / drawing_nos, 3)
     bom.custom_drawing = drawing_name
     bom.custom_duno_mark_no = drawing.duno_mark_no or 0
     bom.custom_customer_drawing_number = drawing.customer_drawing_number or ""
@@ -235,6 +255,21 @@ def create_production_plan_from_bom(bom_name):
 
     stock_uom = frappe.db.get_value("Item", bom.item, "stock_uom") or ""
 
+    # Planned in pieces: the plan starts with every piece of the drawing no other
+    # plan has claimed yet (D16), and its own validate (apply_fg_nos) turns the Nos
+    # into Planned Qty (Kg) -- this sets Qty (Nos) only (D26).
+    from manufyxinvenzaerp.production_plan_management.production_plan import (
+        fg_nos_remaining,
+    )
+
+    nos_left = fg_nos_remaining(bom.custom_drawing)
+    if nos_left <= 0:
+        frappe.throw(
+            _("Every piece of drawing {0} is already on a Production Plan. Reduce the Qty (Nos) "
+              "on one of those plans, or cancel it, to plan pieces here.").format(bom.custom_drawing),
+            title=_("Nothing Left to Plan"),
+        )
+
     pp = frappe.new_doc("Production Plan")
     pp.custom_type = "Internal Job"
     pp.company = bom.company
@@ -246,7 +281,8 @@ def create_production_plan_from_bom(bom_name):
         {
             "item_code": bom.item,
             "bom_no": bom_name,
-            "planned_qty": flt(bom.quantity) or 1,
+            "custom_sec_qty": nos_left,
+            "custom_sec_uom": "Nos",
             "planned_start_date": frappe.utils.now_datetime(),
             "stock_uom": stock_uom,
             "custom_drawing": bom.get("custom_drawing") or "",
@@ -401,89 +437,189 @@ def get_so_dashboard_data(data):
 
 
 @frappe.whitelist()
-def update_customer_provided_weight(drawing_name, new_weight):
-    """Update a Drawing's Customer Provided Weight from the popup (the field itself stays
-    read-only in the form). Writes through to the Sales Order DUNO Item's own weight field
-    (the actual source of truth every downstream document reads from), logs the change, and
-    cascades the new value into already-created downstream documents. Batch
-    reallocation/unreserve stays a manual step -- this only updates the numbers."""
-    new_weight = flt(new_weight, 3)
-    doc = frappe.get_doc("Drawing", drawing_name)
-    old_weight = flt(doc.customer_provided_wt, 3)
+def update_customer_provided_weight(drawing_name, new_weight_per_nos):
+    """Change a drawing's customer weight from the Drawing's popup (sep14 FG plan, D15).
 
-    if new_weight == old_weight:
-        frappe.throw(_("New weight is the same as the current value ({0} Kg).").format(old_weight))
+    The popup takes the weight of ONE piece, because that is the figure the customer
+    states; Cust Weight (Total) = per Nos x No of Qty to Manufacture is worked out
+    here. Both are written to the Drawing and to its Sales Order Drawing List row --
+    the only way either changes once the row has a drawing (D24) -- and the Total,
+    with per Nos alongside, is cascaded into every document already made from it.
+
+    The Sales Order row is written directly rather than by saving the order: nothing
+    the order recalculates on save depends on the customer weight, and the Drawing
+    List lock refuses a changed weight on a row that already has a drawing -- this
+    function is the one sanctioned way past it.
+
+    The change log keeps the old and new Total, which is what every other document
+    carries. Batch reallocation/unreserve stays a manual step -- this only updates
+    the numbers."""
+    per_nos = flt(new_weight_per_nos, 3)
+    if per_nos <= 0:
+        frappe.throw(_("Enter the weight of one piece, in Kg."))
+
+    doc = frappe.get_doc("Drawing", drawing_name)
+    if doc.docstatus == 2:
+        frappe.throw(_("Drawing {0} is cancelled. Update the weight on its current revision.").format(drawing_name))
+    nos = flt(doc.no_of_qty_to_manufacture)
+    if not nos:
+        frappe.throw(_("Drawing {0} has no No of Qty to Manufacture, so there is no Total to work out.").format(drawing_name))
+
+    old_per_nos = flt(doc.get("weight_per_pcs"), 3)
+    old_total = flt(doc.customer_provided_wt, 3)
+    new_total = flt(per_nos * nos, 3)
+    if per_nos == old_per_nos and new_total == old_total:
+        frappe.throw(_("New weight is the same as the current value ({0} Kg per Nos).").format(old_per_nos))
 
     doc.append("weight_change_log", {
-        "old_weight": old_weight,
-        "new_weight": new_weight,
+        "old_weight": old_total,
+        "new_weight": new_total,
         "changed_by": frappe.session.user,
         "changed_on": frappe.utils.now_datetime(),
     })
-    doc.customer_provided_wt = new_weight
+    doc.weight_per_pcs = per_nos
+    doc.customer_provided_wt = new_total
     doc.save(ignore_permissions=True)
 
-    so_updated = False
+    from manufyxinvenzaerp.drawing_management.doctype.drawing.drawing import _touch_sales_order
+    from manufyxinvenzaerp.production_management.doctype.material_planning.material_planning import (
+        _update_so_difference_kg_for_pair,
+    )
+
     duno_rows = frappe.get_all(
         "Sales Order DUNO Item",
         filters={"drawing": drawing_name},
         fields=["name", "parent", "duno_mark_no"],
     )
+    sales_orders = []
     for row in duno_rows:
-        so = frappe.get_doc("Sales Order", row.parent)
-        for so_row in so.custom_duno_items:
-            if so_row.name == row.name:
-                so_row.total_weight = new_weight
-        so.save(ignore_permissions=True)  # re-triggers recalculate_raw_material_qty
-        so_updated = True
-
-        from manufyxinvenzaerp.production_management.doctype.material_planning.material_planning import (
-            _update_so_difference_kg_for_pair,
+        frappe.db.set_value(
+            "Sales Order DUNO Item", row.name,
+            {"weight_per_pcs": per_nos, "total_weight": new_total},
+            update_modified=False,
         )
         _update_so_difference_kg_for_pair(row.parent, row.duno_mark_no)
+        if row.parent not in sales_orders:
+            sales_orders.append(row.parent)
+    for so in sales_orders:
+        _touch_sales_order(so)
 
-    cascade_counts = _cascade_customer_weight(drawing_name, new_weight)
+    cascade = _cascade_customer_weight(drawing_name, new_total, per_nos)
     frappe.db.commit()
 
     return {
-        "old_weight": old_weight,
-        "new_weight": new_weight,
-        "sales_order_updated": so_updated,
-        **cascade_counts,
+        "old_weight_per_nos": old_per_nos,
+        "new_weight_per_nos": per_nos,
+        "old_weight": old_total,
+        "new_weight": new_total,
+        "nos": nos,
+        "sales_order_updated": bool(duno_rows),
+        "sales_order_lines": _so_line_differences(sales_orders, doc.fg_item_code),
+        **cascade,
     }
 
 
-def _cascade_customer_weight(drawing_name, new_weight):
-    """Push the updated customer-provided weight into every already-created downstream
-    document that carries its own copy of it. Work Order is intentionally not included --
-    its customizations are being reverted to standard separately.
+def _so_line_differences(sales_orders, fg_item):
+    """Ordered vs drawings for the finished-goods line a changed drawing belongs to.
 
-    The weight arrives here PER PIECE -- that is how the Drawing and the Sales Order
-    DUNO row both hold it -- and is scaled on the way out, because every downstream copy
-    sits beside a planned and a transferred weight for the whole row. Sending the
-    per-piece figure down made a two-piece drawing report 890 Kg of customer weight
-    against 1,814 Kg planned, which reads as 100% waste and is really 1.9%."""
-    row_weight = flt(new_weight) * (flt(frappe.db.get_value(
-        "Drawing", drawing_name, "no_of_qty_to_manufacture")) or 1)
-    row_weight = flt(row_weight, 3)
+    A new customer weight moves the Drawing List total away from what the line was
+    ordered at. That is expected -- the order was taken on an estimate -- so it is
+    reported, not blocked (D15); the popup shows it in orange."""
+    out = []
+    for so in sales_orders:
+        ordered = frappe.db.sql(
+            """SELECT COALESCE(SUM(qty), 0), COALESCE(SUM(custom_sec_qty), 0)
+               FROM `tabSales Order Item` WHERE parent = %s AND item_code = %s""",
+            (so, fg_item),
+        )[0]
+        drawn = frappe.db.sql(
+            """SELECT COALESCE(SUM(total_weight), 0), COALESCE(SUM(total_quantity), 0)
+               FROM `tabSales Order DUNO Item` WHERE parent = %s AND item = %s""",
+            (so, fg_item),
+        )[0]
+        out.append({
+            "sales_order": so,
+            "item_code": fg_item,
+            "ordered_kg": flt(ordered[0], 3),
+            "drawings_kg": flt(drawn[0], 3),
+            "difference_kg": flt(flt(drawn[0]) - flt(ordered[0]), 3),
+            "ordered_nos": flt(ordered[1], 3),
+            "drawings_nos": flt(drawn[1], 3),
+            "difference_nos": flt(flt(drawn[1]) - flt(ordered[1]), 3),
+        })
+    return out
 
-    pp_item_rows = frappe.get_all(
-        "Production Plan Item", filters={"custom_drawing": drawing_name}, fields=["name"]
+
+def _cascade_customer_weight(drawing_name, new_total, per_nos=None):
+    """Push the drawing's new customer weight into every document already made from it.
+
+    What travels is the Total -- all pieces of the drawing (D2, D30) -- with per Nos
+    alongside, to Production Plan Items, SCO Drawing Items (Job Work Order and
+    Material Issue Plan), Operation Entry drawing rows and the BOM. Work Order is
+    intentionally not included (D19).
+
+    The Kg that depends on it moves too, where the document is still a draft:
+      - a draft Production Plan's Planned Qty (Kg) = Total x its Nos / drawing Nos;
+      - a draft Job Work Order recomputes its Kg, job work amount and rate (R5);
+      - the BOM's quantity IS the Total (D12), and every raw-material explosion is a
+        ratio against it -- left at the old Total, a plan for 4 of 10 pieces would
+        draw 4 x 31 / 300 of the material instead of 4/10.
+    A submitted Job Work Order keeps its qty and amount and is listed in the result,
+    so the user can decide whether to amend it.
+
+    Operation Entry rows on submitted and cancelled entries are updated too,
+    deliberately: the weight there is descriptive -- it drives no stock movement or
+    costing -- and leaving a correction out would freeze the wrong number into the
+    sheet the shop floor reads."""
+    from manufyxinvenzaerp.production_plan_management.production_plan import (
+        drawing_fg_weights, fg_kg_for_nos,
     )
-    for row in pp_item_rows:
-        frappe.db.set_value("Production Plan Item", row.name, "custom_customer_weight_kg", row_weight)
 
+    new_total = flt(new_total, 3)
+    info = drawing_fg_weights(drawing_name)
+    drawing_nos = flt(info.nos) if info else 0
+    if per_nos is None:
+        per_nos = info.per_nos if info else 0
+    per_nos = flt(per_nos, 3)
+
+    # ── Production Plan Items ──────────────────────────────────────────────
+    pp_item_rows = frappe.db.sql(
+        """SELECT ppi.name, ppi.parent, ppi.custom_sec_qty, pp.docstatus
+           FROM `tabProduction Plan Item` ppi
+           JOIN `tabProduction Plan` pp ON pp.name = ppi.parent
+           WHERE ppi.custom_drawing = %s""",
+        (drawing_name,), as_dict=True,
+    )
+    draft_pps = set()
+    for row in pp_item_rows:
+        values = {"custom_customer_weight_kg": new_total, "custom_cust_weight_per_nos": per_nos}
+        if row.docstatus == 0 and flt(row.custom_sec_qty) > 0:
+            kg = fg_kg_for_nos(new_total, row.custom_sec_qty, drawing_nos)
+            values.update({"planned_qty": kg, "pending_qty": kg})
+            draft_pps.add(row.parent)
+        frappe.db.set_value("Production Plan Item", row.name, values, update_modified=False)
+    for pp in draft_pps:
+        total_planned = frappe.db.sql(
+            "SELECT COALESCE(SUM(planned_qty), 0) FROM `tabProduction Plan Item` WHERE parent = %s", (pp,)
+        )[0][0]
+        frappe.db.set_value("Production Plan", pp, "total_planned_qty", flt(total_planned, 3), update_modified=False)
+
+    # ── SCO Drawing Items: Job Work Order and Material Issue Plan ──────────
     drawing_item_rows = frappe.get_all(
         "SCO Drawing Item",
         filters={"drawing": drawing_name, "parenttype": ["in", ["Subcontracting Order", "Material Issue Plan"]]},
         fields=["name", "parent", "parenttype"],
     )
     for row in drawing_item_rows:
-        frappe.db.set_value("SCO Drawing Item", row.name, "customer_weight_kg", row_weight)
+        frappe.db.set_value(
+            "SCO Drawing Item", row.name,
+            {"customer_weight_kg": new_total, "cust_weight_per_nos": per_nos},
+            update_modified=False,
+        )
 
     touched = {(r.parenttype, r.parent) for r in drawing_item_rows}
-    mip_names = []
-    for parenttype, parent in touched:
+    mip_names, draft_jwos, submitted_jwos = [], [], []
+    for parenttype, parent in sorted(touched):
         if parenttype == "Subcontracting Order":
             total = frappe.db.sql(
                 "select sum(customer_weight_kg) from `tabSCO Drawing Item` "
@@ -491,6 +627,12 @@ def _cascade_customer_weight(drawing_name, new_weight):
                 (parent,),
             )[0][0]
             frappe.db.set_value("Subcontracting Order", parent, "custom_customer_weight_kg", flt(total, 3))
+            docstatus = frappe.db.get_value("Subcontracting Order", parent, "docstatus")
+            if docstatus == 0:
+                if _recompute_draft_jwo_job_work(parent):
+                    draft_jwos.append(parent)
+            elif docstatus == 1:
+                submitted_jwos.append(parent)
         elif parenttype == "Material Issue Plan":
             mip_names.append(parent)
 
@@ -501,15 +643,8 @@ def _cascade_customer_weight(drawing_name, new_weight):
         for mip_name in mip_names:
             refresh_weight_summary(mip_name)
 
-    # Operation Entry keeps its own copy of the figure, and it was the one document
-    # this cascade never reached. Every planning document agreed on the new weight
-    # while the sheet the shop floor actually works from still showed the old one,
-    # with nothing on screen to say the two disagreed.
-    #
-    # Submitted and cancelled entries are updated too, deliberately. The weight is
-    # descriptive -- it drives no stock movement or costing -- and leaving a
-    # correction out of a submitted entry would freeze the wrong number into the
-    # document people read, with no way to put it right.
+    # ── Operation Entry drawing rows ───────────────────────────────────────
+    # Used to receive the per-piece figure while every other copy got the Total.
     soe_detail_rows = frappe.get_all(
         "SOE Drawing Detail",
         filters={"drawing": drawing_name, "parenttype": "Supplier Operation Entry"},
@@ -517,16 +652,87 @@ def _cascade_customer_weight(drawing_name, new_weight):
     )
     for row in soe_detail_rows:
         frappe.db.set_value(
-            "SOE Drawing Detail", row.name, "customer_provided_weight_kg", new_weight
+            "SOE Drawing Detail", row.name, "customer_provided_weight_kg", new_total,
+            update_modified=False,
         )
+
+    # ── BOM ────────────────────────────────────────────────────────────────
+    boms = frappe.get_all(
+        "BOM", filters={"custom_drawing": drawing_name, "docstatus": ["<", 2]},
+        fields=["name", "quantity", "custom_sec_qty"],
+    )
+    for bom in boms:
+        values = {"custom_cust_weight_total": new_total, "custom_cust_weight_per_nos": per_nos}
+        # Only a BOM built in Kg (it carries Qty (Nos)) has the Total as its quantity.
+        # One made before the change is in pieces and keeps them.
+        if flt(bom.custom_sec_qty) and new_total:
+            values["quantity"] = new_total
+            # Per-unit consumption is stock_qty / quantity; keep it in step so nothing
+            # reading it scales by the old Total.
+            for child in ("BOM Item", "BOM Explosion Item"):
+                frappe.db.sql(
+                    f"UPDATE `tab{child}` SET qty_consumed_per_unit = stock_qty / %s "
+                    "WHERE parent = %s AND parenttype = 'BOM'",
+                    (new_total, bom.name),
+                )
+        frappe.db.set_value("BOM", bom.name, values, update_modified=False)
 
     return {
         "production_plan_items_updated": len(pp_item_rows),
+        "draft_production_plans_recalculated": len(draft_pps),
         "drawing_rows_updated": len(drawing_item_rows),
         "subcontracting_orders_updated": len([1 for t, _p in touched if t == "Subcontracting Order"]),
+        "draft_job_work_orders_recalculated": draft_jwos,
+        "submitted_job_work_orders": submitted_jwos,
         "material_issue_plans_updated": len(mip_names),
         "operation_entry_rows_updated": len(soe_detail_rows),
+        "boms_updated": len(boms),
     }
+
+
+def _recompute_draft_jwo_job_work(sco_name):
+    """A draft Job Work Order follows a new customer weight (R5).
+
+    Each drawing row's Kg on the order is Total x its Nos / drawing Nos, its job work
+    amount is that Kg x Rate / Kg, and the one item line carries the Kg, the amount
+    and the weighted rate (D31, R3) -- the same sums the builder does. Only an order
+    built in Kg (its item carries Qty (Nos)) is recomputed; an older one has pieces
+    in qty and is left alone. Returns True when the order was recomputed."""
+    from manufyxinvenzaerp.subcontracting_management.subcontracting import _job_work_figures
+
+    items = frappe.get_all(
+        "Subcontracting Order Item", filters={"parent": sco_name},
+        fields=["name", "custom_sec_qty"],
+    )
+    if len(items) != 1 or not flt(items[0].custom_sec_qty):
+        return False
+
+    rows = frappe.get_all(
+        "SCO Drawing Item",
+        filters={"parent": sco_name, "parenttype": "Subcontracting Order"},
+        fields=["name", "drawing", "qty_to_manufacture", "rate_per_kg"],
+    )
+    figures = _job_work_figures([
+        frappe._dict(drawing=r.drawing, nos=r.qty_to_manufacture, rate_per_kg=r.rate_per_kg, name=r.name)
+        for r in rows
+    ])
+    for r in figures.rows:
+        frappe.db.set_value(
+            "SCO Drawing Item", r.name,
+            {"rate_per_kg": r.rate_per_kg, "job_work_amount": r.amount},
+            update_modified=False,
+        )
+    frappe.db.set_value(
+        "Subcontracting Order Item", items[0].name,
+        {"qty": figures.kg, "rate": figures.rate, "amount": figures.amount},
+        update_modified=False,
+    )
+    frappe.db.set_value(
+        "Subcontracting Order", sco_name, {"total_qty": figures.kg, "total": figures.amount},
+        update_modified=False,
+    )
+    return True
+
 
 
 #####################

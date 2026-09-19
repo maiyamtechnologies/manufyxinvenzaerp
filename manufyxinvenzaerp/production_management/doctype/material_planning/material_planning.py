@@ -1025,7 +1025,7 @@ def get_bom_info(bom_no):
     """Return Drawing-derived details for a BOM row (called on bom_no change in JS)."""
     bom = frappe.db.get_value(
         "BOM", bom_no,
-        ["item", "item_name", "quantity", "custom_drawing", "custom_duno_mark_no",
+        ["item", "item_name", "quantity", "custom_sec_qty", "custom_drawing", "custom_duno_mark_no",
          "custom_customer_drawing_number"],
         as_dict=True,
     )
@@ -1036,6 +1036,11 @@ def get_bom_info(bom_no):
     duno_mark_no = bom.custom_duno_mark_no or 0
     customer_drawing_number = bom.custom_customer_drawing_number or ""
 
+    # qty_to_manufacture is pieces. A drawing BOM's quantity is Kg (its Cust Weight
+    # (Total), sep14 FG plan D12) and its piece count is Qty (Nos), so fall back to
+    # that; a BOM without one is from before the change and its quantity is pieces.
+    bom_nos = flt(bom.custom_sec_qty) or flt(bom.quantity) or 1
+
     if not drawing_name:
         stock_uom = frappe.db.get_value("Item", bom.item, "stock_uom") or "" if bom.item else ""
         return {
@@ -1043,7 +1048,7 @@ def get_bom_info(bom_no):
             "item_name": bom.item_name,
             "duno_mark_no": duno_mark_no,
             "customer_drawing_number": customer_drawing_number,
-            "qty_to_manufacture": bom.quantity or 1,
+            "qty_to_manufacture": bom_nos,
             "uom": stock_uom,
         }
 
@@ -1067,7 +1072,7 @@ def get_bom_info(bom_no):
         "customer_drawing_number": customer_drawing_number or d.customer_drawing_number or "",
         "sales_order": d.sales_order,
         "customer": d.customer,
-        "qty_to_manufacture": d.no_of_qty_to_manufacture or bom.quantity or 1,
+        "qty_to_manufacture": d.no_of_qty_to_manufacture or bom_nos,
         "uom": stock_uom,
     }
 
@@ -1233,7 +1238,9 @@ def get_raw_materials(doc):
         if not bom_no:
             continue
 
-        item_details = get_exploded_items({}, company, bom_no, False, planned_qty=planned_qty)
+        # qty_to_manufacture is pieces; a drawing BOM's quantity is Kg (sep14 FG plan,
+        # D12), so the explosion is scaled by Nos against the BOM's Qty (Nos).
+        item_details = get_exploded_items({}, company, bom_no, False, planned_nos=planned_qty)
         exploded_by_bom.append((bom_no, duno_mark_no, customer_drawing_number, sales_order, drawing, item_details))
         for detail in item_details.values():
             if detail.get("item_code"):
@@ -4462,12 +4469,17 @@ def make_production_plan(material_planning_name):
         item_code = row.item_code or frappe.db.get_value("BOM", row.bom_no, "item")
         item_name = row.item_name or frappe.db.get_value("Item", item_code, "item_name") or item_code
         stock_uom = frappe.db.get_value("Item", item_code, "stock_uom") or "Nos"
-        planned_qty = flt(row.qty_to_manufacture) or 1
+        nos = flt(row.qty_to_manufacture) or 1
+        # A drawing row is planned in pieces: only Qty (Nos) is set here, and the
+        # Production Plan's own validate (apply_fg_nos) turns it into Planned Qty
+        # (Kg) -- the one place that sum is done (sep14 FG plan, D26). A row with no
+        # drawing has nothing to convert from and keeps its quantity as it was.
+        qty_fields = {"custom_sec_qty": nos, "custom_sec_uom": "Nos"} if row.drawing else {"planned_qty": nos}
         pp.append("po_items", {
             "item_code": item_code,
             "item_name": item_name,
             "bom_no": row.bom_no,
-            "planned_qty": planned_qty,
+            **qty_fields,
             "stock_uom": stock_uom,
             "sales_order": row.sales_order or "",
             "custom_customer": row.customer or "",

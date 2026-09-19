@@ -74,7 +74,9 @@ def run():
     print()
     print("=== parser reads them off the sheet ===")
     body = [
-        ["Structural Assembly", "CDN-T5", "DM-T5", "FG-T5", 1, 100.0,
+        # Cust Weight (per Nos), Cust Weight (Total): the template carries both since
+        # the sep14 FG plan, and this row is laid out against the template's header.
+        ["Structural Assembly", "CDN-T5", "DM-T5", "FG-T5", 1, 100.0, 100.0,
          real_now, real_rs, "1", "MAT-T5", "A36", 0, 0, 3000, 1],
     ]
     parsed = _parse_sheet([header] + body)
