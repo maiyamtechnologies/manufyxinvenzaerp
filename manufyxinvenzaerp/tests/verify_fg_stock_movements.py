@@ -19,8 +19,11 @@ after submit and again after cancel:
                              re-run in wave 3.
 
 Everything it creates is named ZZFG-: two raw-material items, one FG item, one
-FG batch, and Stock Entries on them. Each entry is cancelled again (in reverse
-order) whatever happens; nothing is deleted and no user record is touched.
+FG batch, and Stock Entries on them (ZZFG-A1-SE..., named outright, so no live
+naming series -- MAT-STE- included -- is ever touched). The WHOLE run is one
+database transaction that is rolled back at the end, with frappe.db.commit
+disabled for the duration: nothing it makes is kept, and no user record is
+touched. Each entry is still cancelled again (in reverse order), as before.
 
 Run: bench --site manufact execute manufyxinvenzaerp.tests.verify_fg_stock_movements.run
 """
@@ -86,7 +89,6 @@ def _setup_items():
     _ensure_item(FG_ITEM, "Fabricated Structurs",
                  custom_parent_item_group="Finished Goods", stock_uom="Kg",
                  custom_secondary_uom="Nos", has_batch_no=1, create_new_batch=0)
-    frappe.db.commit()
 
 
 # ── reading the figures ───────────────────────────────────────────────────────
@@ -140,16 +142,15 @@ def _entry(se_type, row):
         "remarks": "ZZFG- sep14 A1 stock movement audit",
         "items": [dict({"use_serial_batch_fields": 1, "basic_rate": 50}, **row)],
     })
-    se.insert(ignore_permissions=True)
+    # Named outright: the MAT-STE- series numbers the site's real entries.
+    se.insert(ignore_permissions=True, set_name="ZZFG-A1-SE" + frappe.generate_hash(length=8).upper())
     se.submit()
     _made.append(se.name)
-    frappe.db.commit()
     return se
 
 
 def _cancel(se):
     frappe.get_doc("Stock Entry", se.name).cancel()
-    frappe.db.commit()
 
 
 def _cancel_leftovers():
@@ -159,7 +160,6 @@ def _cancel_leftovers():
                 frappe.get_doc("Stock Entry", name).cancel()
         except Exception as e:
             print("   (could not cancel %s: %s)" % (name, e))
-    frappe.db.commit()
 
 
 # ── 1. RM plate batch ─────────────────────────────────────────────────────────
@@ -285,7 +285,6 @@ def _ensure_fg_batch():
         "doctype": "Batch", "batch_id": FG_BATCH, "item": FG_ITEM,
         "custom_sec_uom": "Nos", "custom_cust_weight_per_nos": 30,
     }).insert(ignore_permissions=True)
-    frappe.db.commit()
 
 
 def _fg_state():
@@ -346,20 +345,26 @@ def _fg_cases():
 # ── run ───────────────────────────────────────────────────────────────────────
 
 def run():
-    _setup_items()
+    real_commit = frappe.db.commit
+    frappe.db.commit = lambda *a, **k: None  # one transaction, rolled back below
     try:
+        _setup_items()
         for part in (_plate_cases, _nut_cases, _fg_cases):
+            frappe.db.savepoint("zzfg_a1_part")
             try:
                 part()
             except Exception as e:
                 # One kind of stock failing must not hide what the others show.
-                frappe.db.rollback()
+                frappe.db.rollback(save_point="zzfg_a1_part")
                 checks.append(False)
                 print("  FAIL %s raised %s: %s" % (part.__name__, type(e).__name__, e))
-    finally:
         _cancel_leftovers()
+    finally:
+        frappe.db.rollback()
+        frappe.db.commit = real_commit
+        frappe.clear_cache(doctype="Item")
         print()
-        print("   test entries cancelled, nothing deleted")
+        print("   rolled back: nothing from this run is left in the database")
 
     print()
     print("=== SUMMARY ===")

@@ -1,6 +1,9 @@
 # SEP 14 — Finished goods in Kg, tracked in Nos per drawing (FINAL PLAN)
 
-> **Status: FINAL, approved for development 19 Sep 2026 (R1–R5 confirmed). Wave 0 in progress.**
+> **Status: Implemented (waves 0–3), 19 Sep 2026.** Approved for development 19 Sep 2026
+> (R1–R5 confirmed). Commits: e2951ab (wave 0), 315d838 (wave 1), 086180e (wave 2); wave 3
+> (manual, features doc §22, `tests/verify_fg_end_to_end.py`) is ready for the coordinator's
+> commit. See **Implementation notes / known limits** at the end.
 > - Decisions came from the chat and from the decision sheet
 >   `~/Downloads/FG_Kg_Nos_Plan_Gaps_Decisions.docx` (Q1–Q13, answered by the user).
 > - Work is split into agents in waves: see **§7 Agent work split**. Resume with
@@ -644,3 +647,34 @@ Wave 3   A8  manual, features doc, end-to-end, full regression
    (72 / 28 / 4).
 4. Browser check of the forms touched in the wave.
 5. Commit the wave.
+
+---
+
+## Implementation notes / known limits (wave 3, 19 Sep 2026)
+
+- **End to end:** `tests/verify_fg_end_to_end.py` runs §6 through every document on fresh
+  `ZZFG-A8-` masters in one rolled-back transaction (commit held off; a naming guard gives
+  every app-created document a `ZZFG-A8-` name instead of a naming-series number, and
+  `tabSeries` is compared before and after). Shortcuts, as in the A4 test: the last
+  operation's finished Nos are written onto its SOE Drawing Detail, and the job's material
+  reaches the supplier warehouse as a ZZFG- consumable (Material Receipt + Material Transfer
+  tagged `custom_sco_ref`, with the MIP warehouses and the JWO transferred weight filled in)
+  rather than through Material Planning. One reading made concrete by it: after DN 1 is
+  billed at its actual 30.5 Kg per Nos, the SO line's remaining 7 Nos are the last pending
+  pieces and take the exact 208.5 Kg left (not 210); 5 of them are 150 Kg as in §6, and the
+  last 2 then take 58.5 Kg.
+- **Fabricated Structurs is not batch-enabled yet:** 100 Kg of it is unbatched stock from
+  MAT-STE-00012 / MAT-STE-00014, so switching Has Batch No on is the user's decision (A1
+  item 5). Until then it behaves the old way.
+- **Old data skipped (D13):** nothing from before the change was migrated.
+- **Untested:** the Pick List → Delivery Note path, and a DN return into a different
+  warehouse from the one delivered from.
+- **Over-delivery / over-billing allowance (D10):** ERPNext's 0% refuses a delivery or
+  invoice whose Kg exceeds the ordered Kg (heavier pieces) until the client sets a
+  tolerance. The tests set it on their own items.
+- **Orphan bundle:** a batch picked through ERPNext's batch selector leaves an orphan draft
+  Serial and Batch Bundle behind.
+- **Excluded from regression runs:** `verify_pp_naming`, `verify_internal_job_sco`,
+  `verify_mixed_sco_regression` and `verify_create_operation_and_inspection_gate` commit real
+  documents, so they are not run.
+- **Not started (on hold):** the "FG Stock by Drawing" report.

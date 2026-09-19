@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-14 22:09:42_
+_Generated: 2026-09-19 15:10:14_
 
 ## drawing
 
@@ -18,6 +18,7 @@ _Generated: 2026-09-14 22:09:42_
 |--------|-------------|
 | ` before_insert` | no |
 | ` validate` | no |
+| ` _set_cust_weight_total` | no |
 | ` _warn_duno_reused_elsewhere` | no |
 | ` before_submit` | no |
 | ` on_submit` | no |

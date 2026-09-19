@@ -22,8 +22,12 @@ Cases:
      wave 2): Kg from the DN row's own Kg per Nos, last-piece rule, SO line and DN
      row both billed, over-pending refused.
 
-Test documents use the ZZFG-A6 prefix; everything submitted here is cancelled at
-the end, and no user record is changed.
+Test documents use the ZZFG-A6 prefix and are named outright (Sales Orders,
+Stock Entries, Delivery Notes, Sales Invoices, the Customer), so no live naming
+series -- SAL-ORD-, MAT-STE-, DN-, SINV- -- is ever touched. The WHOLE run is one
+database transaction that is rolled back at the end, with frappe.db.commit
+disabled for the duration: nothing it makes is kept, and no user record is
+changed. Everything submitted is still cancelled at the end, as before.
 
 Run: bench --site manufact execute manufyxinvenzaerp.tests.verify_fg_sales_invoice.run
 """
@@ -95,7 +99,7 @@ def _ensure_masters():
 		frappe.get_doc({
 			"doctype": "Customer", "customer_name": CUSTOMER,
 			"customer_type": "Company", "gst_category": "Unregistered",
-		}).insert(ignore_permissions=True)
+		}).insert(ignore_permissions=True, set_name=CUSTOMER)
 	if not frappe.db.exists("Item", FG_ITEM):
 		frappe.get_doc({
 			"doctype": "Item", "item_code": FG_ITEM, "item_name": "ZZFG A6 Finished Good",
@@ -268,7 +272,7 @@ def _receive_fg(so, kg, nos):
 			"use_serial_batch_fields": 1, "custom_sec_qty": nos,
 		}],
 	})
-	se.insert(ignore_permissions=True)
+	_ins(se)
 	return _submit(se)
 
 
@@ -335,11 +339,11 @@ def _dn_cases():
 
 def run():
 	frappe.set_user("Administrator")
-	_ensure_masters()
-	frappe.db.commit()
+	real_commit = frappe.db.commit
+	frappe.db.commit = lambda *a, **k: None  # one transaction, rolled back below
 	try:
+		_ensure_masters()
 		_so_cases()
-		frappe.db.commit()
 		_dn_cases()
 	finally:
 		print("\n=== cleanup: cancel what this test submitted ===")
@@ -349,7 +353,10 @@ def run():
 				print("  cancelled %s %s" % (doctype, name))
 			except Exception as e:  # noqa: BLE001 -- keep cancelling the rest
 				print("  could not cancel %s %s: %s" % (doctype, name, str(e)[:160]))
-		frappe.db.commit()
+		frappe.db.rollback()
+		frappe.db.commit = real_commit
+		frappe.clear_cache(doctype="Item")
+		print("  rolled back: nothing from this run is left in the database")
 
 	passed = sum(checks)
 	print()
