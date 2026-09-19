@@ -11,9 +11,9 @@ dimension matching disappears and only one number has to reconcile: total Kg. A 
 needing 1,000 Kg across 50 rows can move to a new batch whatever mixture of
 dimension-mapped and dimensionless rows it started as.
 
-This module is read-only for now (Phase 1): it expands a line to its members, prices
-the target batches, and reports what a reassignment *would* do. Nothing here mutates.
-The apply path arrives in a later phase -- see .claude/tasks/sep10_task1.md.
+It expands a line to its members, prices the target batches, previews what a
+reassignment would do, and applies it. Behaviour, decisions and the verified examples
+are in manufyxinvenzaerp_features.md, section 20.
 
 It lives beside material_issue_plan_transfer.py rather than inside
 material_issue_plan.py for the same reason that module does: it is a large MIP action

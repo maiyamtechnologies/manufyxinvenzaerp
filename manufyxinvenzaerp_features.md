@@ -601,7 +601,7 @@ as stranded; and the whole dialog driven end to end in a browser.
 exact-match waiver loop), `material_planning_available_raw_material.json` (new field),
 `material_issue_plan.js` (the dialog), `material_planning.js` (the row handler).
 Tests: `verify_consolidate_batch_reassign.py`, `verify_arm_reserve_without_dimensions.py`,
-`verify_consolidate_batch_apply.py`. Plan of record: `.claude/tasks/sep10_task1.md`.
+`verify_consolidate_batch_apply.py`.
 
 ---
 
