@@ -19,6 +19,11 @@ from manufyxinvenzaerp.utils.decision_log import log_decision
 # any positive number as free stock turned those crumbs into Exact Match rows of 0.000
 # Kg: nothing to reserve, nothing to transfer, and a "matched to Available Raw
 # Materials" count that said stock had been found when none had.
+#
+# A fixed Kg figure is not enough on its own: rows carry more decimals than they show,
+# so three 530.80395 Kg rows on a 1,592.413 Kg bar leave 0.00115 Kg -- just over the
+# line -- and that crumb became a 0.001 Kg / 0 Nos Exact Match row splitting the next
+# drawing across two batches (MP-2026-00129, 1B8). See _batch_has_free_stock.
 BATCH_FREE_EPSILON = 0.001
 
 BATCH_MAPPED = "Mapped"
@@ -1042,6 +1047,9 @@ def get_bom_info(bom_no):
     bom_nos = flt(bom.custom_sec_qty) or flt(bom.quantity) or 1
 
     if not drawing_name:
+        # Without a drawing there is no customer weight to price the Nos in Kg. The
+        # figure is pieces when the BOM carries a Qty (Nos); an older BOM's quantity is
+        # in the item's own stock UOM.
         stock_uom = frappe.db.get_value("Item", bom.item, "stock_uom") or "" if bom.item else ""
         return {
             "item_code": bom.item,
@@ -1049,7 +1057,8 @@ def get_bom_info(bom_no):
             "duno_mark_no": duno_mark_no,
             "customer_drawing_number": customer_drawing_number,
             "qty_to_manufacture": bom_nos,
-            "uom": stock_uom,
+            "qty_to_manufacture_kg": 0.0,
+            "uom": "Nos" if flt(bom.custom_sec_qty) else stock_uom,
         }
 
     d = frappe.db.get_value(
@@ -1062,8 +1071,12 @@ def get_bom_info(bom_no):
     if not d:
         return {}
 
-    stock_uom = frappe.db.get_value("Item", d.fg_item_code, "stock_uom") or "" if d.fg_item_code else ""
+    from manufyxinvenzaerp.production_plan_management.production_plan import drawing_kg_for_nos
 
+    # Qty to Manufacture is the drawing's piece count, so its UOM is Nos -- not the
+    # finished-goods item's stock UOM (Kg), which labelled 2 pieces "2 Kg". The Kg for
+    # those pieces is carried beside it for the documents that follow.
+    nos = flt(d.no_of_qty_to_manufacture) or bom_nos
     return {
         "drawing": drawing_name,
         "item_code": d.fg_item_code,
@@ -1072,8 +1085,9 @@ def get_bom_info(bom_no):
         "customer_drawing_number": customer_drawing_number or d.customer_drawing_number or "",
         "sales_order": d.sales_order,
         "customer": d.customer,
-        "qty_to_manufacture": d.no_of_qty_to_manufacture or bom_nos,
-        "uom": stock_uom,
+        "qty_to_manufacture": nos,
+        "qty_to_manufacture_kg": drawing_kg_for_nos(drawing_name, nos),
+        "uom": "Nos",
     }
 
 
@@ -1344,6 +1358,62 @@ def _ordered_item_codes(mp_name):
     ))
 
 
+def _pending_purchase_items(mp_name):
+    """Item codes this plan is still waiting to RECEIVE on an active Material Request.
+
+    _ordered_item_codes counts every item on a Material Request that is not
+    Cancelled/Stopped -- including one whose goods have already arrived. A re-check
+    then kept protecting those requirements as "being purchased" and never tried the
+    stock the receipt brought in: MP-2026-00129 sent 76 requirements back to purchase
+    after PR-26-00037 had delivered them. Only a line with quantity still to receive
+    keeps its item protected."""
+    if not mp_name:
+        return set()
+    return {
+        r[0] for r in frappe.db.sql(
+            """
+            SELECT DISTINCT mri.item_code
+            FROM `tabMaterial Request Item` mri
+            JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+            WHERE mr.custom_material_planning = %s
+              AND mr.docstatus < 2
+              AND mr.status NOT IN ('Cancelled', 'Stopped')
+              AND IFNULL(mri.received_qty, 0) < IFNULL(mri.stock_qty, 0) - 0.001
+            """,
+            (mp_name,),
+        )
+    }
+
+
+# Item groups whose stock Check stock without dimensions matches by Kg, any size.
+DIMENSIONLESS_GROUPS = ("Structurals", "Plates")
+
+
+def _coverage_key(row):
+    """One requirement line, as the rows covering it can all tell: item, drawing mark
+    and the drawing's item no. Unlike _requirement_key it leaves the size out -- a row
+    matched without dimensions carries the batch's size, not the requirement's."""
+    return (row.get("item_code") or "", row.get("duno_mark_no") or "", row.get("item_number") or "")
+
+
+def _dimensionless_arm_fields(row, batch, kg, unit_weight):
+    """Dimensions, flag and Nos for an Exact Match row filled without dimensions.
+
+    The row carries the BATCH's size -- the table holds one set of dimensions, the
+    material that will be transferred -- with Reserve stock without dimensions on, so
+    it reserves exactly `kg`, and its Nos is that weight in pieces of the batch, left
+    fractional (settled into whole pieces at transfer, as for any such row)."""
+    dims = {
+        "length": flt(batch.get("custom_length")),
+        "width": flt(batch.get("custom_width")),
+        "thickness": flt(batch.get("custom_thickness")),
+    }
+    shim = frappe._dict(dict(dims, item_code=row.get("item_code"),
+                             parent_item_group=row.get("parent_item_group") or ""))
+    sec = _sec_nos_for_weight_arm(shim, kg, unit_weight)
+    return dict(dims, reserve_without_dimensions=1, sec_qty=flt(sec, 3))
+
+
 @frappe.whitelist()
 def check_stock_availability(doc):
     """
@@ -1395,16 +1465,66 @@ def check_stock_availability(doc):
     # straight through, and the raw_materials rows they correspond to are
     # skipped rather than reclassified -- otherwise the same requirement would
     # exist twice, once here and once in Material Mapping.
-    ordered_item_codes = _ordered_item_codes(doc.get("name") or "")
-    protected_unavailable = []
-    protected_counts = {}
-    if ordered_item_codes:
-        for r in doc.get("unavailable_items") or []:
-            if (r.get("alternate_item") or r.get("item_code")) not in ordered_item_codes:
+    #
+    # Stock is matched FIRST now, and only what it cannot cover stays protected --
+    # and only while the Material Request still has quantity to receive
+    # (_pending_purchase_items). Passing the requirement through untouched also
+    # skipped the stock that the purchase itself had brought in, so a re-check after
+    # the receipt asked for everything to be bought again (MP-2026-00129: 76 rows).
+    pending_items = _pending_purchase_items(doc.get("name") or "")
+    protected_by_key = {}
+    for r in doc.get("unavailable_items") or []:
+        if (r.get("alternate_item") or r.get("item_code")) in pending_items:
+            protected_by_key.setdefault(_requirement_key(r), []).append(dict(r))
+    protected_kept = []
+
+    def _keep_protected(key, shortage_kg):
+        """Settle one requirement's protected row against what stock left uncovered.
+
+        Covered in full -> the row goes (the stock is what was being bought). Short ->
+        the row stays for the shortfall only (at most its own quantity, Sec Qty scaled
+        with it). Returns the shortage the protected row does NOT account for, which
+        the caller handles like any other shortage."""
+        rows = protected_by_key.get(key)
+        if not rows:
+            return shortage_kg
+        r = rows.pop(0)
+        if flt(shortage_kg, 3) <= 0:
+            return 0.0
+        orig = flt(r.get("qty"))
+        keep = min(orig, shortage_kg) if orig > 0 else shortage_kg
+        if orig > 0 and flt(r.get("sec_qty")):
+            r["sec_qty"] = flt(flt(r["sec_qty"]) * keep / orig, 3)
+        r["qty"] = flt(keep, 3)
+        protected_kept.append(r)
+        return max(0.0, shortage_kg - keep)
+
+    # Check stock without dimensions keeps what is already reserved: those rows stay
+    # on the form untouched (the Material Issue Plan points at them by row name), their
+    # Kg counts toward their requirement, and their batches are not offered again.
+    without_dims = cint(doc.get("check_stock_without_dimensions"))
+    covered_kg = defaultdict(float)
+    own_reserved_by_batch = defaultdict(float)
+    own_reserved_non_batch = defaultdict(float)
+    if without_dims:
+        for r in doc.get("available_raw_materials") or []:
+            if not r.get("is_reserved"):
                 continue
-            protected_unavailable.append(dict(r))
-            key = _requirement_key(r)
-            protected_counts[key] = protected_counts.get(key, 0) + 1
+            covered_kg[_coverage_key(r)] += flt(r.get("required_qty"))
+            held = flt(r.get("reserved_qty")) or flt(r.get("required_qty"))
+            if r.get("batch_no"):
+                own_reserved_by_batch[r.get("batch_no")] += held
+            else:
+                own_reserved_non_batch[r.get("item_code")] += held
+        for r in doc.get("material_mapping") or []:
+            if r.get("is_reserved"):
+                covered_kg[_coverage_key(r)] += flt(r.get("qty"))
+    # A batch serves one table at a time (_validate_no_cross_table_batch_duplicate), so
+    # one held by a kept Material Mapping reservation is not offered to Exact Match.
+    mm_held_batches = {
+        r.get("batch") for r in (doc.get("material_mapping") or [])
+        if without_dims and r.get("is_reserved") and r.get("batch")
+    }
 
     updated_raw_materials = []
     available_raw_materials = []
@@ -1452,16 +1572,22 @@ def check_stock_availability(doc):
         required_qty = flt(row.get("qty"))
         has_batch = item_batch_flag.get(item_code, 0)
 
-        # Requirement already committed to a purchase -- its Unavailable Items
-        # row is being carried over as-is, so leave this line alone rather than
-        # re-bucketing it into Material Mapping alongside itself. Counted, not
-        # just matched: two rows can share every identifying field, and only as
-        # many lines are skipped as there are rows to carry over.
         _protect_key = _requirement_key(row)
-        if protected_counts.get(_protect_key):
-            protected_counts[_protect_key] -= 1
-            updated_raw_materials.append(dict(row))
-            continue
+        orig_required = required_qty
+        if without_dims:
+            ck = _coverage_key(row)
+            taken = min(covered_kg.get(ck, 0.0), required_qty)
+            covered_kg[ck] -= taken
+            required_qty = flt(required_qty - taken, 6)
+            if required_qty <= BATCH_FREE_EPSILON:
+                # Already covered by reserved rows: nothing to look for, nothing to buy.
+                _keep_protected(_protect_key, 0.0)
+                done = dict(row)
+                done["available_qty"] = orig_required
+                done["shortage_qty"] = 0.0
+                done["store_location"] = location or ""
+                updated_raw_materials.append(done)
+                continue
 
         base_row = {
             "item_number": row.get("item_number") or "",
@@ -1474,7 +1600,8 @@ def check_stock_availability(doc):
             "customer_drawing_number": row.get("customer_drawing_number") or "",
             "qty": required_qty,
             "uom": row.get("uom"),
-            "sec_qty": flt(row.get("sec_qty")),
+            "sec_qty": flt(flt(row.get("sec_qty")) * required_qty / orig_required, 3)
+            if orig_required and required_qty != orig_required else flt(row.get("sec_qty")),
             "sec_uom": row.get("sec_uom"),
             "parent_item_group": row.get("parent_item_group"),
             "length": flt(row.get("length")),
@@ -1512,9 +1639,15 @@ def check_stock_availability(doc):
                 "custom_width": flt(row.get("width")),
             }
 
-            _, raw_matched_batches = match_batches_by_dimension(
-                sbb_batches_by_item.get(item_code, []), dimensions
-            )
+            item_batches = sbb_batches_by_item.get(item_code, [])
+            _, exact_batches = match_batches_by_dimension(item_batches, dimensions)
+            exact_names = {b["batch_no"] for b in exact_batches}
+            # Check stock without dimensions: any batch of the SAME item, whatever its
+            # size -- never another item -- with the drawing's own size taken first.
+            dimensionless = bool(without_dims) and (row.get("parent_item_group") in DIMENSIONLESS_GROUPS)
+            raw_matched_batches = item_batches if dimensionless else exact_batches
+            if mm_held_batches:
+                raw_matched_batches = [b for b in raw_matched_batches if b["batch_no"] not in mm_held_batches]
 
             # Capture each batch's TOTAL stock Kg and TOTAL Nos before any allocation —
             # needed to split Sec Qty (Nos) proportionally to the Kg each row reserves.
@@ -1523,18 +1656,24 @@ def check_stock_availability(doc):
                 batch_total_sec.setdefault(b["batch_no"], flt(b.get("custom_sec_qty")))
                 if b["batch_no"] not in batch_remaining:
                     reserved_by_others = reserved_by_others_map.get(b["batch_no"], 0)
-                    net_qty = max(0.0, flt(b["qty"]) - reserved_by_others)
+                    held_here = own_reserved_by_batch.get(b["batch_no"], 0)
+                    net_qty = max(0.0, flt(b["qty"]) - reserved_by_others - held_here)
                     batch_remaining[b["batch_no"]] = net_qty
 
             # Sort largest batch first to minimise splits — one batch covers most items.
+            # Batches of the requirement's own size come before any other size (only
+            # ever reached without dimensions), so an exact-cut bar keeps going to the
+            # drawing it was cut for.
             matched_batches = sorted(
                 [
                     {**b, "qty": batch_remaining[b["batch_no"]]}
                     for b in raw_matched_batches
-                    if batch_remaining.get(b["batch_no"], 0) > BATCH_FREE_EPSILON
+                    if _batch_has_free_stock(
+                        batch_remaining.get(b["batch_no"], 0),
+                        batch_total_kg.get(b["batch_no"]), batch_total_sec.get(b["batch_no"]),
+                    )
                 ],
-                key=lambda b: b["qty"],
-                reverse=True,
+                key=lambda b: (b["batch_no"] not in exact_names, -flt(b["qty"])),
             )
 
             available_qty = sum(flt(b["qty"]) for b in matched_batches)
@@ -1564,7 +1703,7 @@ def check_stock_availability(doc):
                     row_sec = _alloc_sec_qty(
                         consumed_qty, batch_total_kg.get(bn), batch_total_sec.get(bn)
                     )
-                    available_raw_materials.append({
+                    arm_row = {
                         "item_number": row.get("item_number") or "",
                         "sales_order": row.get("sales_order") or "",
                         "item_code": item_code,
@@ -1572,7 +1711,7 @@ def check_stock_availability(doc):
                         "duno_mark_no": row.get("duno_mark_no") or "",
                         "customer_drawing_number": row.get("customer_drawing_number") or "",
                         "batch_no": bn,
-                        "overall_required_qty": flt(required_qty, 3),
+                        "overall_required_qty": flt(orig_required, 3),
                         "required_qty": flt(consumed_qty, 3),
                         "available_qty": flt(b["qty"]),
                         "sec_qty": row_sec,
@@ -1584,7 +1723,16 @@ def check_stock_availability(doc):
                         "warehouse": warehouse,
                         "parent_item_group": row.get("parent_item_group"),
                         "store_location": location or "",
-                    })
+                    }
+                    if dimensionless:
+                        arm_row.update(_dimensionless_arm_fields(
+                            row, b, consumed_qty, flt(row.get("unit_weight")) or None
+                        ))
+                    available_raw_materials.append(arm_row)
+
+                # What stock left uncovered is first settled against a purchase still
+                # in progress for this requirement; only the rest is a new shortfall.
+                covered_by_purchase = flt(shortage) - _keep_protected(_protect_key, flt(shortage))
 
                 # Partial stock — add a shortfall row to Material Mapping so the gap
                 # is visible immediately (NOS/Kg check) without waiting for reservation.
@@ -1602,20 +1750,35 @@ def check_stock_availability(doc):
                         )
                         for b in matched_batches
                     )
-                    required_sec_qty = flt(row.get("sec_qty"))
+                    required_sec_qty = flt(base_row.get("sec_qty"))
                     if not available_sec_qty and required_sec_qty and required_qty:
                         available_sec_qty = flt(available_qty / (required_qty / required_sec_qty), 0)
                     shortfall_nos = max(0.0, required_sec_qty - available_sec_qty)
-                    shortfall_row = dict(base_row)
-                    shortfall_row["qty"] = flt(shortage, 3)
-                    shortfall_row["sec_qty"] = flt(shortfall_nos, 3)
-                    shortfall_row["batch_mapped"] = "Not Mapped"
-                    material_mapping.append(shortfall_row)
-                    shortfall_count += 1
+                    if dimensionless and required_qty:
+                        # Other sizes' pieces say nothing about the drawing's own; the
+                        # gap in Nos is the gap in Kg, in the drawing's pieces.
+                        shortfall_nos = required_sec_qty * flt(shortage) / required_qty
+                    new_shortage = flt(shortage) - covered_by_purchase
+                    if flt(new_shortage, 3) > 0:
+                        shortfall_row = dict(base_row)
+                        shortfall_row["qty"] = flt(new_shortage, 3)
+                        shortfall_row["sec_qty"] = flt(shortfall_nos * new_shortage / flt(shortage), 3)
+                        shortfall_row["batch_mapped"] = "Not Mapped"
+                        material_mapping.append(shortfall_row)
+                        shortfall_count += 1
 
             else:
-                # No dimension-matching batch stock — send to Material Mapping.
-                existing = reserved_by_key.get((item_code, row.get("bom_no") or ""))
+                # No dimension-matching batch stock — send to Material Mapping, unless a
+                # purchase still in progress already covers it.
+                uncovered = _keep_protected(_protect_key, required_qty)
+                if flt(uncovered, 3) <= 0:
+                    continue
+                if uncovered < required_qty:
+                    base_row["sec_qty"] = flt(flt(base_row.get("sec_qty")) * uncovered / required_qty, 3)
+                    base_row["qty"] = flt(uncovered, 3)
+                # Reserved rows are left on the form as they are when checking without
+                # dimensions (see above), so none is copied onto this new row.
+                existing = None if without_dims else reserved_by_key.get((item_code, row.get("bom_no") or ""))
                 if existing:
                     base_row.update({
                         "batch": existing.get("batch"),
@@ -1640,7 +1803,7 @@ def check_stock_availability(doc):
         else:
             # ── Non-batch item: net of cross-MP reservations ─────────────────
             total_stock = non_batch_stock_map.get(item_code, 0)
-            reserved_by_others = non_batch_reserved_map.get(item_code, 0)
+            reserved_by_others = non_batch_reserved_map.get(item_code, 0) + own_reserved_non_batch.get(item_code, 0)
             available_qty = max(0.0, total_stock - reserved_by_others)
             shortage = max(0.0, required_qty - available_qty)
 
@@ -1651,6 +1814,7 @@ def check_stock_availability(doc):
             updated_raw_materials.append(updated_row)
 
             if available_qty >= required_qty:
+                _keep_protected(_protect_key, 0.0)
                 available_raw_materials.append({
                     "item_number": row.get("item_number") or "",
                     "sales_order": row.get("sales_order") or "",
@@ -1659,7 +1823,7 @@ def check_stock_availability(doc):
                     "duno_mark_no": row.get("duno_mark_no") or "",
                     "customer_drawing_number": row.get("customer_drawing_number") or "",
                     "batch_no": "",
-                    "overall_required_qty": flt(required_qty, 3),
+                    "overall_required_qty": flt(orig_required, 3),
                     "required_qty": required_qty,
                     "available_qty": available_qty,
                     "sec_qty": flt(row.get("sec_qty")),
@@ -1673,7 +1837,15 @@ def check_stock_availability(doc):
                     "store_location": location or "",
                 })
             else:
-                unavailable_items.append(base_row)
+                uncovered = _keep_protected(_protect_key, required_qty)
+                if flt(uncovered, 3) > 0:
+                    if uncovered < required_qty:
+                        base_row["sec_qty"] = flt(flt(base_row.get("sec_qty")) * uncovered / required_qty, 3)
+                        base_row["qty"] = flt(uncovered, 3)
+                    unavailable_items.append(base_row)
+
+    # Protected rows no requirement matched are carried as they were.
+    protected_unavailable = protected_kept + [r for rows in protected_by_key.values() for r in rows]
 
     return {
         "raw_materials": updated_raw_materials,
@@ -1682,7 +1854,263 @@ def check_stock_availability(doc):
         "unavailable_items": protected_unavailable + unavailable_items,
         "shortfall_mapping_count": shortfall_count,
         "preserved_ordered_count": len(protected_unavailable),
+        # Checking without dimensions leaves reserved rows on the form untouched; the
+        # client keeps them and adds these rows beside them.
+        "kept_reserved": bool(without_dims),
     }
+
+
+def _receipt_batch_names(pr_name):
+    """Batches a submitted Purchase Receipt brought in: from its Serial and Batch
+    Bundles, and from the rows' own batch_no (older receipts, or batch fields in use)."""
+    names = {
+        r[0] for r in frappe.db.sql(
+            """
+            SELECT DISTINCT sbe.batch_no
+            FROM `tabSerial and Batch Entry` sbe
+            JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sbe.parent
+            WHERE sbb.voucher_type = 'Purchase Receipt' AND sbb.voucher_no = %s
+              AND sbb.is_cancelled = 0 AND sbb.docstatus = 1 AND IFNULL(sbe.batch_no, '') != ''
+            """,
+            (pr_name,),
+        )
+    }
+    names.update(frappe.get_all(
+        "Purchase Receipt Item",
+        filters={"parent": pr_name, "batch_no": ["is", "set"]},
+        pluck="batch_no",
+    ))
+    return names
+
+
+@frappe.whitelist()
+def allocate_receipt_to_plan(mp_name, pr_name):
+    """Map the batches a Purchase Receipt brought in onto this plan's requirements that
+    nothing covers yet -- the manual counterpart of the allocation a receipt makes on
+    submit, for when that did not map (or the plan has been re-checked since).
+
+    The rows land in Material Mapping (Alternate Stock), where a batch of a different
+    size belongs: the requirement keeps its own Length/Width/Thickness, the batch's go
+    on the batch_* fields, and Reserve stock without dimensions is ticked so the row
+    reserves exactly its Kg with a fractional Sec Nos. A requirement already sitting
+    there as "Not Mapped" has its own row filled in rather than a second one added; a
+    row only partly covered keeps the remainder as a "Not Mapped" row of its own.
+
+    Never reuses stock: a batch's Kg reserved by ANY plan, or already on a row of this
+    one, is not offered, and a batch already in this plan's Exact Match is skipped
+    altogether (a batch serves one table). What is covered comes off Unavailable Items.
+    Nothing is reserved -- press Reserve on the table afterwards."""
+    from manufyxinvenzaerp.production_plan_management.production_plan import get_sbb_batches_bulk
+
+    mp = frappe.get_doc("Material Planning", mp_name)
+    mp.check_permission("write")
+    if mp.docstatus != 0:
+        frappe.throw(_("Only a draft Material Planning can take stock from a receipt."))
+    if not mp.for_warehouse:
+        frappe.throw(_("Set 'Raw Materials Warehouse' first."))
+    if frappe.db.get_value("Purchase Receipt", pr_name, "docstatus") != 1:
+        frappe.throw(_("Purchase Receipt {0} is not submitted.").format(pr_name))
+    frappe.has_permission("Purchase Receipt", "read", doc=pr_name, throw=True)
+
+    receipt_batches = _receipt_batch_names(pr_name)
+    if not receipt_batches:
+        frappe.throw(_("Purchase Receipt {0} brought in no batches.").format(pr_name))
+
+    item_of = dict(frappe.get_all(
+        "Batch", filters={"name": ["in", list(receipt_batches)]}, fields=["name", "item"], as_list=True,
+    ))
+    stock = get_sbb_batches_bulk(sorted(set(item_of.values())), mp.for_warehouse,
+                                 location=mp.get("store_location") or None)
+    candidates = defaultdict(list)  # item -> batch dicts (stock in the plan's warehouse)
+    for item, batches in stock.items():
+        candidates[item] = [dict(b) for b in batches if b["batch_no"] in receipt_batches]
+
+    # Free Kg: stock, less what any plan holds, less what this plan's rows already use.
+    all_nos = [b["batch_no"] for bl in candidates.values() for b in bl]
+    held = _get_batch_reserved_by_others_bulk(all_nos, "__none__", exclude_table=None)
+    used_here = defaultdict(float)
+    for r in mp.material_mapping or []:
+        if r.batch and not r.is_reserved:
+            used_here[r.batch] += flt(r.batch_calc_qty) or flt(r.qty)
+    in_exact_match = {r.batch_no for r in (mp.available_raw_materials or []) if r.batch_no}
+    free, batch_info = {}, {}
+    for bl in candidates.values():
+        for b in bl:
+            bn = b["batch_no"]
+            batch_info[bn] = b
+            if bn in in_exact_match:
+                continue
+            left = flt(b["qty"]) - flt(held.get(bn)) - used_here[bn]
+            if _batch_has_free_stock(left, flt(b["qty"]), flt(b.get("custom_sec_qty"))):
+                free[bn] = left
+
+    # What each requirement still lacks: its Kg less what rows already cover.
+    covered = defaultdict(float)
+    for r in mp.available_raw_materials or []:
+        covered[_coverage_key(r)] += flt(r.required_qty)
+    for r in mp.material_mapping or []:
+        if r.batch:
+            covered[_coverage_key(r)] += flt(r.qty)
+    # Rows waiting for a batch, in table order, so one can be filled in place.
+    waiting = defaultdict(list)
+    for r in mp.material_mapping or []:
+        if not r.batch and not r.is_reserved:
+            waiting[_coverage_key(r)].append(r)
+
+    unit_weights = _item_unit_weights(item_of.values())
+    added, filled, allocated_by_key = 0, 0, defaultdict(float)
+    new_rows = []
+    for req in mp.raw_materials or []:
+        if req.item_code not in candidates or (req.parent_item_group or "") not in DIMENSIONLESS_GROUPS:
+            continue
+        key = _coverage_key(req)
+        take = min(covered[key], flt(req.qty))
+        covered[key] -= take
+        need = flt(req.qty) - take
+        if need <= BATCH_FREE_EPSILON:
+            continue
+        exact = {
+            bn for bn, b in batch_info.items()
+            if item_of.get(bn) == req.item_code
+            and flt(b.get("custom_length")) == flt(req.length)
+            and flt(b.get("custom_width")) == flt(req.width)
+            and flt(b.get("custom_thickness")) == flt(req.thickness)
+        }
+        order = sorted(
+            (bn for bn in free if item_of.get(bn) == req.item_code),
+            key=lambda bn: (bn not in exact, -free[bn]),
+        )
+        for bn in order:
+            if need <= BATCH_FREE_EPSILON:
+                break
+            b = batch_info[bn]
+            if not _batch_has_free_stock(free[bn], flt(b["qty"]), flt(b.get("custom_sec_qty"))):
+                continue
+            kg = flt(min(free[bn], need), 3)
+            free[bn] -= kg
+            need -= kg
+            allocated_by_key[key] += kg
+            mapped = _mapping_row_from_batch(req, b, kg, pr_name, flt(held.get(bn)),
+                                             unit_weights.get(req.item_code))
+            row = waiting[key].pop(0) if waiting[key] else None
+            if row is None:
+                # No row waiting for this requirement: a new one carries the requirement
+                # itself as well as the batch (a row without an item code is dropped on
+                # save), with its own size on the plain fields.
+                new_rows.append(dict(_requirement_fields(req), **mapped))
+                added += 1
+                continue
+            rest = flt(flt(row.qty) - kg, 3)
+            rest_sec = flt(flt(row.sec_qty) * rest / flt(row.qty), 3) if flt(row.qty) else 0.0
+            row.update(mapped)
+            filled += 1
+            if rest > BATCH_FREE_EPSILON:
+                # The part this batch could not cover stays a row of its own.
+                spare = _requirement_fields(row)
+                spare.update({"qty": rest, "sec_qty": rest_sec, "batch_mapped": "Not Mapped"})
+                new_rows.append(spare)
+    for r in new_rows:
+        mp.append("material_mapping", r)
+
+    if not (added or filled):
+        return {"rows_added": 0, "kg": 0.0, "message": _(
+            "Nothing to allocate: no requirement of this plan still needs these items, or "
+            "the receipt's batches have no free stock left in {0}.").format(mp.for_warehouse)}
+
+    # Requirements now covered no longer need buying.
+    keep = []
+    for r in mp.unavailable_items or []:
+        key = _coverage_key(r)
+        if not allocated_by_key.get(key):
+            keep.append(r)
+            continue
+        q = flt(r.qty)
+        cut = min(q, allocated_by_key[key])
+        allocated_by_key[key] -= cut
+        if q - cut > BATCH_FREE_EPSILON:
+            if q and flt(r.sec_qty):
+                r.sec_qty = flt(flt(r.sec_qty) * (q - cut) / q, 3)
+            r.qty = flt(q - cut, 3)
+            keep.append(r)
+    mp.set("unavailable_items", keep)
+
+    mp.save()
+    by_item = defaultdict(float)
+    total = 0.0
+    for r in (mp.material_mapping or []):
+        if r.purchase_receipt == pr_name and not r.is_reserved:
+            by_item[r.item_code] += flt(r.qty)
+            total += flt(r.qty)
+    return {
+        "rows_added": added + filled,
+        "rows_filled": filled,
+        "kg": flt(total, 3),
+        "by_item": {k: flt(v, 3) for k, v in by_item.items()},
+        "skipped_in_exact_match": sorted(b for b in in_exact_match if b in receipt_batches),
+    }
+
+
+def _requirement_fields(req):
+    """The requirement's own identity and size, as a Material Mapping row carries them."""
+    return {
+        f: req.get(f) for f in (
+            "item_number", "sales_order", "item_code", "item_name", "bom_no", "drawing",
+            "duno_mark_no", "customer_drawing_number", "uom", "sec_uom",
+            "parent_item_group", "length", "width", "thickness", "unit_weight",
+        )
+    }
+
+
+def _mapping_row_from_batch(req, batch, kg, pr_name, batch_reserved, unit_weight):
+    """Material Mapping row for `kg` of `batch` against requirement `req`.
+
+    The requirement keeps its own size on the plain fields and the batch's goes on the
+    batch_* ones, the way a receipt's own allocation records a different-size purchase.
+    Reserve stock without dimensions is on, so the row reserves exactly this weight and
+    its Sec Nos is that weight in pieces of the batch -- fractional until the Material
+    Issue Plan settles whole pieces at transfer."""
+    shim = frappe._dict({
+        "batch_parent_item_group": req.parent_item_group or "",
+        "batch_length": flt(batch.get("custom_length")),
+        "batch_width": flt(batch.get("custom_width")),
+        "batch_thickness": flt(batch.get("custom_thickness")),
+        "batch_unit_weight": flt(unit_weight),
+    })
+    return {
+        "qty": flt(kg, 3),
+        "sec_qty": flt(flt(req.sec_qty) * flt(kg) / flt(req.qty), 3) if flt(req.qty) else 0.0,
+        "batch": batch["batch_no"],
+        "planned_item": req.item_code,
+        "batch_mapped": BATCH_MAPPED,
+        "batch_parent_item_group": req.parent_item_group or "",
+        "batch_length": flt(batch.get("custom_length")),
+        "batch_width": flt(batch.get("custom_width")),
+        "batch_thickness": flt(batch.get("custom_thickness")),
+        "batch_unit_weight": flt(unit_weight),
+        "batch_sec_qty": flt(_sec_nos_for_weight(shim, kg), 3),
+        "batch_calc_qty": flt(kg, 3),
+        "batch_total_qty": flt(batch["qty"], 3),
+        "batch_reserved_qty": flt(batch_reserved, 3),
+        "batch_free_qty": flt(max(0.0, flt(batch["qty"]) - flt(batch_reserved)), 3),
+        "purchase_receipt": pr_name,
+        "reserve_without_dimensions": 1,
+    }
+
+
+def _batch_has_free_stock(remaining_kg, batch_total_kg, batch_total_sec):
+    """Whether what is left of a batch is real stock rather than an arithmetic crumb.
+
+    Above BATCH_FREE_EPSILON Kg, and -- for a batch that counts its pieces -- worth at
+    least 0.001 Nos (the precision Sec Qty is kept to). What is left once every piece
+    is spoken for is a rounding residue, however many Kg-decimals it has; handing it to
+    the next requirement makes a 0 Nos row and splits that requirement across two
+    batches for nothing. Measured against the batch's own piece weight, so a genuine
+    part-piece (Reserve Without Dimensions) is still offered."""
+    if flt(remaining_kg) <= BATCH_FREE_EPSILON:
+        return False
+    if flt(batch_total_sec) > 0 and flt(batch_total_kg) > 0:
+        return _alloc_sec_qty(remaining_kg, batch_total_kg, batch_total_sec) >= 0.001
+    return True
 
 
 def _alloc_sec_qty(consumed_kg, batch_total_kg, batch_total_sec):
@@ -1819,7 +2247,10 @@ def move_to_exact_match(doc, item_codes):
                 [
                     {**b, "qty": batch_remaining[b["batch_no"]]}
                     for b in raw_batches
-                    if batch_remaining.get(b["batch_no"], 0) > BATCH_FREE_EPSILON
+                    if _batch_has_free_stock(
+                        batch_remaining.get(b["batch_no"], 0),
+                        batch_total_kg.get(b["batch_no"]), batch_total_sec.get(b["batch_no"]),
+                    )
                 ],
                 key=lambda b: b["qty"],
                 reverse=True,
@@ -2017,7 +2448,10 @@ def update_exact_match_from_consolidate(mp_name):
 
             free_batches = sorted(
                 [{**b, "qty": batch_remaining[b["batch_no"]]} for b in raw_batches
-                 if batch_remaining.get(b["batch_no"], 0) > BATCH_FREE_EPSILON],
+                 if _batch_has_free_stock(
+                     batch_remaining.get(b["batch_no"], 0),
+                     batch_total_kg.get(b["batch_no"]), batch_total_sec.get(b["batch_no"]),
+                 )],
                 key=lambda b: b["qty"], reverse=True,
             )
 
@@ -2752,8 +3186,19 @@ def _update_bom_item_weights(mp):
     mapped_by_duno = _get_mp_mapped_weight_by_duno(mp.name)
     excess_by_duno = _get_mp_excess_by_duno(mp.name)
 
+    from manufyxinvenzaerp.production_plan_management.production_plan import drawing_kg_for_nos
+
+    kg_cache = {}
     for bom_item in (mp.bom_items or []):
         duno = bom_item.duno_mark_no or ""
+        # Qty to Manufacture is the drawing's Nos. Kept in step on every save, so a row
+        # added before the Kg column existed (or with the stock UOM as its label) is
+        # corrected the next time the plan is saved.
+        if bom_item.drawing:
+            bom_item.uom = "Nos"
+            bom_item.qty_to_manufacture_kg = drawing_kg_for_nos(
+                bom_item.drawing, bom_item.qty_to_manufacture, kg_cache
+            )
         bom_item.planned_weight_kg = flt(mapped_by_duno.get(duno, 0.0), 3)
         bom_item.excess_weight_kg = flt(excess_by_duno.get(duno, 0.0), 3)
         if bom_item.sales_order and duno:

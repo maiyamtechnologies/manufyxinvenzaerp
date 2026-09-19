@@ -1,6 +1,6 @@
 # hooks — manufyxinvenzaerp
 
-_Generated: 2026-09-19 15:10:14_
+_Generated: 2026-09-20 04:05:28_
 
 ## doc_events
 

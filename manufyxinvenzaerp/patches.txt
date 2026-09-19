@@ -14,3 +14,4 @@ manufyxinvenzaerp.patches.v1.backfill_duno_calculated_weight
 manufyxinvenzaerp.patches.v1.scale_customer_weight_by_qty
 manufyxinvenzaerp.patches.v1.backfill_sco_status
 manufyxinvenzaerp.patches.v1.backfill_production_plan_status
+manufyxinvenzaerp.patches.v1.fg_nos_kg_on_drawing_rows

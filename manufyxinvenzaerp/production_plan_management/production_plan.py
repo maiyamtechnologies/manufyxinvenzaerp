@@ -1200,6 +1200,26 @@ def fg_kg_for_nos(total, nos, drawing_nos):
 	return flt(flt(total) * flt(nos) / flt(drawing_nos), 3)
 
 
+def drawing_kg_for_nos(drawing, nos, cache=None):
+	"""Kg of finished goods for `nos` pieces of `drawing`, or 0.0 when it can't be told.
+
+	For the Qty to Manufacture (Kg) shown beside the Nos on planning rows (Material
+	Planning, Job Work Order, Material Issue Plan). 0.0 for a drawing made before the
+	Kg / Nos change: its Cust Weight (Total) then holds one piece's weight, so any Kg
+	worked from it would be wrong. `cache` (a dict) spares repeat lookups per drawing."""
+	if not drawing or not flt(nos):
+		return 0.0
+	if cache is not None and drawing in cache:
+		info = cache[drawing]
+	else:
+		info = drawing_fg_weights(drawing)
+		if cache is not None:
+			cache[drawing] = info
+	if not info or not info.has_per_nos:
+		return 0.0
+	return fg_kg_for_nos(info.total, nos, info.nos)
+
+
 def drawing_fg_weights(drawing):
 	"""The drawing's piece count and both customer weights, as one dict.
 

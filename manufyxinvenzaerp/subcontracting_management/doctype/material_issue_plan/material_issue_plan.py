@@ -137,6 +137,9 @@ def populate_from_production_plan(mip_name):
             # Pieces, from the plan's Qty (Nos) (sep14 FG plan, D27). planned_qty is
             # Kg on a plan made in pieces; it is only the fallback for an older plan.
             "qty_to_manufacture": row.get("custom_sec_qty") or row.planned_qty,
+            # Beside the Nos, the Kg the plan made them at (Planned Qty (Kg)); only on a
+            # plan made in pieces, where planned_qty is Kg.
+            "qty_to_manufacture_kg": flt(row.planned_qty, 3) if flt(row.get("custom_sec_qty")) else 0.0,
             "duno_mark_no": row.get("custom_duno_mark_no"),
             "customer_drawing_number": row.get("custom_customer_drawing_number"),
             "sales_order": row.get("sales_order") or "",

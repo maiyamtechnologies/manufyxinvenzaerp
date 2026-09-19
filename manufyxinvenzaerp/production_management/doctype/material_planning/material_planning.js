@@ -41,7 +41,7 @@ function _mfx_highlight_stock_details_grids(frm) {
 	_mfx_highlight_grid_buttons(frm, "available_raw_materials",
 		["Reserve"], ["Unreserve", "Reassign Batch"]);
 	_mfx_highlight_grid_buttons(frm, "material_mapping",
-		["Reserve", "Excess Material Mapping"], ["Unreserve"]);
+		["Reserve", "Excess Material Mapping", "Allocate from Purchase Receipt"], ["Unreserve"]);
 	_mfx_highlight_grid_buttons(frm, "consolidate_items",
 		["Create Material Request", "Update & Map Exact Matches"], []);
 }
@@ -933,6 +933,18 @@ function _run_verify_raw_materials(frm, opts) {
 	});
 }
 
+// Empty a raw-material table before a stock check refills it -- all of it, or (when the
+// check kept reservations) only the unreserved rows, leaving reserved rows untouched.
+function _mp_clear_unreserved(frm, table, keep_reserved) {
+	if (!keep_reserved) {
+		frm.clear_table(table);
+		return;
+	}
+	let kept = (frm.doc[table] || []).filter(r => r.is_reserved);
+	frm.doc[table] = kept;
+	kept.forEach((r, i) => { r.idx = i + 1; });
+}
+
 frappe.ui.form.on("Material Planning", {
 	check_stock_btn(frm) {
 		if (!frm.doc.for_warehouse) {
@@ -961,14 +973,17 @@ frappe.ui.form.on("Material Planning", {
 					});
 					frm.refresh_field("raw_materials");
 
-					frm.clear_table("available_raw_materials");
+					// Checking without dimensions leaves reserved rows exactly where they are:
+					// the Material Issue Plan points at them by row name, so they are kept on
+					// the form and only the unreserved rows are replaced.
+					_mp_clear_unreserved(frm, "available_raw_materials", result.kept_reserved);
 					(result.available_raw_materials || []).forEach(function(row) {
 						let child = frm.add_child("available_raw_materials");
 						Object.keys(row).forEach(function(k) { if (k !== "name" && k !== "idx") child[k] = row[k]; });
 					});
 					frm.refresh_field("available_raw_materials");
 
-					frm.clear_table("material_mapping");
+					_mp_clear_unreserved(frm, "material_mapping", result.kept_reserved);
 					(result.material_mapping || []).forEach(function(row) {
 						let child = frm.add_child("material_mapping");
 						Object.keys(row).forEach(function(k) { if (k !== "name" && k !== "idx") child[k] = row[k]; });
@@ -1005,7 +1020,8 @@ frappe.ui.form.on("Material Planning", {
 
 		let has_exact_reserved   = (frm.doc.available_raw_materials || []).some(r => r.is_reserved);
 		let has_mapping_reserved = (frm.doc.material_mapping || []).some(r => r.is_reserved);
-		if (has_exact_reserved || has_mapping_reserved) {
+		let keep_reserved = cint(frm.doc.check_stock_without_dimensions);
+		if ((has_exact_reserved || has_mapping_reserved) && !keep_reserved) {
 			let which = [];
 			if (has_exact_reserved)   which.push(__("<b>Available Raw Materials (Exact Match)</b>"));
 			if (has_mapping_reserved) which.push(__("<b>Material Mapping (Alternate Stock)</b>"));
@@ -1031,7 +1047,10 @@ frappe.ui.form.on("Material Planning", {
 		if (has_exact_batch) {
 			points.push(__("Batches already mapped in <b>Available Raw Materials (Exact Match)</b> will be updated."));
 		}
-		if (has_work && has_reserved) {
+		if (keep_reserved) {
+			points.push(__("<b>Check stock without dimensions</b> is on: rows already <b>reserved</b> are kept as they are; every other requirement is matched again by Kg, whatever the batch size."));
+		}
+		if (has_work && has_reserved && !keep_reserved) {
 			points.push(__("All mapping work in <b>Material Mapping</b> including <b>RESERVED rows</b> will be cleared — unreserve first if you want to keep them."));
 		} else if (has_work) {
 			points.push(__("All current mapping work in <b>Material Mapping</b> and <b>Unavailable Items</b> will be cleared."));
@@ -1586,6 +1605,7 @@ function _show_drawings_picker_dialog(frm, so_name, drawings) {
 				child.sales_order             = s.sales_order || "";
 				child.customer                = s.customer   || "";
 				child.qty_to_manufacture      = s.qty_to_manufacture || 1;
+				child.qty_to_manufacture_kg   = s.qty_to_manufacture_kg || 0;
 				child.uom                     = s.uom        || "";
 			});
 			frm.refresh_field("bom_items");
@@ -1653,6 +1673,7 @@ frappe.ui.form.on("Material Planning BOM Item", {
 				frappe.model.set_value(cdt, cdn, "sales_order",             d.sales_order || "");
 				frappe.model.set_value(cdt, cdn, "customer",                d.customer || "");
 				frappe.model.set_value(cdt, cdn, "qty_to_manufacture",      d.qty_to_manufacture || 0);
+				frappe.model.set_value(cdt, cdn, "qty_to_manufacture_kg",   d.qty_to_manufacture_kg || 0);
 				frappe.model.set_value(cdt, cdn, "uom",                     d.uom || "");
 			},
 		});
@@ -2557,6 +2578,72 @@ function _split_details_html(split_details) {
 function _add_reservation_buttons(frm) {
 	let grid = frm.fields_dict["material_mapping"] && frm.fields_dict["material_mapping"].grid;
 	if (!grid) return;
+
+	// Take the batches a Purchase Receipt brought in and put them against this plan's
+	// uncovered requirements (same item, any size, exact Kg -- Reserve stock without
+	// dimensions). For a receipt whose own allocation on submit did not map, or a plan
+	// re-checked since. Nothing is reserved; the rows are reserved as usual after.
+	if (frm.doc.docstatus === 0 && !frm.is_new()) {
+		grid.add_custom_button(
+			frappe.utils.icon("download", "xs") + " " + __("Allocate from Purchase Receipt"),
+			function () {
+				if (frm.is_dirty()) {
+					frappe.msgprint(__("Save the Material Planning first."));
+					return;
+				}
+				let d = new frappe.ui.Dialog({
+					title: __("Allocate stock from a Purchase Receipt"),
+					fields: [
+						{
+							fieldtype: "Link", fieldname: "pr", label: __("Purchase Receipt"),
+							options: "Purchase Receipt", reqd: 1,
+							get_query: () => ({ filters: { docstatus: 1 } }),
+						},
+						{
+							fieldtype: "HTML", fieldname: "note",
+							options: "<p class='text-muted small'>" + __(
+								"The receipt's batches are matched to requirements of this plan that nothing " +
+								"covers yet: same item, any size (the drawing's own size first), exact Kg. Rows " +
+								"are added to Available Raw Materials with Reserve stock without dimensions. " +
+								"Stock reserved by any plan, or already on a row of this one, is never used again."
+							) + "</p>",
+						},
+					],
+					primary_action_label: __("Allocate"),
+					primary_action(values) {
+						d.hide();
+						frappe.call({
+							method: "manufyxinvenzaerp.production_management.doctype.material_planning.material_planning.allocate_receipt_to_plan",
+							args: { mp_name: frm.doc.name, pr_name: values.pr },
+							freeze: true,
+							freeze_message: __("Allocating stock from {0}…", [values.pr]),
+							callback(r) {
+								let m = r.message || {};
+								if (!m.rows_added) {
+									frappe.msgprint({ title: __("Nothing Allocated"), indicator: "orange", message: m.message || "" });
+									return;
+								}
+								let lines = Object.keys(m.by_item || {}).map(
+									(it) => `<li><b>${it}</b>: ${format_number(m.by_item[it], null, 3)} Kg</li>`
+								).join("");
+								let skipped = (m.skipped_in_exact_match || []).length
+									? "<p>" + __("Skipped (already in Exact Match): {0}", [m.skipped_in_exact_match.join(", ")]) + "</p>"
+									: "";
+								frappe.msgprint({
+									title: __("Stock Allocated"),
+									indicator: "green",
+									message: "<p>" + __("{0} row(s), {1} Kg mapped in Material Mapping. Reserve them to hold the stock.",
+										[m.rows_added, format_number(m.kg, null, 3)]) + "</p><ul>" + lines + "</ul>" + skipped,
+								});
+								frm.reload_doc();
+							},
+						});
+					},
+				});
+				d.show();
+			}
+		);
+	}
 
 	grid.add_custom_button(
 		frappe.utils.icon("lock", "xs") + " " + __("Reserve"),

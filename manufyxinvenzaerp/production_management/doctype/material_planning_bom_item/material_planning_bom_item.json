@@ -9,6 +9,7 @@
   "item_code",
   "item_name",
   "qty_to_manufacture",
+  "qty_to_manufacture_kg",
   "uom",
   "col_break_1",
   "drawing",
@@ -40,7 +41,6 @@
   {
    "fieldname": "item_name",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "FG Item Name",
    "read_only": 1
   },
@@ -48,7 +48,16 @@
    "fieldname": "qty_to_manufacture",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty to Manufacture",
+   "label": "Qty to Manufacture (Nos)",
+   "read_only": 1
+  },
+  {
+   "description": "Kg of finished goods for these Nos: the drawing's Cust Weight (Total) x Nos / the drawing's Nos. Blank for a drawing made before Kg and Nos were tracked separately.",
+   "fieldname": "qty_to_manufacture_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty to Manufacture (Kg)",
+   "precision": "3",
    "read_only": 1
   },
   {
@@ -121,7 +130,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-09-19 12:00:00.000000",
+ "modified": "2026-09-20 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Production Management",
  "name": "Material Planning BOM Item",

@@ -71,8 +71,11 @@ def run():
     # only, and this grid already declares 22 columns against Frappe's budget of 11,
     # so a new one would be dropped before it ever rendered.
     check("and not a grid column, like Material Mapping's", (df.in_list_view if df else 1), 0)
-    check("no existing row was flagged by the migration",
-          frappe.db.count(ARM, {"reserve_without_dimensions": 1}), 0)
+    # Rows written before the field existed (11 Sep 2026) must not have been flagged by
+    # the migration. Rows made since may be -- by a user, or by Check stock without
+    # dimensions -- so the live count alone says nothing about the migration.
+    check("no row from before the field was flagged by the migration",
+          frappe.db.count(ARM, {"reserve_without_dimensions": 1, "creation": ["<", "2026-09-11"]}), 0)
 
     print()
     print("=== 2. The Exact Match adapter and the shared formula give one answer ===")
@@ -151,8 +154,11 @@ def run():
                 target.length = flt(target.length) / 2
                 target.sec_qty = 0
                 mp._apply_rwd_fractional_nos()
+                # Within a thousandth: both figures are already rounded to 3 dp, so
+                # doubling one can differ from doubling the other by that much on a
+                # very small row (0.0155 -> 0.031 against 0.015 -> 0.030).
                 check("half-length pieces means twice as many of them",
-                      flt(target.sec_qty, 3), flt(expected * 2, 3))
+                      abs(flt(target.sec_qty, 3) - flt(expected * 2, 3)) <= 0.0015, True)
                 check("and still no change to required_qty",
                       flt(target.required_qty, 3), reqd_before)
                 target.length = flt(target.length) * 2

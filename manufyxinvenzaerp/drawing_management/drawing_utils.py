@@ -719,7 +719,8 @@ def _recompute_draft_jwo_job_work(sco_name):
     for r in figures.rows:
         frappe.db.set_value(
             "SCO Drawing Item", r.name,
-            {"rate_per_kg": r.rate_per_kg, "job_work_amount": r.amount},
+            {"rate_per_kg": r.rate_per_kg, "job_work_amount": r.amount,
+             "qty_to_manufacture_kg": r.kg},
             update_modified=False,
         )
     frappe.db.set_value(

@@ -144,6 +144,9 @@ def create_sco_from_production_plan(pp_name):
             # Pieces: every operation entry counts this drawing in Nos. planned_qty is
             # Kg on a plan made in pieces, so it is only the fallback for an old one.
             "qty_to_manufacture": flt(pi.get("custom_sec_qty") or pi.get("planned_qty"), 3),
+            # The Kg those pieces are planned at -- the plan's own Planned Qty (Kg). Only
+            # for a plan made in pieces; on an older one planned_qty is the piece count.
+            "qty_to_manufacture_kg": flt(pi.planned_qty, 3) if flt(pi.get("custom_sec_qty")) else 0.0,
             "cust_weight_per_nos": flt(pi.get("custom_cust_weight_per_nos"), 3),
             "_kg": flt(pi.planned_qty, 3),
         })

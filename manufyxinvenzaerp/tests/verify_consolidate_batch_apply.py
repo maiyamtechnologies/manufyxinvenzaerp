@@ -404,9 +404,13 @@ def run(live=0):
         check("assigned-but-unreserved rows on %s are listed" % found.batch, len(rows) > 0, True)
         check("each names its plan, row and Kg",
               all(r["material_planning"] and r["idx"] and r["qty"] > 0 for r in rows), True)
-        excluded = bu._assigned_elsewhere(found.batch, found.for_warehouse,
-                                          {(bu.MATERIAL_MAPPING, n) for n in frappe.get_all(
-                                              bu.MATERIAL_MAPPING, filters={"batch": found.batch}, pluck="name")})
+        # Every row holding the batch, in both tables _assigned_elsewhere reads -- a
+        # plan elsewhere can hold the same batch in Exact Match (MP-2026-00157 did).
+        members = {(bu.MATERIAL_MAPPING, n) for n in frappe.get_all(
+            bu.MATERIAL_MAPPING, filters={"batch": found.batch}, pluck="name")}
+        members |= {(bu.AVAILABLE_RAW_MATERIAL, n) for n in frappe.get_all(
+            bu.AVAILABLE_RAW_MATERIAL, filters={"batch_no": found.batch}, pluck="name")}
+        excluded = bu._assigned_elsewhere(found.batch, found.for_warehouse, members)
         check("the line's own members are never listed against it", excluded, [])
     src = inspect.getsource(bu._build_plan)
     check("the preview raises it as a warning, not a blocker",

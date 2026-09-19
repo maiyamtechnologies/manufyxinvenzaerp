@@ -766,6 +766,27 @@ own doctypes in their JSON). Full list: plan §4.1. The ones to know:
 - `doctype_js`: `delivery_note.js`, `sales_invoice.js`, `stock_reconciliation.js`,
   `stock_entry_fg.js`.
 
+### 22.3a Planning rows: Nos with its UOM, and the Kg beside it (2026-09-20)
+
+Material Planning's Selected BOMs rows showed Qty to Manufacture (the drawing's piece
+count) beside the finished-goods item's stock UOM, so 2 pieces read "2 Kg". Every
+planning row now carries the pair:
+
+| Row | Nos | Kg |
+|---|---|---|
+| Material Planning BOM Item | `qty_to_manufacture` "Qty to Manufacture (Nos)", `uom` = Nos | `qty_to_manufacture_kg` = drawing Cust Weight (Total) x Nos / drawing Nos |
+| Production Plan Item | `custom_sec_qty` | `planned_qty` (unchanged) |
+| SCO Drawing Item (Job Work Order, Material Issue Plan) | `qty_to_manufacture` "Qty to Manufacture (Nos)" | `qty_to_manufacture_kg` = the plan's Planned Qty (Kg) |
+
+- `production_plan.drawing_kg_for_nos(drawing, nos, cache)` is the one Kg helper; it
+  returns 0 for a drawing without a Cust Weight (per Nos), whose "Total" is one piece.
+- Filled by `material_planning.get_bom_info` (and its JS), kept in step on every save by
+  `_update_bom_item_weights`, by the Job Work Order builder and
+  `populate_from_production_plan`, and by `_recompute_draft_jwo_job_work` after a
+  customer-weight change.
+- Patch `v1.fg_nos_kg_on_drawing_rows` corrected existing rows; test
+  `verify_fg_planning_nos_kg` (13 checks).
+
 ### 22.4 Known limits
 
 - **Fabricated Structurs is not batch-enabled yet.** It is the live FG item, but 100 Kg of it
@@ -806,3 +827,67 @@ tests commit real documents and are kept out of regression runs: `verify_pp_nami
 ---
 
 *This document covers all major features implemented in the custom app. Minor utility helpers, internal validation guards, and test scaffolding are not listed.*
+
+---
+
+## 23. Check Stock Availability: rounding dust is not free stock (2026-09-20)
+
+A batch shared across several requirements can be left with a crumb of Kg once its
+pieces are all spoken for. Requirement rows carry more decimals than they show, so three
+~530.80395 Kg rows on a 3-piece 1,592.413 Kg bar leave 0.00115 Kg -- just above the old
+0.001 Kg floor. Check Stock Availability handed that crumb to the next drawing
+(MP-2026-00129, 1B8): a 0.001 Kg / 0 Nos Exact Match row, with the rest of the drawing
+short by 530.803 Kg instead of one whole piece.
+
+- `material_planning._batch_has_free_stock(remaining_kg, batch_total_kg, batch_total_sec)`:
+  free only above `BATCH_FREE_EPSILON` Kg **and**, for a batch that counts its pieces,
+  worth at least 0.001 Nos. A genuine part-piece (Reserve Without Dimensions) is still
+  offered.
+- Used at all three places that pick free batches: `check_stock_availability`,
+  `move_to_exact_match`, `update_exact_match_from_consolidate`.
+- Test `verify_mp_batch_dust` (17 checks) replays MP-2026-00129 through the real
+  `check_stock_availability`, with and without the new bar, and shows the old Kg-only
+  rule reproducing the live 0.001 Kg / 0 Nos row. `verify_no_zero_qty_exact_match`
+  now checks the three sites use the helper.
+- Existing plans are not changed. MP-2026-00129 still has its row 7 (0.001 Kg on R005,
+  reserved) and row 8 (530.803 Kg on R037, not reserved).
+
+---
+
+## 24. Material Planning: stock after a purchase (2026-09-20)
+
+Plan: `.claude/tasks/sep20_mp_stock_matching.md`. On MP-2026-00129, a receipt's stock was
+reserved, then unreserved, and a re-check sent 76 requirements back to purchase.
+
+1. **Re-check matches received stock first.** `_pending_purchase_items(mp)` replaces
+   `_ordered_item_codes` in `check_stock_availability`. An item counts only while its
+   Material Request line has `received_qty < stock_qty`. A requirement is matched to
+   stock like any other; its protected Unavailable row is kept only for the part stock
+   can't cover (`_keep_protected`, qty and Nos scaled), or dropped when covered.
+2. **Check stock without dimensions** (`Material Planning.check_stock_without_dimensions`):
+   - Plates / Structurals (`DIMENSIONLESS_GROUPS`): any batch of the same item, own size
+     first, then largest free.
+   - Rows via `_dimensionless_arm_fields`: the batch's dimensions,
+     `reserve_without_dimensions = 1`, and `sec_qty` = Kg / the batch piece.
+   - A shortfall row's Nos is proportional to the drawing's own pieces.
+   - Reserved Exact Match / Material Mapping rows are kept: covered by
+     `_coverage_key` (item, DUNO, item no), their batches' Kg is not offered again, and a
+     batch held in Material Mapping is not offered to Exact Match.
+   - Returns `kept_reserved`; the form keeps reserved rows in place (`_mp_clear_unreserved`),
+     because the Material Issue Plan's `source_row` points at them by name. The re-check
+     guard is lifted only with the box ticked.
+3. **Allocate from Purchase Receipt** (Material Mapping grid button, blue →
+   `allocate_receipt_to_plan`):
+   - receipt batches (`_receipt_batch_names`: bundles plus `batch_no`), free Kg in the
+     plan's warehouse (less every plan's reservations and this plan's rows);
+   - batches already in this plan's Exact Match are skipped (a batch serves one table);
+   - rows land in **Material Mapping**, where a different-size batch belongs: a row
+     already waiting as "Not Mapped" is filled in place (`_mapping_row_from_batch`), the
+     part a batch can't cover stays as its own Not Mapped row, and a requirement with no
+     row gets one (`_requirement_fields` + the batch fields). The requirement keeps its
+     own size; the batch's goes on `batch_*`, with `reserve_without_dimensions = 1`;
+   - covered Kg comes off Unavailable Items;
+   - nothing is reserved, and running it twice allocates nothing more.
+4. Test: `verify_mp_stock_without_dimensions` (29 checks: the real `check_stock_availability`
+   with stand-in stock, and `allocate_receipt_to_plan` on a real draft plan in a rolled-back
+   transaction).
