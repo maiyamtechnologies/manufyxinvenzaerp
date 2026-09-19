@@ -14,7 +14,10 @@
   "customer_drawing_number",
   "sales_order",
   "material_planning",
+  "cust_weight_per_nos",
   "customer_weight_kg",
+  "rate_per_kg",
+  "job_work_amount",
   "total_weight_kg",
   "mapped_weight_kg",
   "excess_weight_kg",
@@ -84,10 +87,31 @@
    "read_only": 1
   },
   {
+   "fieldname": "cust_weight_per_nos",
+   "fieldtype": "Float",
+   "label": "Cust Weight (per Nos)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
    "fieldname": "customer_weight_kg",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Customer Provided Weight (Kg)",
+   "label": "Cust Weight (Total)",
+   "read_only": 1
+  },
+  {
+   "description": "The drawing's Rate Schedule rate per Kg, when this row was built.",
+   "fieldname": "rate_per_kg",
+   "fieldtype": "Currency",
+   "label": "Rate / Kg",
+   "read_only": 1
+  },
+  {
+   "description": "Cust Weight (Total) \u00d7 Rate / Kg.",
+   "fieldname": "job_work_amount",
+   "fieldtype": "Currency",
+   "label": "Job Work Amount",
    "read_only": 1
   },
   {
@@ -131,7 +155,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-06-24 01:00:00.000000",
+ "modified": "2026-09-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Subcontracting Management",
  "name": "SCO Drawing Item",

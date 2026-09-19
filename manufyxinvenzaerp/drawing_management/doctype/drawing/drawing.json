@@ -45,6 +45,7 @@
   "items_summary_html",
   "section_totals",
   "total_weight",
+  "weight_per_pcs",
   "customer_provided_wt",
   "section_weight_change_log",
   "weight_change_log",
@@ -315,9 +316,19 @@
    "read_only": 1
   },
   {
+   "fieldname": "weight_per_pcs",
+   "fieldtype": "Float",
+   "label": "Cust Weight (per Nos)",
+   "precision": "3",
+   "description": "Change with Update Customer Weight.",
+   "read_only": 1,
+   "allow_on_submit": 1
+  },
+  {
    "fieldname": "customer_provided_wt",
    "fieldtype": "Float",
-   "label": "Customer Provided Wt",
+   "label": "Cust Weight (Total)",
+   "description": "Cust Weight (per Nos) \u00d7 No of Qty to Manufacture. Calculated.",
    "read_only": 1,
    "allow_on_submit": 1
   },
@@ -352,7 +363,7 @@
    "link_fieldname": "custom_drawing"
   }
  ],
- "modified": "2025-01-01 00:00:00.000000",
+ "modified": "2026-09-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drawing Management",
  "name": "Drawing",

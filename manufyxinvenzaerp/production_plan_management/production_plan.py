@@ -1128,6 +1128,24 @@ def validate_process_planning(doc, method):
 		)
 
 
+def apply_fg_nos(doc, method=None):
+	"""Production Plan validate hook: Planned Qty (Kg) from Qty (Nos) on drawing rows.
+
+	Owner: A3 (sep14 FG plan, D5/D16/D26). Wave 0 stub: does nothing, so a plan
+	saves exactly as before.
+
+	What A3 makes it do -- the ONLY place planned_qty is calculated for a row with
+	custom_drawing:
+		- planned_qty = flt(Cust Weight (Total) x custom_sec_qty / drawing Nos, 3);
+		- set custom_cust_weight_per_nos and custom_customer_weight_kg (Total);
+		- refuse when the Nos over every non-cancelled plan of the drawing would
+		  exceed the drawing's Nos, naming the other plans.
+	The three entry points (picker, BOM, Material Planning) set only custom_sec_qty.
+	"""
+	# TODO(A3): implement.
+	pass
+
+
 def unlink_production_plan_on_trash(doc, method):
 	linked = frappe.get_all(
 		"Material Planning",

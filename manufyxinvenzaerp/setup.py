@@ -1525,6 +1525,11 @@ def after_install():
     create_material_planning_auto_purchase_fields()
     create_manufacturing_settings_custom_fields()
     create_payment_request_custom_fields()
+    # Finished goods in Kg, counted in Nos per drawing (sep14 FG plan). After the
+    # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
+    create_fg_sales_custom_fields()
+    create_fg_property_setters()
+    set_fg_settings_defaults()
     from manufyxinvenzaerp.production_management.production_utils import (
         create_operations_workstations_routing,
     )
@@ -1580,6 +1585,11 @@ def after_migrate():
     create_material_planning_auto_purchase_fields()
     create_manufacturing_settings_custom_fields()
     create_payment_request_custom_fields()
+    # Finished goods in Kg, counted in Nos per drawing (sep14 FG plan). After the
+    # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
+    create_fg_sales_custom_fields()
+    create_fg_property_setters()
+    set_fg_settings_defaults()
     from manufyxinvenzaerp.production_management.production_utils import (
         create_operations_workstations_routing,
     )
@@ -2307,6 +2317,92 @@ def create_batch_custom_fields():
                                 "came from the excess-material-return flow -- lets Excess Material Mapping "
                                 "trace a reservation back to the Material Issue Plan it originated from.",
             },
+            # Finished goods: one batch per drawing, FG-<Sales Order>-<DUNO>, created
+            # by fg_stock.get_or_create_fg_batch (sep14 FG plan, D6/D20/D28). It
+            # carries the full order reference so a Delivery Note can find the
+            # batches of its Sales Order, and both weights per piece: the planned
+            # one from the drawing, and the actual one (batch Kg / batch Nos) that
+            # every FG movement uses. Raw-material batches never set
+            # custom_sales_order, so the section stays hidden on them.
+            {
+                "fieldname": "custom_fg_details_section",
+                "label": "FG Details",
+                "fieldtype": "Section Break",
+                "collapsible": 1,
+                "depends_on": "eval:doc.custom_sales_order",
+                "insert_after": "custom_source_mip_excess_row",
+            },
+            {
+                "fieldname": "custom_sales_order",
+                "label": "Sales Order",
+                "fieldtype": "Link",
+                "options": "Sales Order",
+                "read_only": 1,
+                "search_index": 1,
+                "insert_after": "custom_fg_details_section",
+            },
+            {
+                "fieldname": "custom_customer",
+                "label": "Customer",
+                "fieldtype": "Link",
+                "options": "Customer",
+                "read_only": 1,
+                "insert_after": "custom_sales_order",
+            },
+            {
+                "fieldname": "custom_drawing",
+                "label": "Drawing",
+                "fieldtype": "Link",
+                "options": "Drawing",
+                "read_only": 1,
+                "insert_after": "custom_customer",
+            },
+            {
+                "fieldname": "custom_job_work_order",
+                "label": "Job Work Order",
+                "fieldtype": "Link",
+                "options": "Subcontracting Order",
+                "read_only": 1,
+                "insert_after": "custom_drawing",
+                "description": "The Job Work Order whose Final Stock Entry first booked this batch.",
+            },
+            {
+                "fieldname": "custom_fg_details_col",
+                "fieldtype": "Column Break",
+                "insert_after": "custom_job_work_order",
+            },
+            {
+                "fieldname": "custom_duno_mark_no",
+                "label": "DUNO/Mark No",
+                "fieldtype": "Data",
+                "read_only": 1,
+                "insert_after": "custom_fg_details_col",
+            },
+            {
+                "fieldname": "custom_customer_drawing_number",
+                "label": "Cust Drawing Number",
+                "fieldtype": "Data",
+                "read_only": 1,
+                "insert_after": "custom_duno_mark_no",
+            },
+            {
+                "fieldname": "custom_cust_weight_per_nos",
+                "label": "Planned Kg per Nos",
+                "fieldtype": "Float",
+                "precision": "3",
+                "read_only": 1,
+                "insert_after": "custom_customer_drawing_number",
+                "description": "The drawing's Cust Weight (per Nos).",
+            },
+            {
+                "fieldname": "custom_weight_per_piece",
+                "label": "Actual Kg per Nos",
+                "fieldtype": "Float",
+                "precision": "3",
+                "read_only": 1,
+                "insert_after": "custom_cust_weight_per_nos",
+                "description": "Batch Kg / batch Nos, recalculated on every finished-goods movement.",
+            },
         ],
     }
     create_custom_fields(custom_fields, update=True)
@@ -2698,6 +2794,44 @@ def create_bom_custom_fields():
                     "in_standard_filter": 1,
                     "no_copy": 1,
                 },
+                # A drawing BOM's quantity is the drawing's Cust Weight (Total) in Kg
+                # (sep14 FG plan, D12); the piece count it stands for is carried here
+                # as Qty (Nos), with both customer weights copied from the Drawing.
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "insert_after": "quantity",
+                    "read_only": 1,
+                    "no_copy": 1,
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "default": "Nos",
+                    "insert_after": "custom_sec_qty",
+                    "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_cust_weight_per_nos",
+                    "fieldtype": "Float",
+                    "label": "Cust Weight (per Nos)",
+                    "insert_after": "custom_sec_uom",
+                    "read_only": 1,
+                    "no_copy": 1,
+                    "precision": "3",
+                },
+                {
+                    "fieldname": "custom_cust_weight_total",
+                    "fieldtype": "Float",
+                    "label": "Cust Weight (Total)",
+                    "insert_after": "custom_cust_weight_per_nos",
+                    "read_only": 1,
+                    "no_copy": 1,
+                    "precision": "3",
+                },
             ],
             "BOM Item": [
                 {
@@ -2848,7 +2982,52 @@ def create_so_custom_fields():
                     "insert_after": "custom_raw_materials_verified",
                     "allow_on_submit": 1,
                 },
-            ]
+            ],
+            # Finished goods are sold in Kg (the line's qty) but made, delivered and
+            # invoiced by the piece, so every line also carries its piece count
+            # (sep14 FG plan, D1). Delivered / Billed (Nos) are the running totals
+            # the Delivery Note and Sales Invoice write back, so the next document
+            # defaults to what is still pending in Nos, not in Kg.
+            # Qty (Nos) sits right after Quantity and takes one grid column; Delivery
+            # Date leaves the grid to pay for it (see create_fg_property_setters).
+            "Sales Order Item": [
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "insert_after": "qty",
+                    "in_list_view": 1,
+                    "columns": 1,
+                    "description": "Number of finished pieces on this line. The Quantity is their total weight in Kg.",
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "default": "Nos",
+                    "read_only": 1,
+                    "insert_after": "custom_sec_qty",
+                },
+                {
+                    "fieldname": "custom_delivered_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Delivered (Nos)",
+                    "read_only": 1,
+                    "no_copy": 1,
+                    "insert_after": "delivered_qty",
+                    "description": "Pieces delivered against this line, net of returns.",
+                },
+                {
+                    "fieldname": "custom_billed_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Billed (Nos)",
+                    "read_only": 1,
+                    "no_copy": 1,
+                    "insert_after": "billed_amt",
+                    "description": "Pieces invoiced against this line, net of credit notes.",
+                },
+            ],
         },
         update=True,
     )
@@ -2897,10 +3076,44 @@ def create_production_plan_custom_fields():
                 {
                     "fieldname": "custom_customer_weight_kg",
                     "fieldtype": "Float",
-                    "label": "Customer Provided Weight (Kg)",
+                    "label": "Cust Weight (Total)",
                     "insert_after": "custom_customer_drawing_number",
                     "in_list_view": 1,
                     "columns": 1,
+                },
+                # The planner enters pieces; planned_qty (Kg) is derived from them
+                # server-side by production_plan.apply_fg_nos (sep14 FG plan, D5/D26).
+                # Qty (Nos) sits right after DUNO/Mark No so it lands inside the
+                # grid's column budget -- this grid was already past it, and Item
+                # Name leaves the row view to make room (it repeats the Item Code).
+                # The Drawing field (custom/production_plan_item.json) now anchors on
+                # custom_cust_weight_per_nos: two fields anchored on DUNO/Mark No
+                # would be ordered by chance, and Material Planning follows Drawing.
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "insert_after": "custom_duno_mark_no",
+                    "in_list_view": 1,
+                    "columns": 1,
+                    "description": "Pieces of this drawing to make. Planned Qty (Kg) is calculated from it.",
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "default": "Nos",
+                    "read_only": 1,
+                    "insert_after": "custom_sec_qty",
+                },
+                {
+                    "fieldname": "custom_cust_weight_per_nos",
+                    "fieldtype": "Float",
+                    "label": "Cust Weight (per Nos)",
+                    "read_only": 1,
+                    "precision": "3",
+                    "insert_after": "custom_sec_uom",
                 },
                 {
                     "fieldname": "custom_planned_rm_weight_kg",
@@ -3944,7 +4157,7 @@ def create_sco_custom_fields():
                 {
                     "fieldname": "custom_customer_weight_kg",
                     "fieldtype": "Float",
-                    "label": "Customer Provided Weight (Kg)",
+                    "label": "Cust Weight (Total)",
                     "read_only": 1,
                     "insert_after": "custom_section_weights",
                     "description": "Sum of customer-provided weight across all drawings",
@@ -3998,6 +4211,27 @@ def create_sco_custom_fields():
                     "fieldtype": "HTML",
                     "label": "Operations Summary",
                     "insert_after": "custom_operations_tab",
+                },
+            ],
+            # The Job Work Order's one item line is in Kg (sum of its Production Plan
+            # rows' Planned Qty); the pieces it covers ride alongside as Qty (Nos)
+            # (sep14 FG plan, A3 item 6).
+            "Subcontracting Order Item": [
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "read_only": 1,
+                    "insert_after": "qty",
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "default": "Nos",
+                    "read_only": 1,
+                    "insert_after": "custom_sec_qty",
                 },
             ],
         },
@@ -4621,3 +4855,171 @@ def create_payment_request_custom_fields():
         },
         update=True,
     )
+
+
+def create_fg_sales_custom_fields():
+    """Delivery Note Item / Sales Invoice Item fields for finished goods by the piece.
+
+    Finished goods leave in Kg but are counted in Nos, per drawing (sep14 FG plan,
+    D8/D22/D23). The user types Qty (Nos) and the Kg is worked out from the drawing
+    batch, so both documents need the piece count, its UOM and the drawing it
+    belongs to on every FG row.
+
+    The Sales Invoice fields use the SAME names as the Delivery Note ones on
+    purpose: ERPNext's mapper copies same-named fields from row to row, so a
+    Delivery Note -> Sales Invoice carries them across with no mapping code.
+
+    custom_sec_uom doubles as the "this is an FG row" flag for the client:
+    Quantity (Kg) is read-only wherever it is set (see create_fg_property_setters).
+    That is why it has NO default here, unlike on the Sales Order Item -- a default
+    would lock the Kg on every raw-material row too.
+
+    Grid budget (see layout_purchase_receipt_item_grid for how it works): Qty (Nos)
+    takes one column right after Quantity. On the Delivery Note, UOM leaves the row
+    view to pay for it; on the Sales Invoice, Item narrows from 4 columns to 3.
+    """
+    create_custom_fields(
+        {
+            "Delivery Note Item": [
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "insert_after": "qty",
+                    "in_list_view": 1,
+                    "columns": 1,
+                    "description": "Pieces delivered. For finished goods the Quantity (Kg) is calculated from it.",
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "read_only": 1,
+                    "insert_after": "custom_sec_qty",
+                },
+                {
+                    "fieldname": "custom_billed_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Billed (Nos)",
+                    "read_only": 1,
+                    "no_copy": 1,
+                    "insert_after": "billed_amt",
+                    "description": "Pieces of this row invoiced so far, net of credit notes.",
+                },
+                {
+                    "fieldname": "custom_drawing",
+                    "fieldtype": "Link",
+                    "label": "Drawing",
+                    "options": "Drawing",
+                    "read_only": 1,
+                    "insert_after": "batch_no",
+                },
+                {
+                    "fieldname": "custom_duno_mark_no",
+                    "fieldtype": "Data",
+                    "label": "DUNO/Mark No",
+                    "read_only": 1,
+                    "insert_after": "custom_drawing",
+                },
+            ],
+            "Sales Invoice Item": [
+                {
+                    "fieldname": "custom_sec_qty",
+                    "fieldtype": "Float",
+                    "label": "Qty (Nos)",
+                    "insert_after": "qty",
+                    "in_list_view": 1,
+                    "columns": 1,
+                    "description": "Pieces invoiced. For finished goods the Quantity (Kg) is calculated from it.",
+                },
+                {
+                    "fieldname": "custom_sec_uom",
+                    "fieldtype": "Link",
+                    "label": "Sec UOM",
+                    "options": "UOM",
+                    "read_only": 1,
+                    "insert_after": "custom_sec_qty",
+                },
+                {
+                    "fieldname": "custom_drawing",
+                    "fieldtype": "Link",
+                    "label": "Drawing",
+                    "options": "Drawing",
+                    "read_only": 1,
+                    "insert_after": "batch_no",
+                },
+                {
+                    "fieldname": "custom_duno_mark_no",
+                    "fieldtype": "Data",
+                    "label": "DUNO/Mark No",
+                    "read_only": 1,
+                    "insert_after": "custom_drawing",
+                },
+            ],
+        },
+        update=True,
+    )
+
+
+def create_fg_property_setters():
+    """Standard-field changes for finished goods in Kg / Nos (sep14 FG plan, section 4.1).
+
+    - Production Plan Item.planned_qty is the Kg, calculated from Qty (Nos) by
+      production_plan.apply_fg_nos, so it says so and is read-only on drawing rows.
+    - Delivery Note / Sales Invoice Item.qty (Kg) is read-only on FG rows, which are
+      the rows with custom_sec_uom set: the Nos is typed and the Kg follows from the
+      batch (D8, D22, D23).
+    - Item.opening_stock is hidden: it creates a Stock Reconciliation, and Stock
+      Reconciliation is blocked on this site (D21).
+    - Grid budget for the new Qty (Nos) columns: Sales Order Item drops Delivery Date
+      from the row view (it is copied from the order's own Delivery Date and still
+      editable in the row), Delivery Note Item drops UOM, Sales Invoice Item narrows
+      Item from 4 columns to 3. Production Plan Item's Item Name leaves the row view
+      too, but it is this app's own custom field, so that is set on the field itself
+      in production_management/custom/production_plan_item.json.
+    """
+    for args in [
+        {"doctype": "Production Plan Item", "fieldname": "planned_qty", "property": "label",
+         "value": "Planned Qty (Kg)", "property_type": "Data"},
+        {"doctype": "Production Plan Item", "fieldname": "planned_qty", "property": "read_only_depends_on",
+         "value": "eval:doc.custom_drawing", "property_type": "Code"},
+        {"doctype": "Delivery Note Item", "fieldname": "qty", "property": "read_only_depends_on",
+         "value": "eval:doc.custom_sec_uom", "property_type": "Code"},
+        {"doctype": "Sales Invoice Item", "fieldname": "qty", "property": "read_only_depends_on",
+         "value": "eval:doc.custom_sec_uom", "property_type": "Code"},
+        {"doctype": "Item", "fieldname": "opening_stock", "property": "hidden",
+         "value": 1, "property_type": "Check"},
+        {"doctype": "Sales Order Item", "fieldname": "delivery_date", "property": "in_list_view",
+         "value": 0, "property_type": "Check"},
+        {"doctype": "Delivery Note Item", "fieldname": "uom", "property": "in_list_view",
+         "value": 0, "property_type": "Check"},
+        {"doctype": "Sales Invoice Item", "fieldname": "item_code", "property": "columns",
+         "value": 3, "property_type": "Int"},
+    ]:
+        frappe.make_property_setter(args)
+    frappe.db.commit()
+
+
+def set_fg_settings_defaults():
+    """Give the two Finished Goods settings their defaults on a site that has never set them.
+
+    A Single field added after the Settings were first saved has no row in
+    tabSingles, and Frappe does not create one from the field's default:
+    get_single_value then reads 0, and the Settings form shows 0 -- so saving the
+    form for any other reason would quietly switch "Edit FG Stock Kg" off. Writing
+    the default once, only where there is no row yet, makes the stored value, the
+    form and the code agree. A value somebody has set is never touched.
+    """
+    for fieldname, value in (
+        ("edit_fg_stock_kg", 1),
+        ("fg_weight_difference_warning_percent", 5),
+    ):
+        if not frappe.db.sql(
+            "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s",
+            ("Manufyxinvenza Settings", fieldname),
+        ):
+            frappe.db.set_single_value(
+                "Manufyxinvenza Settings", fieldname, value, update_modified=False
+            )
+    frappe.db.commit()
