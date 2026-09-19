@@ -64,11 +64,21 @@ frappe.query_reports["Production Report"] = {
 	// less material than the finished part weighs, so the part cannot be cut from it.
 	// Worth seeing at a glance rather than hunting for in a column of decimals.
 	formatter(value, row, column, data, default_formatter) {
+		// The total row is built by the report, not by Frappe (whose total would add up
+		// every rate and percentage), so its "Total" sits in the Sales Order column --
+		// shown as plain text here, not as a link to a Sales Order called "Total".
+		var is_total = data && data.is_total_row;
+		if (is_total && column.fieldname === "sales_order") {
+			return "<b>" + frappe.utils.escape_html(value || "") + "</b>";
+		}
 		var formatted = default_formatter(value, row, column, data);
 		if (column.fieldname === "waste_pct" && value !== null && value !== undefined) {
 			if (value < 0) {
 				formatted = "<span style='color:var(--red-500,#e24c4c);font-weight:600'>" + formatted + "</span>";
 			}
+		}
+		if (is_total && value !== null && value !== undefined && value !== "") {
+			formatted = "<b>" + formatted + "</b>";
 		}
 		return formatted;
 	},

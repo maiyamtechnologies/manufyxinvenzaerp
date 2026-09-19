@@ -17,6 +17,8 @@ def validate_item(doc, method):
     set_calculation_type(doc)
     validate_uom_configuration(doc)
     validate_batch_configuration(doc)
+    validate_fg_configuration(doc)
+    validate_batch_prefix_not_fg(doc)
     validate_batch_prefix(doc)
     validate_locked_fields(doc)
 
@@ -86,6 +88,83 @@ def validate_batch_configuration(doc):
                     doc.custom_parent_item_group
                 )
             )
+
+
+def validate_fg_configuration(doc):
+    """Finished goods are stocked in Kg with the piece count as Sec Qty in Nos, in
+    one batch per drawing that our code creates (sep14 FG plan, rule in one line).
+
+    - Kg / Nos: every FG figure downstream (Final Stock Entry, Delivery Note,
+      invoice) is Kg on the ledger and Nos alongside it; an item stocked in Nos
+      books pieces as Kg, which is the live bug this plan fixes.
+    - Has Batch No: the batch is what holds a drawing's Nos and its Kg per piece.
+    - Create New Batch off, no prefix: fg_stock.get_or_create_fg_batch names and
+      fills the batch itself (FG-<Sales Order>-<DUNO>). ERPNext's auto batch, or a
+      prefix picked up by before_insert_batch, would make a second, empty-handed
+      batch per entry instead.
+
+    An item that already has transactions cannot change these safely (ERPNext
+    refuses Has Batch No once stock exists, and _LOCKED_FIELDS refuses the UOMs),
+    so it only gets an orange note. FINGOODS001 stays on its old set-up (D13).
+    """
+    from manufyxinvenzaerp.production_management.fg_stock import FG_PARENT_ITEM_GROUP
+
+    # Read off the document, not is_fg_item(): a new item is not in the database yet.
+    if doc.custom_parent_item_group != FG_PARENT_ITEM_GROUP:
+        return
+
+    problems = []
+    if doc.stock_uom != "Kg":
+        problems.append(_("Default Unit of Measure must be Kg (it is {0})").format(doc.stock_uom or "-"))
+    if doc.custom_secondary_uom != "Nos":
+        problems.append(
+            _("Secondary UOM must be Nos (it is {0})").format(doc.custom_secondary_uom or "-")
+        )
+    if not doc.has_batch_no:
+        problems.append(_("Has Batch No must be ticked"))
+    if doc.custom_batch_prefix:
+        problems.append(_("Custom Batch Abbreviation must be blank"))
+
+    if doc.is_new() or not _has_transactions(doc.name):
+        # Nothing to decide for the user: the batch is always created by our code.
+        doc.create_new_batch = 0
+        if problems:
+            frappe.throw(
+                _("Finished-goods item {0} is set up wrongly:").format(frappe.bold(doc.name or doc.item_code))
+                + "<ul><li>" + "</li><li>".join(problems) + "</li></ul>"
+                + _("Finished goods are stocked in Kg, carry their piece count in Nos, "
+                    "and get one batch per drawing created by the system."),
+                title=_("Finished Goods Set-up"),
+            )
+        return
+
+    if doc.create_new_batch:
+        problems.append(_("Automatically Create New Batch should be unticked"))
+    if problems:
+        frappe.msgprint(
+            _("Finished-goods item {0} does not follow the Kg / Nos set-up, but it already "
+              "has transactions, so it is left as it is:").format(frappe.bold(doc.name))
+            + "<ul><li>" + "</li><li>".join(problems) + "</li></ul>",
+            title=_("Finished Goods Set-up"),
+            indicator="orange",
+        )
+
+
+def validate_batch_prefix_not_fg(doc):
+    """The prefix FG is reserved for finished-goods batches (FG-<Sales Order>-<DUNO>).
+
+    A raw-material prefix of FG would name its batches FG-..., and every place
+    that recognises a finished-goods batch by its name, or searches batches for a
+    Delivery Note, would then pick up steel. "FG-something" is refused for the
+    same reason: it still starts with "FG-".
+    """
+    prefix = (doc.custom_batch_prefix or "").strip().upper()
+    if prefix == "FG" or prefix.startswith("FG-"):
+        frappe.throw(
+            _("Custom Batch Abbreviation {0} is reserved for finished-goods batches. "
+              "Choose a different abbreviation.").format(frappe.bold(doc.custom_batch_prefix)),
+            title=_("Reserved Batch Abbreviation"),
+        )
 
 
 ## This validation is required to prevent changing batch prefix when batches are already created with the old prefix, which can lead to data inconsistency.

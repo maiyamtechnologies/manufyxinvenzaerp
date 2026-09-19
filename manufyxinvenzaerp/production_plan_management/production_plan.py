@@ -474,14 +474,17 @@ def get_items_for_material_requests(doc, warehouses=None, get_parent_warehouse_d
 	return {"mr_items": mr_items, "available_raw_materials": available_rows}
 
 
-def get_exploded_items(item_details, company, bom_no, include_non_stock_items, planned_qty=1, doc=None):
+def get_exploded_items(item_details, company, bom_no, include_non_stock_items, planned_qty=1, doc=None,
+                       planned_nos=None):
 	# Delegate to the dimension-aware direct query so all rows with different
 	# custom dimensions are kept separate (ERPNext's BOM Explosion merges rows
 	# by item_code+UOM without considering custom_length/thickness/width).
-	return get_bom_items_direct(item_details, company, bom_no, include_non_stock_items, planned_qty)
+	return get_bom_items_direct(item_details, company, bom_no, include_non_stock_items, planned_qty,
+	                            planned_nos=planned_nos)
 
 
-def get_bom_items_direct(item_details, company, bom_no, include_non_stock_items, planned_qty=1):
+def get_bom_items_direct(item_details, company, bom_no, include_non_stock_items, planned_qty=1,
+                         planned_nos=None):
 	"""
 	Query BOM Item rows directly instead of BOM Explosion Item.
 
@@ -489,7 +492,19 @@ def get_bom_items_direct(item_details, company, bom_no, include_non_stock_items,
 	name — even when two rows share the same item_code and dimensions (e.g., the
 	same structural profile used in multiple positions). qty is scaled by
 	planned_qty / bom.quantity.
+
+	A drawing BOM's quantity is Kg (its Cust Weight (Total), sep14 FG plan D12), and
+	the Production Plan passes its planned_qty in Kg, so that ratio is unchanged.
+	Material Planning plans in pieces, so it passes planned_nos instead and the
+	ratio becomes planned_nos / BOM Qty (Nos). A BOM with no Qty (Nos) -- one made
+	before the change, whose quantity WAS the piece count -- falls back to
+	quantity, which is what it always did.
 	"""
+	scale = None
+	if planned_nos is not None:
+		bom_qty, bom_nos = frappe.db.get_value("BOM", bom_no, ["quantity", "custom_sec_qty"]) or (0, 0)
+		scale = flt(planned_nos) / (flt(bom_nos) or flt(bom_qty) or 1)
+
 	bi = frappe.qb.DocType("BOM Item")
 	bom = frappe.qb.DocType("BOM")
 	item = frappe.qb.DocType("Item")
@@ -509,7 +524,10 @@ def get_bom_items_direct(item_details, company, bom_no, include_non_stock_items,
 		.select(
 			bi.name.as_("bom_item_name"),
 			bi.idx,
-			(bi.stock_qty / IfNull(bom.quantity, 1) * planned_qty).as_("qty"),
+			(
+				(bi.stock_qty * scale) if scale is not None
+				else (bi.stock_qty / IfNull(bom.quantity, 1) * planned_qty)
+			).as_("qty"),
 			item.item_name,
 			item.name.as_("item_code"),
 			bi.description,
@@ -724,6 +742,17 @@ def get_pp_drawings_for_picker(search_type, search_value, pp_name=""):
 	return []
 
 
+def _item_stock_uoms(item_codes):
+	"""stock_uom for a set of items, in one query."""
+	codes = sorted({c for c in (item_codes or []) if c})
+	if not codes:
+		return {}
+	return {
+		r.name: r.stock_uom
+		for r in frappe.get_all("Item", filters={"name": ["in", codes]}, fields=["name", "stock_uom"])
+	}
+
+
 def _picker_rows_from_mp(mp_name, pp_name):
 	mp = frappe.get_doc("Material Planning", mp_name)
 	if mp.docstatus == 2:
@@ -743,6 +772,12 @@ def _picker_rows_from_mp(mp_name, pp_name):
 		)
 		customer_weights = {(r.parent, r.duno_mark_no): flt(r.total_weight) for r in wt_rows}
 
+	# The Production Plan row's UOM is the finished-goods item's stock UOM (Kg), which is
+	# what Planned Qty is in. The Material Planning row's own UOM is Nos, the unit of its
+	# Qty to Manufacture -- passing that through labelled Planned Qty (Kg) "Nos" and
+	# ERPNext then refused it as a fraction of a whole-number UOM.
+	stock_uoms = _item_stock_uoms(r.item_code for r in mp.bom_items)
+
 	rows = []
 	for row in mp.bom_items:
 		cust_name = ""
@@ -759,7 +794,7 @@ def _picker_rows_from_mp(mp_name, pp_name):
 			"customer": row.customer or "",
 			"customer_name": cust_name,
 			"qty_to_manufacture": flt(row.qty_to_manufacture) or 1,
-			"uom": row.uom or "",
+			"uom": stock_uoms.get(row.item_code) or row.uom or "",
 			"material_planning": mp_name,
 			"for_warehouse": mp.for_warehouse or "",
 			"mp_complete": True,
@@ -807,6 +842,8 @@ def _picker_rows_from_so(so_name, pp_name):
 			"for_warehouse": mp_vals.get("for_warehouse") or "",
 		}
 
+	stock_uoms = _item_stock_uoms(r.item_code for r in mp_bom_items)  # see _picker_rows_from_mp
+
 	rows = []
 	for r in mp_bom_items:
 		cust_name = ""
@@ -814,6 +851,7 @@ def _picker_rows_from_so(so_name, pp_name):
 			cust_name = frappe.db.get_value("Customer", r.customer, "customer_name") or r.customer
 		mp_info = mp_completion.get(r.material_planning, {"complete": False, "docstatus": 0, "for_warehouse": ""})
 		row = dict(r)
+		row["uom"] = stock_uoms.get(r.item_code) or r.uom or ""
 		row["customer_name"] = cust_name
 		row["mp_complete"] = mp_info["complete"]
 		row["mp_docstatus"] = mp_info["docstatus"]
@@ -827,6 +865,15 @@ def _picker_rows_from_so(so_name, pp_name):
 
 
 def _mark_already_in_pp(rows, current_pp_name):
+	"""Flag each picker row as in this plan, fully planned elsewhere, or free.
+
+	A drawing may be split across plans (D16), so being on another plan no longer
+	locks it: what locks it is having no pieces left. Each drawing row carries its
+	remaining Nos -- the default the picker inserts -- and is only put with the
+	"already in another Production Plan" rows once that reaches 0. Rows with no
+	drawing keep the old one-plan-per-BOM rule."""
+	_mark_fg_nos_left(rows, current_pp_name)
+
 	bom_nos = [r.get("bom_no") for r in rows if r.get("bom_no")]
 	if not bom_nos:
 		return
@@ -853,7 +900,36 @@ def _mark_already_in_pp(rows, current_pp_name):
 		pp_list = bom_pp_map.get(r.get("bom_no"), [])
 		r["already_in_this_pp"] = bool(current_pp_name and current_pp_name in pp_list)
 		other_pps = [p for p in pp_list if p != current_pp_name]
-		r["already_in_pp"] = other_pps[0] if other_pps else ""
+		if r.get("fg_nos_tracked"):
+			# Split plans are allowed; only a drawing with nothing left is taken.
+			r["already_in_pp"] = (", ".join(other_pps) or _("fully planned")) if flt(r.get("nos_left")) <= 0 else ""
+			r["other_pps"] = ", ".join(other_pps)
+		else:
+			r["already_in_pp"] = other_pps[0] if other_pps else ""
+
+
+def _mark_fg_nos_left(rows, current_pp_name):
+	"""Add drawing Nos, Nos left and both customer weights to each picker row."""
+	drawings = list({r.get("drawing") for r in rows if r.get("drawing")})
+	if not drawings:
+		return
+	elsewhere = fg_nos_planned_elsewhere(drawings, exclude_pp=current_pp_name)
+	cache = {}
+	for r in rows:
+		drawing = r.get("drawing")
+		if not drawing:
+			continue
+		if drawing not in cache:
+			cache[drawing] = drawing_fg_weights(drawing)
+		info = cache[drawing]
+		if not info:
+			continue
+		used = sum(n for _pp, n in elsewhere.get(drawing, []))
+		r["fg_nos_tracked"] = 1
+		r["drawing_nos"] = info.nos
+		r["nos_left"] = max(flt(info.nos - used, 3), 0.0)
+		r["cust_weight_total"] = info.total
+		r["cust_weight_per_nos"] = info.per_nos
 
 
 @frappe.whitelist()
@@ -1126,6 +1202,206 @@ def validate_process_planning(doc, method):
 			  "Work Type set to Subcontractor."),
 			title=_("Vendor/Contractor Required"),
 		)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Finished goods planned in Nos, carried in Kg (sep14 FG plan, D5 / D16 / D26)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fg_kg_for_nos(total, nos, drawing_nos):
+	"""Kg for `nos` pieces of a drawing: Cust Weight (Total) x Nos / drawing Nos.
+
+	Worked from the Total rather than per Nos x Nos so that planning every piece
+	gives back the Total exactly -- per Nos is rounded to 3 dp, and 3 x 33.333 is
+	not 100. Shared by the Production Plan, the Job Work Order builder and the
+	customer-weight cascade so all three land on the same figure."""
+	if not flt(drawing_nos):
+		return 0.0
+	return flt(flt(total) * flt(nos) / flt(drawing_nos), 3)
+
+
+def drawing_kg_for_nos(drawing, nos, cache=None):
+	"""Kg of finished goods for `nos` pieces of `drawing`, or 0.0 when it can't be told.
+
+	For the Qty to Manufacture (Kg) shown beside the Nos on planning rows (Material
+	Planning, Job Work Order, Material Issue Plan). 0.0 for a drawing made before the
+	Kg / Nos change: its Cust Weight (Total) then holds one piece's weight, so any Kg
+	worked from it would be wrong. `cache` (a dict) spares repeat lookups per drawing."""
+	if not drawing or not flt(nos):
+		return 0.0
+	if cache is not None and drawing in cache:
+		info = cache[drawing]
+	else:
+		info = drawing_fg_weights(drawing)
+		if cache is not None:
+			cache[drawing] = info
+	if not info or not info.has_per_nos:
+		return 0.0
+	return fg_kg_for_nos(info.total, nos, info.nos)
+
+
+def drawing_fg_weights(drawing):
+	"""The drawing's piece count and both customer weights, as one dict.
+
+	per_nos falls back to Total / Nos for a drawing that never had the per Nos
+	figure stored (made by hand, or before the Kg / Nos change)."""
+	d = frappe.db.get_value(
+		"Drawing", drawing,
+		["name", "no_of_qty_to_manufacture", "customer_provided_wt", "weight_per_pcs",
+		 "rs_rate_per_kg", "duno_mark_no", "docstatus"],
+		as_dict=True,
+	)
+	if not d:
+		return None
+	nos = flt(d.no_of_qty_to_manufacture)
+	total = flt(d.customer_provided_wt, 3)
+	return frappe._dict(
+		name=d.name,
+		nos=nos,
+		total=total,
+		per_nos=flt(d.weight_per_pcs, 3) or (flt(total / nos, 3) if nos else 0.0),
+		has_per_nos=bool(flt(d.weight_per_pcs)),
+		rate_per_kg=flt(d.rs_rate_per_kg),
+		duno_mark_no=d.duno_mark_no or "",
+		docstatus=d.docstatus,
+	)
+
+
+def fg_nos_planned_elsewhere(drawings, exclude_pp=None):
+	"""{drawing: [(plan, nos), ...]} over every non-cancelled Production Plan.
+
+	Reads Qty (Nos) only. A row saved before the Kg / Nos change has none and so
+	counts nothing (D13): those plans are being removed, and guessing their Nos
+	from a planned_qty that may be pieces or Kg would be worse than ignoring them."""
+	drawings = [d for d in (drawings or []) if d]
+	if not drawings:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT ppi.custom_drawing AS drawing, ppi.parent AS pp,
+		       SUM(IFNULL(ppi.custom_sec_qty, 0)) AS nos
+		FROM `tabProduction Plan Item` ppi
+		INNER JOIN `tabProduction Plan` pp ON pp.name = ppi.parent
+		WHERE ppi.custom_drawing IN %(drawings)s
+		  AND pp.docstatus < 2
+		  AND pp.name != %(exclude)s
+		GROUP BY ppi.custom_drawing, ppi.parent
+		HAVING SUM(IFNULL(ppi.custom_sec_qty, 0)) > 0
+		ORDER BY ppi.parent
+		""",
+		{"drawings": tuple(drawings), "exclude": exclude_pp or ""},
+		as_dict=True,
+	)
+	out = {}
+	for r in rows:
+		out.setdefault(r.drawing, []).append((r.pp, flt(r.nos)))
+	return out
+
+
+def fg_nos_remaining(drawing, exclude_pp=None):
+	"""Pieces of a drawing no non-cancelled Production Plan has claimed yet."""
+	info = drawing_fg_weights(drawing)
+	if not info:
+		return 0.0
+	used = sum(n for _pp, n in fg_nos_planned_elsewhere([drawing], exclude_pp).get(drawing, []))
+	return max(flt(info.nos - used, 3), 0.0)
+
+
+def apply_fg_nos(doc, method=None):
+	"""Production Plan validate hook: Planned Qty (Kg) from Qty (Nos) on drawing rows.
+
+	The planner thinks in pieces; stock, the BOM and the Job Work Order move Kg. This
+	is the ONE place the Kg of a drawing row is worked out (D26), so the picker, the
+	BOM's Create Production Plan and Material Planning's Make Production Plan -- which
+	each set only Qty (Nos) -- cannot drift apart:
+
+		planned_qty = Cust Weight (Total) x Qty (Nos) / drawing Nos, 3 dp   (D5)
+
+	Cust Weight (per Nos) and (Total) are refreshed from the drawing on every save,
+	so a plan always shows the drawing's current weight.
+
+	A drawing can be split over several plans, but never beyond its own piece count
+	(D16): the Nos on every non-cancelled plan, this one included, may not exceed the
+	drawing's Nos. The refusal names the other plans, because the fix is on them.
+
+	Rows are left alone when they have no drawing, and when they have no Qty (Nos)
+	on a drawing that has no per Nos weight -- a plan built before the change (D13).
+
+	Hooks run after ERPNext's own validate, which has already totalled planned_qty
+	and copied it into pending_qty; both are redone here once the Kg is known.
+	"""
+	rows = [r for r in (doc.get("po_items") or []) if r.get("custom_drawing")]
+	if not rows:
+		return
+
+	nos_by_drawing = defaultdict(float)
+	info_by_drawing = {}
+	for row in rows:
+		info = info_by_drawing.get(row.custom_drawing)
+		if info is None:
+			info = drawing_fg_weights(row.custom_drawing)
+			info_by_drawing[row.custom_drawing] = info
+		if not info:
+			continue
+
+		nos = flt(row.get("custom_sec_qty"))
+		if nos <= 0:
+			if not info.has_per_nos:
+				continue  # legacy row (D13): planned_qty stays as it was entered
+			frappe.throw(
+				_("Row {0}: enter Qty (Nos) for drawing {1} (DUNO {2}). Planned Qty (Kg) is "
+				  "calculated from it.").format(row.idx, row.custom_drawing, info.duno_mark_no),
+				title=_("Qty (Nos) Required"),
+			)
+		if nos != int(nos):
+			frappe.throw(
+				_("Row {0}: Qty (Nos) must be a whole number of pieces, not {1}.").format(row.idx, nos),
+				title=_("Whole Pieces Only"),
+			)
+		if not info.nos or not info.total:
+			frappe.throw(
+				_("Row {0}: drawing {1} has no {2}. Set it with Update Customer Weight on the "
+				  "drawing first.").format(
+					row.idx, row.custom_drawing,
+					_("No of Qty to Manufacture") if not info.nos else _("Cust Weight (Total)")),
+				title=_("Customer Weight Missing"),
+			)
+
+		row.custom_sec_uom = "Nos"
+		row.custom_customer_weight_kg = info.total
+		row.custom_cust_weight_per_nos = info.per_nos
+		row.planned_qty = fg_kg_for_nos(info.total, nos, info.nos)
+		nos_by_drawing[row.custom_drawing] += nos
+
+	if nos_by_drawing:
+		elsewhere = fg_nos_planned_elsewhere(list(nos_by_drawing), exclude_pp=doc.name)
+		problems = []
+		for drawing, nos_here in nos_by_drawing.items():
+			info = info_by_drawing[drawing]
+			others = elsewhere.get(drawing, [])
+			used = sum(n for _pp, n in others)
+			if flt(nos_here + used, 3) > flt(info.nos, 3):
+				left = max(flt(info.nos - used, 3), 0)
+				problems.append(
+					_("Drawing {0} (DUNO {1}) has {2} Nos. {3} Nos are already planned in {4}, "
+					  "so {5} Nos are left -- this plan asks for {6}.").format(
+						drawing, info.duno_mark_no, _fmt_nos(info.nos), _fmt_nos(used),
+						", ".join("{0} ({1} Nos)".format(get_link_to_form("Production Plan", p), _fmt_nos(n))
+						          for p, n in others) or _("no other plan"),
+						_fmt_nos(left), _fmt_nos(nos_here))
+				)
+		if problems:
+			frappe.throw("<br>".join(problems), title=_("More Pieces Than the Drawing Has"))
+
+	# ERPNext's validate ran first and read the old planned_qty.
+	doc.set_pending_qty_in_row_without_reference()
+	doc.calculate_total_planned_qty()
+
+
+def _fmt_nos(n):
+	"""Pieces print without a trailing .0 -- '4 Nos', not '4.0 Nos'."""
+	n = flt(n, 3)
+	return str(int(n)) if n == int(n) else str(n)
 
 
 def unlink_production_plan_on_trash(doc, method):

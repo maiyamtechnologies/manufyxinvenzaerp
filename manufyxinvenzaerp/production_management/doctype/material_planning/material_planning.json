@@ -37,6 +37,7 @@
   "raw_materials",
   "section_available_raw_materials",
   "for_warehouse",
+  "check_stock_without_dimensions",
   "check_stock_btn",
   "available_raw_materials",
   "section_material_mapping",
@@ -114,6 +115,13 @@
    "fieldtype": "Link",
    "label": "Raw Materials Warehouse",
    "options": "Warehouse"
+  },
+  {
+   "default": "0",
+   "description": "For Plates and Structurals: match stock by item and exact Kg, whatever the batch's size. A batch of the drawing's own size is used first, then other sizes of the same item. Rows get Reserve stock without dimensions, with the Nos as a fraction of the batch's piece. Rows already reserved are kept when stock is checked again.",
+   "fieldname": "check_stock_without_dimensions",
+   "fieldtype": "Check",
+   "label": "Check stock without dimensions"
   },
   {
    "description": "Filter stock check to this sub-location within the warehouse.",
@@ -330,7 +338,7 @@
   }
  ],
  "links": [],
- "modified": "2026-07-05 19:50:00.000000",
+ "modified": "2026-09-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Production Management",
  "name": "Material Planning",

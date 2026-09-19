@@ -69,6 +69,11 @@ doctype_js = {
     "Supplier Operation Entry": "public/js/supplier_operation_entry.js",
     "Inspection Entry": "public/js/inspection_entry.js",
     "Payment Request": "public/js/payment_request.js",
+    # Finished goods in Kg / Nos (sep14 FG plan) -- one file per owner package.
+    "Delivery Note": "public/js/delivery_note.js",
+    "Sales Invoice": "public/js/sales_invoice.js",
+    "Stock Reconciliation": "public/js/stock_reconciliation.js",
+    "Stock Entry": "public/js/stock_entry_fg.js",
 }
 # Svg Icons
 # ------------------
@@ -173,6 +178,9 @@ doc_events = {
 	},
 	"Sales Order": {
 		"validate": "manufyxinvenzaerp.drawing_management.sales_order.recalculate_raw_material_qty",
+		# A submitted order skips validate, and the Drawing List stays editable after
+		# submit (allow_on_submit), so the lock on drawn rows has to run here as well.
+		"before_update_after_submit": "manufyxinvenzaerp.drawing_management.sales_order.lock_drawn_rows",
 	},
 	"Purchase Order": {
 		"validate": "manufyxinvenzaerp.purchase_order_management.purchase_order.validate_purchase_order",
@@ -214,9 +222,36 @@ doc_events = {
 	# standard ERPNext under the client's Phase 0.4 change request, and
 	# Subcontracting Order / Operation Entry do that work instead.
 	"Stock Entry": {
-		"validate": "manufyxinvenzaerp.production_management.stock_entry.validate_stock_entry",
-		"on_submit": "manufyxinvenzaerp.production_management.stock_entry.on_submit_stock_entry",
-		"on_cancel": "manufyxinvenzaerp.production_management.stock_entry.on_cancel_stock_entry",
+		# fg_stock handles the finished-goods rows (sep14 FG plan); the existing
+		# handlers skip them (not row.is_finished_item) and run first.
+		"validate": [
+			"manufyxinvenzaerp.production_management.stock_entry.validate_stock_entry",
+			"manufyxinvenzaerp.production_management.fg_stock.validate_fg_stock_entry_rows",
+		],
+		"on_submit": [
+			"manufyxinvenzaerp.production_management.stock_entry.on_submit_stock_entry",
+			"manufyxinvenzaerp.production_management.fg_stock.on_fg_stock_entry_change",
+		],
+		"on_cancel": [
+			"manufyxinvenzaerp.production_management.stock_entry.on_cancel_stock_entry",
+			"manufyxinvenzaerp.production_management.fg_stock.on_fg_stock_entry_change",
+		],
+	},
+	# Blocked site-wide (sep14 FG plan, D21): corrections go through Material
+	# Issue + Material Receipt instead.
+	"Stock Reconciliation": {
+		"validate": "manufyxinvenzaerp.stock_management.stock_reconciliation.block_stock_reconciliation",
+	},
+	# Finished goods delivered and invoiced by the piece (sep14 FG plan, A5 / A6).
+	"Delivery Note": {
+		"validate": "manufyxinvenzaerp.selling_management.delivery_note.validate_delivery_note",
+		"on_submit": "manufyxinvenzaerp.selling_management.delivery_note.on_submit_delivery_note",
+		"on_cancel": "manufyxinvenzaerp.selling_management.delivery_note.on_cancel_delivery_note",
+	},
+	"Sales Invoice": {
+		"validate": "manufyxinvenzaerp.selling_management.sales_invoice.validate_sales_invoice",
+		"on_submit": "manufyxinvenzaerp.selling_management.sales_invoice.on_submit_sales_invoice",
+		"on_cancel": "manufyxinvenzaerp.selling_management.sales_invoice.on_cancel_sales_invoice",
 	},
 	"Supplier Operation Entry": {
 		"validate": [
@@ -242,6 +277,8 @@ doc_events = {
 			"manufyxinvenzaerp.production_plan_management.production_plan.validate_duno_uniqueness",
 			"manufyxinvenzaerp.production_plan_management.production_plan.validate_process_planning",
 			"manufyxinvenzaerp.drawing_management.rate_schedule_sync.seed_production_plan_rows",
+			# Last: Planned Qty (Kg) from Qty (Nos) on drawing rows (sep14 FG plan, A3).
+			"manufyxinvenzaerp.production_plan_management.production_plan.apply_fg_nos",
 		],
 		"on_update": "manufyxinvenzaerp.drawing_management.rate_schedule_sync.on_update_production_plan",
 		"on_update_after_submit": "manufyxinvenzaerp.drawing_management.rate_schedule_sync.on_update_production_plan",
@@ -316,6 +353,15 @@ before_tests = "india_compliance.tests.before_tests"
 
 # Overriding Methods
 # ------------------------------
+# Finished goods are delivered and invoiced by the piece (sep14 FG plan). Frappe's
+# make_mapped_doc resolves these overrides, so the "Create" buttons on a Sales
+# Order / Delivery Note reach them. Each one keeps the ERPNext signature and, until
+# its owner (A5 / A6) fills it in, returns ERPNext's own result unchanged.
+override_whitelisted_methods = {
+	"erpnext.selling.doctype.sales_order.sales_order.make_delivery_note": "manufyxinvenzaerp.selling_management.mapping.make_delivery_note",
+	"erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice": "manufyxinvenzaerp.selling_management.mapping.make_sales_invoice_from_so",
+	"erpnext.stock.doctype.delivery_note.delivery_note.make_sales_invoice": "manufyxinvenzaerp.selling_management.mapping.make_sales_invoice_from_dn",
+}
 #
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "manufyxinvenzaerp.event.get_events"

@@ -148,6 +148,11 @@ def _build_sales_order():
             "qty": flt(uw, 3), "uom": "Kg",
         })
     so.save(ignore_permissions=True)
+    # Create Drawing now refuses an unverified order on the server (sep14 plan D25).
+    # This fixture carries a broken row on purpose, which Verify would reject, so the
+    # pass is stood in for directly -- the savepoint is what is under test here.
+    frappe.db.set_value("Sales Order", so.name, "custom_raw_materials_verified", 1,
+                        update_modified=False)
     frappe.db.commit()
     return so.name
 

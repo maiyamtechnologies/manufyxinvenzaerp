@@ -57,6 +57,13 @@
 // only the content. A leaf uses the same shape as the old flat manuals: {id,
 // title, kicker, purpose, fields[], steps[], calcs[], examples[], notes[],
 // buttons[]}, everything optional.
+//
+// Then: Finished Goods — Kg and Nos (sep14 plan). Finished goods are ordered, made,
+// stocked, delivered and invoiced in Kg, with the piece count in Nos alongside on
+// every document and one batch per drawing holding both. Its own category, with the
+// plan's worked example; the few sentences elsewhere that described the old single
+// customer weight (the sheet headers, Update Customer Weight, the Production Plan's
+// quantity columns) were brought in line, and the two new settings are under Settings.
 
 frappe.pages["erp-manual"].on_page_load = function (wrapper) {
 	let page = frappe.ui.make_app_page({
@@ -135,7 +142,7 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			"<a href='/assets/manufyxinvenzaerp/files/Sample_BOM_Sheet.xlsx' download " +
 			"style='font-weight:600'>Sample BOM Sheet (filled)</a> — a real 22-drawing sheet with " +
 			"100 raw-material rows, showing how the header columns repeat down every row of a drawing.",
-			"<b>Column headers must match.</b> The importer finds columns by name, not position, so you may reorder them — but a renamed or missing header is simply not read. Assembly Group, Customer Drawing Number, DUNO/Mark No, FG Item, Total Qty, Total Weight (KG), Nature of Work, Rate Schedule, Item No, Material Code, Grade, Thickness, Width, Length, Reqd Raw Material Qty.",
+			"<b>Column headers must match.</b> The importer finds columns by name, not position, so you may reorder them — but a renamed or missing header is simply not read. Assembly Group, Customer Drawing Number, DUNO/Mark No, FG Item, Total Qty, Cust Weight (per Nos), Cust Weight (Total), Nature of Work, Rate Schedule, Item No, Material Code, Grade, Thickness, Width, Length, Reqd Raw Material Qty.",
 			"<b>One row per raw material, not per drawing.</b> A drawing needing three materials takes three rows, and its header columns (drawing number, DUNO, FG item, quantities, Nature of Work, Rate Schedule) repeat identically on all three. The importer groups them by Customer Drawing Number.",
 		],
 		buttons: [
@@ -208,7 +215,7 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			"by the system from the raw materials listed under that drawing. They are supposed to " +
 			"differ — what matters is which way round.",
 		fields: [
-			{ name: "Customer Provided Weight (Kg)", note: "On the drawing row. Comes from the sheet's <b>Total Weight (KG)</b> column — what the finished, fabricated piece weighs. Typed in, never calculated, and editable." },
+			{ name: "Cust Weight (per Nos) / Cust Weight (Total)", note: "On the drawing row. Come from the sheet's <b>Cust Weight (per Nos)</b> and <b>Cust Weight (Total)</b> columns — what one finished, fabricated piece weighs, and all of the drawing's pieces. Typed in, never calculated; locked once the row has its Drawing (then changed only by Update Customer Weight)." },
 			{ name: "Calculated Weight (Kg) — drawing row", note: "<b>Auto calculated.</b> What the raw materials listed under that drawing add up to. Read-only, filled the moment Load Items runs and recalculated on every save." },
 			{ name: "Calculated Weight (Kg) — raw material row", note: "<b>Auto calculated.</b> That one material's weight: <i>Length ÷ 1000 × Unit Weight × Reqd Sec Qty</i> for Structurals, <i>Length ÷ 1000 × Width ÷ 1000 × Thickness × Unit Weight × Reqd Sec Qty</i> for Plates. Unit Weight comes from the Item master, not the sheet." },
 			{ name: "Calculated Total Weight (Kg)", note: "<b>Auto calculated.</b> The row's weight × the drawing's Total Quantity — what the whole drawing quantity consumes of that one material." },
@@ -273,7 +280,7 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 		fields: [
 			{ name: "Drawings", note: "How many drawings the sheet produced, and how many already have a Drawing document created." },
 			{ name: "Raw material rows", note: "Total staged rows, then the same total split by group — e.g. 50 Plates · 50 Structurals. A group you did not expect to see is worth a second look." },
-			{ name: "Customer weight", note: "The sheet's Total Weight (KG) added up across every drawing." },
+			{ name: "Customer weight", note: "The sheet's Cust Weight (Total) added up across every drawing." },
 			{ name: "Calculated weight", note: "What all the listed raw materials add up to across every drawing." },
 			{ name: "Difference", note: "Calculated minus customer, in Kg and as a percentage. Positive is the normal direction." },
 			{ name: "Below customer weight", note: "Any drawing whose raw material weighs <i>less</i> than the finished piece, named by Mark No. <b>None</b> in green is what you want to see." },
@@ -373,7 +380,7 @@ const ERP_MANUAL_DRAWING_CHILDREN = [
 			"<b>Nuts and Bolts reverse.</b> There Qty is the count and Sec Qty is the weight, so Total Qty = Qty × No of Qty to Manufacture and Total Sec Qty = Total Qty × Unit Weight.",
 		],
 		notes: [
-			"<b>The comparison you want is in Totals.</b> <b>Total Weight</b> is what the drawing's own raw materials add up to — our engineering figure. <b>Customer Provided Weight</b> is what the customer stated, brought in from the sheet's Total Weight (KG). The gap between them is the difference every downstream document measures excess against.",
+			"<b>The comparison you want is in Totals.</b> <b>Total Weight</b> is what the drawing's own raw materials add up to — our engineering figure. <b>Customer Provided Weight</b> is what the customer stated, brought in from the sheet's Cust Weight (Total). The gap between them is the difference every downstream document measures excess against.",
 			"<b>A missing Unit Weight breaks the chain silently.</b> With no Unit Weight on the Item master, the formula yields nothing and the row weighs zero. Verify Raw Materials on the Sales Order catches this before drawings are ever created.",
 		],
 	},
@@ -387,7 +394,7 @@ const ERP_MANUAL_DRAWING_CHILDREN = [
 			"up disagreeing. Use Update Customer Weight and every copy is rewritten together.",
 		steps: [
 			"Open the Drawing and press <b>Update Customer Weight</b>.",
-			"Enter the new figure. The old value, the new one, who changed it and when are written to the drawing's own <b>Weight Change Log</b> — so the history is on the document, not in someone's memory.",
+			"Enter the new weight of <b>one piece</b> — Cust Weight (per Nos). The Total (× the drawing's Nos) is worked out for you; see <i>Finished Goods — Kg and Nos</i>. The old value, the new one, who changed it and when are written to the drawing's own <b>Weight Change Log</b> — so the history is on the document, not in someone's memory.",
 			"Everything below is then updated in the same operation.",
 		],
 		fields: [
@@ -840,6 +847,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			"Press <b>Get Raw Materials</b> to pull in every raw material those BOMs need.",
 		],
 		notes: [
+			"<b>Qty to Manufacture is pieces; the Kg sits beside it.</b> Each row shows <b>Qty to Manufacture (Nos)</b> — the drawing's piece count, UOM Nos — and <b>Qty to Manufacture (Kg)</b>, the finished-goods weight of those pieces (the drawing's Cust Weight (Total)). The Production Plan carries the same pair as Qty (Nos) and Planned Qty (Kg), and the Job Work Order and Material Issue Plan drawing rows show both again. The Kg is blank on a drawing made before Kg and Nos were tracked separately.",
 			"<b>Several Sales Orders in one plan.</b> This is how you buy for more than one order together: requirements for the same item consolidate across every drawing selected, whichever order it came from. Each row keeps its own Sales Order, and every document downstream — Production Plan, Job Work Order, Material Issue Plan, and the Material Request → PO → Purchase Receipt chain — carries it per line, so nothing is pooled that should not be.",
 			"<b>Grouping here does not force grouping later.</b> One Material Planning can feed several Production Plans. Use the Production Plan's own <b>Add Drawings</b> picker, which searches by Sales Order, to split production back out per order while still having bought in bulk. The Material Issue Plan takes only the drawings its own Production Plan holds.",
 			"<b>DUNO/Mark No must be unique inside one plan.</b> Two drawings sharing a mark are refused, naming both rows and both Sales Orders. This is not tidiness: per-drawing weights, batch reservations and the transfer scope are all tracked by DUNO within a plan, so a repeated mark would double-count weight and could send one order's reserved material to another's supplier. Marks come from the customer's drawing and two customers reusing one is normal — plan those orders separately, or change one of the marks.",
@@ -919,6 +927,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			"“Check Stock Availability” compares each required row's Length/Width/Thickness against every batch of that item currently free in your warehouse.",
 			"A batch only counts as an Exact Match if its own Length, Width, AND Thickness are EQUAL to what's required — not “close enough,” not “bigger and could be cut down.” Exactly equal.",
 			"If more than one batch could match, the largest free one is tried first, and if one batch can't cover the whole requirement, the remainder is filled from the next batch — you may see two rows for the same drawing requirement, one per batch used.",
+			"<b>Check stock without dimensions</b> (tick box under Raw Materials Warehouse) — for Plates and Structurals the size no longer has to match. Any batch of the SAME item counts (never another item): the drawing's own size first, then other sizes, largest free first. Availability is the exact Kg, with no rounding to whole pieces. The row gets <b>Reserve stock without dimensions</b>, shows the batch's own size, and its Nos is that Kg as a fraction of one piece of the batch (settled into whole pieces at transfer). What stock can't cover goes to Material Mapping. Rows already reserved stay as they are when you check again with the box ticked.",
 		],
 		calcs: [
 			{
@@ -946,6 +955,8 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			{ name: "Unreserve (per row)", note: "Releases just that row's claim." },
 		],
 		notes: [
+			"<b>A crumb left in a batch is not stock.</b> Splitting one batch across several drawings can leave a fraction of a Kg once its pieces are all spoken for. That remainder is no longer offered to the next drawing — it would make a 0 Nos row and split that drawing across two batches for nothing. A batch counts as having stock only while what is left is worth at least a thousandth of one of its pieces; a genuine part-piece still counts.",
+			"<b>Checking again after a purchase.</b> Stock is matched first — including what the receipt brought in. A requirement still on a Material Request that has quantity left to receive keeps its Unavailable Items row only for the part stock can't cover; once the Material Request is fully received it is no longer held back, so nothing already received is asked for again.",
 			"Reserving only ever claims the quantity ON THIS ROW — never the whole batch. Example: Batch ISA100-L12000-SR001 has 12,158.4 Kg free across the warehouse. This row only needs 894 Kg (the calculation above), so reserving it claims exactly 894 Kg. The remaining 11,264.4 Kg stays free — visible and reservable by any other row or any other Material Planning, right up until someone else claims it too.",
 			"Reserving is a soft claim, not a physical stock movement — it just marks the quantity as spoken for so no other Material Planning can also claim it. The actual movement out of the warehouse happens later, during Transfer (from the Material Issue Plan).",
 			"CNC Process — tick this when the piece needs CNC cutting/machining at your own facility before it's ready to send to the supplier. Instead of moving straight from stores to the supplier/WIP warehouse, a CNC-ticked row's material is sent first to the CNC Warehouse set on the Material Issue Plan (via its “To CNC Warehouse” button); once machining is done, the separate “CNC to Supplier/WIP” button forwards it on. Example: a 10mm plate batch needs laser cutting before subcontracted fabrication — tick CNC Process on its row, and it's routed through the CNC Warehouse first; un-ticked rows on the same plan transfer straight to the supplier as normal.",
@@ -1041,6 +1052,7 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			"Status legend — “Mapped” (green): an ordinary purchased batch is assigned. “Excess Mapped” (blue): a real batch is assigned and it came back from another job as an off-cut. “Excess Mapped (At Supplier)” (blue): a historical status only. It came from Return Type, which no longer exists — an off-cut that never comes back is now written off as <b>Process Loss</b> on its own job, with a reason. Rows saved before that change keep this status and still count as mapped. “Excess Mapped (Pending Return)” (blue): fulfilled from another job's excess that HASN'T physically returned to stock yet, but is already promised to this row; the batch attaches itself automatically the day it does return. “Cut Sheet Mapped” (blue): fulfilled from a Cut Sheet's nesting plan, sized to the piece (W1), not the plate. “Not Mapped” (red): nothing assigned yet. Every blue status counts as mapped — it is material you already have a claim on, so it is included in the Difference in Kg figure and never sent back through purchasing.",
 		],
 		buttons: [
+			{ name: "Allocate from Purchase Receipt (grid button)", note: "Pick a submitted Purchase Receipt: the batches it brought in are mapped onto this plan's requirements that nothing covers yet — same item, any size (the drawing's own size first), exact Kg. A requirement already waiting here as <b>Not Mapped</b> has its own row filled in (the part a batch cannot cover stays as its own Not Mapped row); anything else gets a new row. Each row keeps the requirement's size and carries the batch's on the Batch fields, with <b>Reserve stock without dimensions</b> ticked. Use it when a receipt's automatic allocation did not map, or after re-checking stock. Stock reserved by any plan, or already on a row of this plan, is never used again, and a batch already in Exact Match is skipped. Covered requirements come off Unavailable Items. Nothing is reserved — press Reserve afterwards." },
 			{ name: "Reserve / Unreserve", note: "Same soft-claim mechanism as Available Raw Materials — works whether the row has a real batch, a Cut Sheet allocation, or an Excess Mapped claim." },
 			{ name: "(what a transfer does to a reservation)", note: "A row gives up only what actually left the warehouse. Transfer 30 Kg of a 120 Kg reservation and the row keeps the other 90 — it is released outright only when the remainder reaches zero. Where several rows share one batch they give it up one at a time in document order, so whole reservations are left behind rather than every row being left holding a fraction it can never transfer cleanly. Cancelling a transfer puts back exactly what it took." },
 			{
@@ -1397,10 +1409,10 @@ const ERP_MANUAL_PRODUCTION_PLAN_CHILDREN = [
 			"Plan later knows exactly which reserved rows belong to this job.",
 		fields: [
 			{ name: "Item Code / BOM No", note: "What is being produced, and the Bill of Materials it is produced against." },
-			{ name: "Planned Qty / Stock UOM", note: "How many of this item this plan produces." },
+			{ name: "Qty (Nos) / Planned Qty (Kg)", note: "On a drawing row you type the pieces (Qty (Nos)); Planned Qty (Kg) is calculated from them and is read-only — see <i>Finished Goods — Kg and Nos</i>." },
 			{ name: "Sales Order / DUNO Mark No / Customer Drawing Number", note: "Traceability back to the customer order and the specific drawing/mark." },
 			{ name: "Material Planning", note: "The Material Planning document that reserved raw material for this row. Material Issue Plan reads this link to pull in only the rows belonging to this plan's own drawings." },
-			{ name: "Customer Weight (Kg)", note: "The customer-provided weight for this item, carried through from the Sales Order/Drawing." },
+			{ name: "Cust Weight (per Nos) / Cust Weight (Total)", note: "The drawing's customer weights — one piece, and all of its pieces — carried through from the Drawing." },
 		],
 	},
 	{
@@ -1944,6 +1956,7 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			"received and the plan closes itself.",
 		steps: [
 			"<b>Make Final Stock Entry</b> appears as soon as the <b>last operation exists</b>, and books whatever that operation has finished — you do not wait for the whole job. It first shows you what it is about to book: one line per drawing, with how many pieces are planned, how many the last operation has completed, how many are already in finished goods, and how many this entry would book. Agree with it and it creates a draft Manufacture Stock Entry to review and submit.",
+			"<b>What is booked to come back is not consumed.</b> An Excess Material Items row is a promise that steel is waiting at the supplier to be returned (or claimed by another job), so the Final Stock Entry leaves those kilos where they are and consumes the rest. Without it the same steel was booked into finished goods AND still expected back, and Return Excess Entry then refused with \"not enough of this material left to return\". A row that has already become a Stock Entry, or been claimed by another plan, holds nothing back.",
 			"<b>Four drawings of ten books four drawings.</b> Only the raw material belonging to those four is consumed — the rest stays at the supplier for the next entry — and only those four appear as finished goods. Finish the other six later and press it again; pieces already booked are never booked twice.",
 			"The plan moves to <b>Completed</b> by itself once finished goods have been received AND every Excess Material Items row is resolved: returned, or claimed by another job — and nothing of the job is still sitting at the supplier. Anything that did not come back must have been written off as Process Loss first.",
 			"Completed is one-way. The document locks; nothing later moves it back.",
@@ -2374,6 +2387,8 @@ const ERP_MANUAL_REFERENCE_CHILDREN = [
 			{ name: "Auto Purchase from Material Planning", note: "Off by default. When ticked, an <b>Auto Purchase</b> button appears on Material Planning that creates Material Request → Purchase Order → Purchase Receipt in one click for every unavailable item — and the same switch reveals the <b>Add All Drawing</b> testing button on Supplier Operation Entry. Both are data-entry shortcuts for setting up test data. On a live site this stays off, and neither button exists." },
 			{ name: "Cut Sheet Tolerance (%)", note: "Default <b>2</b>. How far To Use (W1) plus Balance (W2) may differ from the sheet actually being cut before a warning appears. Cutting always loses a little to the saw, so a small gap is normal — the warning exists to catch a mis-typed dimension, not to police the kerf. Set 0 to warn on any difference at all. It never blocks a save." },
 			{ name: "Create New Batch for Cut Sheet Stock Entry", note: "Default <b>off</b>. Off: once the cut has been transferred, the sheet's own batch is rewritten to the Balance (W2) dimensions — same batch, same name, new size. On: the batch is never rewritten; a Repack Stock Entry empties it and creates a <b>new</b> batch carrying the W2 dimensions, Sec Qty and Kg, so documents already issued against the original still read true." },
+			{ name: "Edit FG Stock Kg", note: "Default <b>on</b>. On: the Kg of each finished-goods row on the Final Stock Entry can be changed to the weighed figure. Off: that Kg is read-only and always equals Nos × the drawing's Cust Weight (per Nos). See <i>Finished Goods — Kg and Nos</i>." },
+			{ name: "FG Weight Difference Warning (%)", note: "Default <b>5</b>. On the Final Stock Entry, warns when the Kg entered for a drawing differs from its planned weight by more than this percentage, either way. Only a warning; 0 warns on any difference. Applies only while Edit FG Stock Kg is on." },
 			{ name: "Show Warning for Duplicate DUNO", note: "Default <b>on</b>. Warns on the Sales Order (Verify Raw Materials) and when saving a Drawing if that DUNO/Mark No is already used by a different Sales Order. It is only a warning and never blocks either one — a mark comes from the customer's drawing, and two customers reusing one is ordinary. Switch it off if the noise is not useful to you." },
 		],
 		notes: [
@@ -2515,6 +2530,235 @@ const ERP_MANUAL_DELIVERY_CHALLAN_CHILDREN = [
 	},
 ];
 
+// ─── Finished Goods — Kg and Nos. Finished goods are sold, made and stocked in Kg,
+// and every one of those documents also counts the pieces (Nos) per drawing. Written
+// as one category rather than scattered over the others because the rule is the same
+// everywhere and the worked example only makes sense read end to end. ─────────────
+const ERP_MANUAL_FINISHED_GOODS_CHILDREN = [
+	{
+		id: "fg-overview",
+		title: "Kg and Nos, Together",
+		kicker: "The rule in one line",
+		purpose:
+			"Finished goods move in <b>Kg</b> everywhere — on the Sales Order, the stock, the " +
+			"Delivery Note and the invoice — and every finished-goods row also carries its " +
+			"<b>piece count in Nos</b>, per drawing. You type the Nos; the system works out the Kg. " +
+			"Each drawing gets exactly <b>one batch</b>, and that batch holds both figures, so the " +
+			"weight of one piece is always simply <i>batch Kg ÷ batch Nos</i>.",
+		fields: [
+			{ name: "Cust Weight (per Nos)", note: "What ONE piece of the drawing weighs, as the customer states it." },
+			{ name: "Cust Weight (Total)", note: "What ALL the pieces of the drawing weigh: per Nos × the drawing's Nos. Wherever a document says “Total”, it means every piece of the drawing, not one." },
+			{ name: "Qty (Nos)", note: "The piece count, on the Sales Order line, the BOM, the Production Plan, the Job Work Order, every finished-goods stock row, the Delivery Note and the Sales Invoice. It is the figure you type on the plan, the delivery and the invoice." },
+			{ name: "Qty / Planned Qty (Kg)", note: "The weight. Typed only where a weight is really known: the Sales Order line (the ordered Kg) and the weighed figure on the Final Stock Entry. Everywhere else it is calculated from the Nos." },
+			{ name: "The drawing's batch", note: "<b>FG-&lt;Sales Order&gt;-&lt;DUNO&gt;</b>, e.g. FG-SAL-ORD-2026-00042-D1. Created by the first Final Stock Entry of the drawing and used by every later one, so all of a drawing's pieces sit in one batch whichever Job Work Order made them." },
+		],
+		notes: [
+			"<b>The last pieces take exactly what is left.</b> When the Nos you type is everything that remains — in a batch, still to deliver on a Sales Order line, or still to bill — the Kg is the exact Kg remaining, not Nos × the weight of one piece. That is what stops a crumb like 0.001 Kg being left behind in a batch that holds no pieces.",
+			"<b>All weights are kept to 3 decimals</b> (grams). There is no other tolerance.",
+			"<b>Older orders are left as they were.</b> Orders, drawings, plans and Job Work Orders from before this change, and finished-goods items without batches (FINGOODS001, and Fabricated Structurs until its batch is switched on), keep working the old way.",
+		],
+	},
+	{
+		id: "fg-sheet",
+		title: "Upload Sheet and Verify",
+		kicker: "Sales Order",
+		purpose:
+			"The finished-goods line on the Sales Order is entered in <b>Kg</b> (convert Tonne to Kg " +
+			"yourself), with the <b>total pieces in Qty (Nos)</b>. The upload sheet then gives every " +
+			"drawing two customer weights, and Verify Raw Materials checks that they add up — per " +
+			"drawing and for the whole line — before any drawing can be created.",
+		fields: [
+			{ name: "Cust Weight (per Nos)", note: "Sheet column. The weight of one piece. The template's sample row is 5 Nos × 50 = 250." },
+			{ name: "Cust Weight (Total)", note: "Sheet column. The weight of all Total Qty pieces. Sheets made from the old template still load: <i>Weight per Pcs (KG)</i> is read as per Nos and <i>Total Weight (KG)</i> as the Total." },
+			{ name: "Check: per Nos × Nos = Total", note: "For every drawing still waiting to be created: both weights must be filled in, and per Nos × Total Qty must equal the Total to 3 decimals. The message names the Drawing List row and shows the sum, e.g. <i>30 Kg × 10 Nos = 300 Kg, but Cust Weight (Total) is 295 Kg — difference −5 Kg</i>." },
+			{ name: "Check: the drawings add up to the line", note: "For each finished-goods line: the drawings' Totals must add up to the line's Kg, and their Nos to the line's Qty (Nos). The message shows ordered against drawings, in Kg and Nos, and the difference." },
+			{ name: "Check: the FG item is on the order", note: "A drawing whose FG Item is not on the order's Items table fails — nothing could ever be delivered against it." },
+		],
+		steps: [
+			"Enter the finished-goods line: Quantity in Kg, Qty (Nos) = all the pieces.",
+			"<b>Download Template</b>, fill both customer-weight columns, attach and <b>Load Items</b>.",
+			"<b>Verify Raw Materials</b>. Every check above blocks: correct the sheet (or the order line) and verify again.",
+			"<b>Create Drawing</b>. The server checks again that Verify passed, so a stale form or a direct call cannot build drawings from rows nobody verified.",
+		],
+		notes: [
+			"<b>Verify is cleared when the order changes.</b> Changing a finished-goods line's Kg, Nos or item, or a weight on a Drawing List row that has no drawing yet, clears the verified tick. Saving with line totals that do not match shows an orange warning; it does not block the save.",
+			"<b>A row with a Drawing is locked.</b> Once a Drawing List row has its Drawing, its Cust Weight (per Nos), Cust Weight (Total) and Total Qty cannot be edited on the order — not even before the order is submitted. A weight change goes through <b>Update Customer Weight</b> on the Drawing, which writes the row for you.",
+		],
+	},
+	{
+		id: "fg-drawing",
+		title: "Drawing, BOM and Update Customer Weight",
+		kicker: "One piece in, the total worked out",
+		purpose:
+			"The Drawing carries both weights from the sheet. <b>Cust Weight (per Nos)</b> is read-only " +
+			"and <b>Cust Weight (Total)</b> is always per Nos × No of Qty to Manufacture. The BOM made " +
+			"from it is in Kg: its quantity is the drawing's Cust Weight (Total), with the pieces " +
+			"alongside as Qty (Nos).",
+		steps: [
+			"On the Drawing press <b>Update Customer Weight</b>.",
+			"Enter <b>New Cust Weight (per Nos)</b> — the weight of ONE piece. The popup shows the current per Nos and Total, and a live <i>New total</i> line (per Nos × the drawing's Nos).",
+			"On confirm the Drawing and its Sales Order Drawing List row get both figures, and the new Total goes to the BOM, the Production Plan rows, the Job Work Order and Material Issue Plan drawing rows and the operation entries. The change is logged with the old and new Total.",
+		],
+		notes: [
+			"<b>The Sales Order line is not changed.</b> If the drawings no longer add up to the line, the result message shows the new difference in orange. It does not block.",
+			"<b>Job Work Orders:</b> a draft one recalculates its rate and job work amount; a submitted one keeps its quantities and is listed in the message so you know which ones to look at.",
+		],
+		buttons: [
+			{ name: "Update Customer Weight", note: "Takes the weight of one piece. The only way to change either customer weight once the drawing exists." },
+		],
+	},
+	{
+		id: "fg-production-plan",
+		title: "Production Plan in Nos",
+		kicker: "Type pieces, the Kg follows",
+		purpose:
+			"On a drawing row of the Production Plan you enter <b>Qty (Nos)</b>. <b>Planned Qty (Kg)</b> is " +
+			"worked out by the server — Nos × Cust Weight (per Nos) — and is read-only. However the plan " +
+			"was made (the drawing picker, the BOM's Production Plan button, or Material Planning), the " +
+			"same calculation runs on save.",
+		fields: [
+			{ name: "Qty (Nos)", note: "The pieces this plan makes. Whole pieces only." },
+			{ name: "Planned Qty (Kg)", note: "Calculated: Cust Weight (Total) × Nos ÷ the drawing's Nos. 4 Nos of a 10 Nos / 300 Kg drawing = 120 Kg." },
+			{ name: "Cust Weight (per Nos) / Cust Weight (Total)", note: "The drawing's two weights, shown on the row." },
+		],
+		notes: [
+			"<b>A drawing can be split over several plans</b>, but all the plans together (cancelled ones aside) can never plan more pieces than the drawing has. Going over is refused with a message naming the other plans and how many Nos are left.",
+			"<b>New plans start with what is left.</b> The picker and the BOM's button propose the remaining Nos, and the picker hides drawings that have none left.",
+		],
+	},
+	{
+		id: "fg-job-work-order",
+		title: "Job Work Order and Job Work Amount",
+		kicker: "Kg, Nos, rate per Kg",
+		purpose:
+			"The Job Work Order made from a plan carries the plan's <b>Kg</b> as the item quantity and " +
+			"its <b>Nos</b> as Qty (Nos). Job work is paid per Kg, at each drawing's own Rate Schedule, " +
+			"so the order is priced for you.",
+		fields: [
+			{ name: "Item Qty / Qty (Nos)", note: "The Kg and the pieces of every drawing on the plan." },
+			{ name: "Drawing row: Qty to Manufacture", note: "The drawing's pieces on this order (Nos). The Material Issue Plan's drawing rows carry the same Nos." },
+			{ name: "Drawing row: Rate / Kg", note: "From the drawing's Rate Schedule (Rate/KG)." },
+			{ name: "Drawing row: Job Work Amount", note: "The drawing's Kg on this order × its Rate / Kg. 120 Kg × 20 = 2,400." },
+			{ name: "Item Rate / Amount", note: "The order has one item line for several drawings, so its rate is the Kg-weighted average and its amount is the sum of the drawings' Job Work Amounts." },
+		],
+		notes: [
+			"<b>Production Report</b> shows <b>Rate / Kg</b> and <b>Job Work Amount</b> for every drawing row, next to <b>Cust Weight (Total)</b>, and adds the amounts up in the total row. A Job Work Order from before this change has no amount stored; the report works it out from the drawing's Rate Schedule instead.",
+		],
+	},
+	{
+		id: "fg-final-stock-entry",
+		title: "Final Stock Entry and the Drawing Batch",
+		kicker: "Kg and Nos into one batch per drawing",
+		purpose:
+			"<b>Make Final Stock Entry</b> (on the Material Issue Plan) books the pieces the last " +
+			"operation has finished. Each drawing gets one finished-goods row: its Nos as Qty (Nos), " +
+			"its Kg as the quantity, into the drawing's own batch <b>FG-&lt;Sales Order&gt;-&lt;DUNO&gt;</b>.",
+		fields: [
+			{ name: "Qty (Kg)", note: "Proposed as Nos × Cust Weight (per Nos). With <b>Edit FG Stock Kg</b> ticked you replace it with the weighed figure." },
+			{ name: "Qty (Nos)", note: "The pieces finished and not yet booked. Whole pieces only." },
+			{ name: "Batch", note: "Created on the drawing's first entry and reused by every later one, even from another Job Work Order. If the DUNO is blank, or another drawing of the order already uses that DUNO, the drawing name is used in its place." },
+			{ name: "Batch — FG Details", note: "Sales Order, Customer, Drawing, DUNO/Mark No, Customer Drawing Number, Job Work Order, <b>Planned Kg per Nos</b> (the drawing's Cust Weight (per Nos)) and <b>Actual Kg per Nos</b> (batch Kg ÷ batch Nos, kept up to date by every movement). The batch's Sec Qty is its total Nos." },
+			{ name: "Edit FG Stock Kg (setting)", note: "Manufyxinvenza Settings, <b>on</b> by default. On: the Kg of each finished-goods row can be changed to the weighed figure. Off: the Kg is read-only and always equals Nos × the drawing's Cust Weight (per Nos) — the server resets anything typed." },
+			{ name: "FG Weight Difference Warning (%) (setting)", note: "Default <b>5</b>. When the Kg entered for a drawing differs from its planned weight by more than this percentage, either way, an orange warning lists the drawing, the planned and entered Kg and the difference. It only warns — the entry still saves. 0 warns on any difference. Applies only while Edit FG Stock Kg is on." },
+		],
+		notes: [
+			"<b>Part of a job can be booked.</b> Four pieces now and six later is normal: each entry books only what is finished and not yet booked, and a run with nothing ready says so.",
+			"The batch points at the first Final Stock Entry that was submitted into it.",
+		],
+	},
+	{
+		id: "fg-stock-movements",
+		title: "Moving FG Stock, and Stock Reconciliation",
+		kicker: "Transfer, Issue, Receipt — by Nos",
+		purpose:
+			"Finished goods can be moved with an ordinary Stock Entry. On a finished-goods row the " +
+			"<b>batch is mandatory</b> and you work in Nos; the pieces are tracked per warehouse, so a " +
+			"batch can sit in two warehouses after a transfer.",
+		fields: [
+			{ name: "Material Transfer / Material Issue", note: "Pick the batch and type the Nos (whole pieces, no more than the batch holds in the source warehouse). The Kg is calculated from the batch and is read-only; the last pieces take exactly the Kg left there." },
+			{ name: "Material Receipt", note: "Only into an <b>existing</b> finished-goods batch — the system never creates a finished-goods batch this way. Type the Nos and the weighed <b>Kg</b>." },
+		],
+		steps: [
+			"<b>To correct finished-goods stock</b> (a re-weigh, or a count that is wrong): make a <b>Material Issue</b> for the pieces, which removes them at the batch's current weight, then a <b>Material Receipt</b> of the right Nos and Kg into the same batch. The batch's Actual Kg per Nos follows.",
+		],
+		notes: [
+			"<b>Stock Reconciliation cannot be used on this site</b>, for any item. The form shows, and the server refuses with: <i>“As the inventory module is completely customized, Stock Reconciliation cannot be used. Instead, use a Stock Entry of type Material Issue to remove the product from inventory, then a Material Receipt to add the updated stock.”</i> The Item's Opening Stock field is hidden for the same reason.",
+		],
+	},
+	{
+		id: "fg-delivery-note",
+		title: "Delivery Note and Returns",
+		kicker: "Type Nos, the Kg comes from the batch",
+		purpose:
+			"Make the Delivery Note from the Sales Order. The finished-goods line arrives with the " +
+			"<b>Nos still to deliver</b> and no batch. <b>Get FG Batches</b> fills it from the drawings' " +
+			"batches; you type the Nos, and the Kg is calculated from the batch and is read-only.",
+		steps: [
+			"On the Sales Order: <b>Create → Delivery Note</b>. The finished-goods line shows the pending Nos.",
+			"Press <b>Get FG Batches</b>. It lists this order's drawing batches that hold pieces in the row's warehouse — Batch, Drawing, DUNO, Available (Nos), Available (Kg), Kg per Nos — with a proposed <b>Nos to Deliver</b>.",
+			"Tick the drawings, adjust Nos to Deliver, <b>Add Rows</b>. Each batch becomes one row linked to its Sales Order line, and the unbatched row is removed.",
+			"Change the Nos on a row if needed; the Kg follows. Save and submit. The line's <b>Delivered (Nos)</b> and the batch are updated.",
+		],
+		fields: [
+			{ name: "Refused on a finished-goods row", note: "No batch; a batch of another Sales Order, or one tied to no order; part pieces; more Nos than the batch holds in the warehouse; more Nos on one Sales Order line than it still has to deliver." },
+			{ name: "Delivered (Nos)", note: "On the Sales Order line, net of returns. Recounted on every submit and cancel." },
+		],
+		buttons: [
+			{ name: "Get FG Batches", note: "On a draft Delivery Note with finished-goods rows. Adds one row per ticked drawing batch." },
+			{ name: "Delivery Note (pending Nos)", note: "On the Sales Order, under Create. ERPNext decides “fully delivered” by Kg, and weighed pieces are often heavier than ordered, so the Kg can run out while pieces are still to go — ERPNext then hides its own Delivery Note button. This one appears while any line still has Nos pending, and offers those lines." },
+			{ name: "Return (Create → Return)", note: "On a submitted Delivery Note. Type the Nos coming back (a positive number is fine; it is stored as negative). They go back into the <b>same batch</b>, at the Kg per Nos they were delivered at; the last pieces still out take exactly the Kg still out. You cannot return more than is still out. A new return proposes everything still out." },
+		],
+		notes: [
+			"<b>Heavier pieces and ERPNext's allowance.</b> If the delivered Kg goes over the ordered Kg, ERPNext refuses the Delivery Note unless its over-delivery allowance allows it. That allowance is 0% on this site until it is set (Stock Settings, or on the item). The Nos are always capped at what was ordered; the Kg limit is ERPNext's alone.",
+		],
+	},
+	{
+		id: "fg-sales-invoice",
+		title: "Sales Invoice by Nos",
+		kicker: "From the Sales Order or the Delivery Note",
+		purpose:
+			"The invoice stays in Kg, but you work in Nos. Make it from the Sales Order or from a " +
+			"Delivery Note; each finished-goods row starts with the Nos not yet billed, and the Kg " +
+			"follows from the Nos and is read-only.",
+		fields: [
+			{ name: "From the Sales Order", note: "Kg per Nos = the line's Kg ÷ its Nos — the <b>ordered</b> weight. 5 Nos of a 300 Kg / 10 Nos line = 150 Kg." },
+			{ name: "From a Delivery Note", note: "Kg per Nos = that Delivery Note row's own Kg ÷ Nos — the <b>actual</b> weight that left. Pieces returned against the Delivery Note cannot be billed." },
+			{ name: "Billed (Nos)", note: "On the Sales Order line (every invoice) and on the Delivery Note row (invoices made from it). A credit note reduces it; a cancel restores it. The next invoice defaults to what is still pending." },
+		],
+		notes: [
+			"<b>The last pending Nos take the exact pending Kg.</b> If part of a line was billed from a Delivery Note at its actual weight, the rest billed from the Sales Order ends on exactly what is left of the ordered Kg (see the worked example).",
+			"<b>Refused:</b> part pieces, more Nos than are still unbilled, and a finished-goods row that comes from neither a Sales Order nor a Delivery Note.",
+			"<b>Update Stock cannot be ticked</b> on an invoice with finished-goods items. Finished goods leave stock only through a Delivery Note, which is where their batch Nos are kept.",
+		],
+	},
+	{
+		id: "fg-worked-example",
+		title: "Worked Example",
+		kicker: "One drawing, start to finish",
+		purpose:
+			"One drawing D1: 10 Nos, Cust Weight (per Nos) 30, Cust Weight (Total) 300. Sales Order " +
+			"line 300 Kg / 10 Nos. Rate Schedule 20 per Kg. The batch column shows batch " +
+			"FG-&lt;Sales Order&gt;-D1 after each step, as Nos · Kg · Kg per Nos.",
+		notes: [
+			"<table class='mpm-field-table'><tbody>" +
+				"<tr><td class='mpm-field-name'><b>Step</b></td><td class='mpm-field-note'><b>Result</b></td><td class='mpm-field-note'><b>Batch after</b></td></tr>" +
+				"<tr><td class='mpm-field-name'>Production Plan: 4 Nos</td><td class='mpm-field-note'>120 Kg planned</td><td class='mpm-field-note'>—</td></tr>" +
+				"<tr><td class='mpm-field-name'>Job Work Order</td><td class='mpm-field-note'>120 Kg / 4 Nos, 20 per Kg, amount 2,400</td><td class='mpm-field-note'>—</td></tr>" +
+				"<tr><td class='mpm-field-name'>Final Stock Entry 1: 4 Nos, weighed 122 Kg</td><td class='mpm-field-note'>batch created</td><td class='mpm-field-note'>4 · 122.000 · 30.500</td></tr>" +
+				"<tr><td class='mpm-field-name'>Delivery Note 1: 3 Nos</td><td class='mpm-field-note'>91.500 Kg</td><td class='mpm-field-note'>1 · 30.500 · 30.500</td></tr>" +
+				"<tr><td class='mpm-field-name'>Production Plan 6 Nos → Job Work Order (amount 3,600) → Final Stock Entry 2: 6 Nos, weighed 181 Kg</td><td class='mpm-field-note'>same batch</td><td class='mpm-field-note'>7 · 211.500 · 30.214</td></tr>" +
+				"<tr><td class='mpm-field-name'>Delivery Note 2: 7 Nos</td><td class='mpm-field-note'>211.500 Kg — the exact Kg left</td><td class='mpm-field-note'>0 · 0.000 · —</td></tr>" +
+				"<tr><td class='mpm-field-name'>Return 2 Nos (against Delivery Note 2)</td><td class='mpm-field-note'>−60.429 Kg</td><td class='mpm-field-note'>2 · 60.429 · 30.214</td></tr>" +
+				"<tr><td class='mpm-field-name'>Sales Invoice from Delivery Note 1: 3 Nos</td><td class='mpm-field-note'>91.500 Kg (actual 30.5 per Nos)</td><td class='mpm-field-note'></td></tr>" +
+				"<tr><td class='mpm-field-name'>Sales Invoice from Sales Order: 5 Nos</td><td class='mpm-field-note'>150.000 Kg (300 ÷ 10 × 5)</td><td class='mpm-field-note'></td></tr>" +
+				"<tr><td class='mpm-field-name'>Next invoice from the Sales Order: the last 2 Nos</td><td class='mpm-field-note'>58.500 Kg — exactly what is left unbilled (300 − 91.5 − 150)</td><td class='mpm-field-note'></td></tr>" +
+				"</tbody></table>",
+			"<b>Why a second plan of 7 Nos is refused:</b> 4 Nos are already on the first plan, so only 6 of the drawing's 10 are left.",
+			"<b>Why Delivery Note 2 needs an allowance:</b> 91.5 + 211.5 = 303 Kg against 300 Kg ordered. The pieces are all delivered by Nos, but ERPNext compares Kg — see the note under Delivery Note and Returns.",
+		],
+	},
+];
+
 const ERP_MANUAL_CATEGORIES = [
 	...ERP_MANUAL_STUB_CATEGORIES,
 	{ id: "bom", label: "BOM", children: ERP_MANUAL_BOM_CHILDREN },
@@ -2526,6 +2770,7 @@ const ERP_MANUAL_CATEGORIES = [
 	{ id: "delivery-challan", label: "Delivery Challan (Gate Pass)", children: ERP_MANUAL_DELIVERY_CHALLAN_CHILDREN },
 	{ id: "supplier-operation-entry", label: "Supplier Operation Entry", children: ERP_MANUAL_SOE_CHILDREN },
 	{ id: "inspection", label: "Inspection", children: ERP_MANUAL_INSPECTION_CHILDREN },
+	{ id: "finished-goods", label: "Finished Goods — Kg and Nos", children: ERP_MANUAL_FINISHED_GOODS_CHILDREN },
 	{ id: "reports", label: "Reports & Stock Checking", children: ERP_MANUAL_REPORTS_CHILDREN },
 	{ id: "reference", label: "Reference", children: ERP_MANUAL_REFERENCE_CHILDREN },
 	{ id: "glossary", label: "Glossary", children: ERP_MANUAL_GLOSSARY_CHILDREN },

@@ -1,0 +1,12 @@
+{
+  "name": "manufyxinvenzaerp-browser-tests",
+  "private": true,
+  "description": "Browser (Playwright) tests for manufyxinvenzaerp: entries made through the real forms.",
+  "scripts": {
+    "test:fg": "playwright test fg_kg_nos_e2e.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "exceljs": "^4.4.0"
+  }
+}

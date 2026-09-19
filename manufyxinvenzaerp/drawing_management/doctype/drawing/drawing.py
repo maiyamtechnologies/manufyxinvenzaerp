@@ -31,6 +31,23 @@ class Drawing(Document):
         self._recalculate_all()
         self._check_missing_fields(throw=False)
         self._calculate_totals()
+        self._set_cust_weight_total()
+
+    def _set_cust_weight_total(self):
+        """Cust Weight (Total) is per Nos x Nos, never typed (sep14 FG plan, D2).
+
+        The per Nos figure is what the customer states and what Update Customer
+        Weight edits; the Total is what every downstream document carries. Deriving
+        the Total here means a change to either input -- a new per Nos, or a
+        corrected No of Qty to Manufacture on a draft -- cannot leave the two
+        disagreeing. A drawing without a per Nos figure (made before the Kg / Nos
+        change, D13) keeps the Total it was given.
+
+        Not to be confused with total_weight, which is the raw-material roll-up."""
+        if flt(self.get("weight_per_pcs")):
+            self.customer_provided_wt = flt(
+                flt(self.weight_per_pcs) * flt(self.no_of_qty_to_manufacture), 3
+            )
 
     def _warn_duno_reused_elsewhere(self):
         """Say so when this mark is already used by a different Sales Order.

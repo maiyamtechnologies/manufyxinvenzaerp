@@ -39,9 +39,16 @@ def _labels(columns):
     return [c["label"] for c in columns]
 
 
+def _drawing_rows(data):
+    """The report's rows without its own total row, which the report appends last."""
+    return [r for r in data if not r.get("is_total_row")]
+
+
 def run():
     columns, data = execute({})
     labels = _labels(columns)
+    total = data[-1] if data and data[-1].get("is_total_row") else None
+    data = _drawing_rows(data)
 
     print("=== the columns the client asked for, in the order asked for ===")
     lead = labels[:11]
@@ -50,11 +57,11 @@ def run():
         "Job Work Order", "Supplier", "Drawing", "DUNO/Mark No", "Cust Drawing No",
         "Created On",
     ])
-    tail = labels[-16:]
+    tail = labels[-17:]
     check("weights, costs and completion last", tail, [
-        "Customer Weight (Kg)", "Planned Weight (Kg)", "Planned Sec Nos", "Waste %",
+        "Cust Weight (Total)", "Planned Weight (Kg)", "Planned Sec Nos", "Waste %",
         "Transferred Weight (Kg)", "Transferred Sec Nos", "Consumed RM Cost",
-        "Rate Schedule", "Rate / Kg", "Consumables (Nos)", "Consumable Cost",
+        "Rate Schedule", "Rate / Kg", "Job Work Amount", "Consumables (Nos)", "Consumable Cost",
         "Excess Weight (Kg)", "Returned Excess Weight (Kg)", "Difference (Kg)",
         "Completed Drawing Weight (Kg)", "Completed Drawing (Nos)",
     ])
@@ -141,7 +148,7 @@ def run():
     victim = data[0]["subcontracting_order"]
     try:
         frappe.db.delete("Supplier Operation Entry", {"subcontracting_order": victim})
-        after_data = execute({})[1]
+        after_data = _drawing_rows(execute({})[1])
         still = [r for r in after_data if r["subcontracting_order"] == victim]
         check("its drawings are still listed with no operations at all",
               len(still), len([r for r in data if r["subcontracting_order"] == victim]))
@@ -227,11 +234,23 @@ def run():
     #
     # Sites often run with no rates at all, which hides this behind a column of zeroes,
     # so the transfer is priced here and rolled back.
+    entries = frappe.get_all("Stock Entry", filters={"docstatus": 1, "custom_sco_ref": ["!=", ""]},
+                             fields=["name", "custom_sco_ref"])
+    sco_of_entry = {e.name: e.custom_sco_ref for e in entries}
     transfers = frappe.get_all(
+        "Stock Entry Detail", filters={"parent": ["in", list(sco_of_entry) or [""]]},
+        fields=["name", "parent", "qty", "t_warehouse"])
+    # The finished-goods Manufacture entry names the job too, through
+    # subcontracting_order. It is priced at a rate nobody paid for the issue, so if it
+    # leaks into the cost the rates below stop coming out at 50.
+    manufactured = frappe.get_all(
         "Stock Entry Detail",
         filters={"parent": ["in", frappe.get_all(
-            "Stock Entry", filters={"docstatus": 1, "custom_sco_ref": ["!=", ""]}, pluck="name") or [""]]},
+            "Stock Entry",
+            filters={"docstatus": 1, "purpose": "Manufacture", "subcontracting_order": ["is", "set"]},
+            pluck="name") or [""]]},
         fields=["name", "qty"])
+    took, supplier_wh = _taken_by_drawing()
     if not transfers:
         print("   No transfer against a Job Work Order on this site.")
     else:
@@ -240,18 +259,124 @@ def run():
                 frappe.db.set_value("Stock Entry Detail", t.name,
                                     {"basic_rate": 50, "amount": flt(t.qty) * 50},
                                     update_modified=False)
-            priced = execute({})[1]
+            for t in manufactured:
+                frappe.db.set_value("Stock Entry Detail", t.name,
+                                    {"basic_rate": 999, "valuation_rate": 999, "amount": flt(t.qty) * 999},
+                                    update_modified=False)
+            priced = _drawing_rows(execute({})[1])
             # Every drawing should come out at the rate that was paid -- that is what
             # "spread in proportion to what each took" means, checked as a rate rather
             # than as an amount so it does not depend on this site's quantities.
-            rates = sorted({round(flt(r["consumed_rm_cost"]) / flt(r["transferred_weight_kg"]), 2)
-                            for r in priced if flt(r["transferred_weight_kg"])})
+            #
+            # "What each took" is the plan's own raw-material rows, which is what the
+            # cost is spread over. It is not the Transferred Weight column: that one is
+            # the job's transfer shared out by planned weight (refresh_weight_summary), so
+            # the two part company wherever a transfer's excess sits on one drawing.
+            rates = sorted({round(flt(r["consumed_rm_cost"]) / took[(r["subcontracting_order"], r["drawing"])], 2)
+                            for r in priced if flt(took.get((r["subcontracting_order"], r["drawing"])))})
             check("every drawing is costed at the rate paid", rates, [50.0])
+            print("   (%d finished-goods Manufacture rows priced at 999 alongside -- none of it may show)"
+                  % len(manufactured))
+            # The whole transfer is what landed at the job. An issue routed through CNC
+            # (Stores -> CNC -> job) moves the same Kg twice and is counted once.
             check("and the parts add up to the whole transfer",
                   round(sum(flt(r["consumed_rm_cost"]) for r in priced), 2),
-                  round(sum(flt(t.qty) for t in transfers) * 50, 2))
+                  round(sum(flt(t.qty) for t in transfers
+                            if t.t_warehouse and t.t_warehouse == supplier_wh.get(sco_of_entry[t.parent]))
+                        * 50, 2))
         finally:
             frappe.db.rollback()
+    apart = [(r["subcontracting_order"], r["drawing"], flt(r["transferred_weight_kg"], 3),
+              flt(took[(r["subcontracting_order"], r["drawing"])], 3))
+             for r in data if (r["subcontracting_order"], r["drawing"]) in took
+             and flt(r["transferred_weight_kg"], 3) != flt(took[(r["subcontracting_order"], r["drawing"])], 3)]
+    for sco_name, drawing, column, rows in apart:
+        # Not a failure of this report -- both figures come from the Material Issue
+        # Plan -- but worth seeing: the Transferred Weight column and the cost beside it
+        # are not spread over the same Kg on these rows.
+        print("   NOTE %s %s: Transferred Weight %s Kg, plan rows took %s Kg"
+              % (sco_name, drawing, column, rows))
+
+    print()
+    print("=== job work: rate per Kg and amount per drawing ===")
+    # The amount is the drawing's Cust Weight (Total) on that Job Work Order times its
+    # Rate per Kg. An order raised since that pricing went in holds both on its own
+    # drawing row; an older one holds neither and is priced from the drawing's Rate
+    # Schedule.
+    held = {(w.parent, w.drawing): w for w in frappe.get_all(
+        "SCO Drawing Item", filters={"parenttype": "Subcontracting Order"},
+        fields=["parent", "drawing", "rate_per_kg", "job_work_amount"])}
+    schedule = dict(frappe.get_all("Drawing", filters={"name": ["in", [r["drawing"] for r in data]]},
+                                   fields=["name", "rs_rate_per_kg"], as_list=True))
+    wrong = []
+    for r in data:
+        w = held.get((r["subcontracting_order"], r["drawing"])) or frappe._dict()
+        rate = flt(flt(w.rate_per_kg) or flt(schedule.get(r["drawing"])), 2)
+        amount = flt(flt(w.job_work_amount) or flt(r["customer_weight_kg"], 3) * rate, 2)
+        if (r["rate_per_kg"], r["job_work_amount"]) != (rate, amount):
+            wrong.append((r["subcontracting_order"], r["drawing"], r["rate_per_kg"], r["job_work_amount"]))
+    check("every row is Cust Weight (Total) x Rate / Kg", wrong, [])
+    example = next((r for r in data if flt(r["rate_per_kg"])), None)
+    if example:
+        print("   e.g. %s %s: %s Kg x %s = %s"
+              % (example["subcontracting_order"], example["duno_mark_no"], example["customer_weight_kg"],
+                 example["rate_per_kg"], example["job_work_amount"]))
+        check("  worked by hand", example["job_work_amount"],
+              flt(flt(example["customer_weight_kg"], 3) * example["rate_per_kg"], 2)
+              if not flt((held.get((example["subcontracting_order"], example["drawing"])) or {}).get("job_work_amount"))
+              else example["job_work_amount"])
+
+    # What the Job Work Order holds wins over the Rate Schedule. The amount here is
+    # deliberately not weight x rate, so reading it back proves it was read, not redone.
+    r0 = data[0]
+    try:
+        frappe.db.set_value("SCO Drawing Item",
+                            {"parent": r0["subcontracting_order"], "parenttype": "Subcontracting Order",
+                             "drawing": r0["drawing"]},
+                            {"rate_per_kg": 12.5, "job_work_amount": 999.99}, update_modified=False)
+        row = _row_for(execute({})[1], r0)
+        check("the order's own rate and amount are shown as they stand",
+              (row["rate_per_kg"], row["job_work_amount"]), (12.5, 999.99))
+        frappe.db.set_value("SCO Drawing Item",
+                            {"parent": r0["subcontracting_order"], "parenttype": "Subcontracting Order",
+                             "drawing": r0["drawing"]},
+                            "job_work_amount", 0, update_modified=False)
+        row = _row_for(execute({})[1], r0)
+        check("  a rate with no amount yet is priced at that rate",
+              row["job_work_amount"], flt(flt(row["customer_weight_kg"], 3) * 12.5, 2))
+    finally:
+        frappe.db.rollback()
+
+    print()
+    print("=== the total row adds up ===")
+    check("the report ends in one total row", (total or {}).get("sales_order"), "Total")
+    if total:
+        check("  job work amount is the sum of the drawings",
+              total["job_work_amount"], flt(sum(flt(r["job_work_amount"]) for r in data), 2))
+        check("  and so is Cust Weight (Total)",
+              total["customer_weight_kg"], flt(sum(flt(r["customer_weight_kg"]) for r in data), 3))
+        check("  a total has no single rate", (total.get("rate_schedule"), total.get("rate_per_kg")),
+              (None, None))
+        # Job-level columns repeat on every drawing of their job, so they count once
+        # per job -- summing the column would count a two-drawing job twice.
+        once = {}
+        for r in data:
+            once.setdefault(r["subcontracting_order"], r)
+        check("  job-level figures count each job once",
+              (total["excess_weight_kg"], total["consumable_cost"]),
+              (flt(sum(flt(r["excess_weight_kg"]) for r in once.values()), 3),
+               flt(sum(flt(r["consumable_cost"]) for r in once.values()), 2)))
+        from manufyxinvenzaerp.production_management.report.production_report.production_report import (
+            _waste_pct,
+        )
+        check("  Waste % is worked from the totals, not averaged",
+              total["waste_pct"], _waste_pct(total["customer_weight_kg"], total["planned_weight_kg"]))
+        # Filtered to one job, the total is that job's and nobody else's.
+        one = (example or data[0])["subcontracting_order"]
+        narrowed = execute({"subcontracting_order": one})[1]
+        check("  filtered to %s, the total is that job's" % one,
+              narrowed[-1]["job_work_amount"],
+              flt(sum(flt(r["job_work_amount"]) for r in data if r["subcontracting_order"] == one), 2))
 
     print()
     print("=== the excess trio reconciles ===")
@@ -290,6 +415,35 @@ def run():
         break
 
     _summary()
+
+
+def _taken_by_drawing():
+    """Kg each drawing took, from its Material Issue Plan's own raw-material rows --
+    the rows the report spreads a transfer's cost over -- keyed (job, drawing). Also
+    each job's supplier warehouse, which is where its issued material lands."""
+    took, supplier_wh = {}, {}
+    for m in frappe.get_all("Material Issue Plan", filters={"subcontracting_order": ["is", "set"]},
+                            fields=["name", "subcontracting_order", "supplier_warehouse"]):
+        sco = m.subcontracting_order
+        supplier_wh[sco] = m.supplier_warehouse
+        drawing_by_duno = {
+            (w.duno_mark_no or ""): w.drawing
+            for w in frappe.get_all("SCO Drawing Item",
+                                    filters={"parent": sco, "parenttype": "Subcontracting Order"},
+                                    fields=["drawing", "duno_mark_no"])
+            if w.drawing
+        }
+        for r in frappe.get_all("Material Issue Plan Raw Material", filters={"parent": m.name},
+                                fields=["duno_mark_no", "transferred_qty"]):
+            drawing = drawing_by_duno.get(r.duno_mark_no or "")
+            if drawing:
+                took[(sco, drawing)] = flt(took.get((sco, drawing))) + flt(r.transferred_qty)
+    return took, supplier_wh
+
+
+def _row_for(data, like):
+    return next(r for r in _drawing_rows(data)
+                if (r["subcontracting_order"], r["drawing"]) == (like["subcontracting_order"], like["drawing"]))
 
 
 def _old_shape(soes):

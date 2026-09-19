@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-14 22:09:42_
+_Generated: 2026-09-20 04:58:23_
 
 ## drawing
 
@@ -18,6 +18,7 @@ _Generated: 2026-09-14 22:09:42_
 |--------|-------------|
 | ` before_insert` | no |
 | ` validate` | no |
+| ` _set_cust_weight_total` | no |
 | ` _warn_duno_reused_elsewhere` | no |
 | ` before_submit` | no |
 | ` on_submit` | no |
@@ -453,7 +454,16 @@ _Generated: 2026-09-14 22:09:42_
 | ` get_raw_materials` | no |
 | ` _requirement_key` | no |
 | ` _ordered_item_codes` | no |
+| ` _pending_purchase_items` | no |
+| ` _coverage_key` | no |
+| ` _dimensionless_arm_fields` | no |
 | ` check_stock_availability` | no |
+| ` _keep_protected` | no |
+| ` _receipt_batch_names` | no |
+| ` allocate_receipt_to_plan` | no |
+| ` _requirement_fields` | no |
+| ` _mapping_row_from_batch` | no |
+| ` _batch_has_free_stock` | no |
 | ` _alloc_sec_qty` | no |
 | ` _get_non_batch_stock` | no |
 | ` _get_non_batch_stock_bulk` | no |

@@ -2547,7 +2547,7 @@ function _show_update_batch_dialog(frm, preselect_row_name) {
 // Two steps: Preview (read-only), then a confirmation listing every current
 // reservation, then apply. This is now the ONLY place batches are reassigned on a
 // Material Issue Plan -- the Raw Materials buttons are hidden. See
-// .claude/tasks/sep10_task1.md.
+// manufyxinvenzaerp_features.md, section 20.
 
 const _MIP_CB = "manufyxinvenzaerp.subcontracting_management.material_issue_plan_batch_update.";
 

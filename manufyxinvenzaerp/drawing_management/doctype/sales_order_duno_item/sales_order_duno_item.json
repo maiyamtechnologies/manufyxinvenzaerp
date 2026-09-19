@@ -11,6 +11,7 @@
   "duno_mark_no",
   "drawing_number",
   "total_quantity",
+  "weight_per_pcs",
   "total_weight",
   "calculated_weight",
   "nature_of_work",
@@ -61,16 +62,27 @@
    "fieldname": "total_quantity",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Total Quantity"
+   "label": "Total Quantity",
+   "read_only_depends_on": "eval:doc.drawing || doc.docstatus===1"
   },
   {
    "allow_on_submit": 1,
-   "description": "Weight per Qty. To update the customer's weight after submission, use \"Update Customer Weight\" on the Drawing.",
+   "description": "Weight of ONE piece. Cust Weight (Total) must equal this \u00d7 Total Quantity. Once the Drawing exists, change it with \"Update Customer Weight\" on the Drawing.",
+   "fieldname": "weight_per_pcs",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Cust Weight (per Nos)",
+   "precision": "3",
+   "read_only_depends_on": "eval:doc.drawing || doc.docstatus===1"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Weight of ALL the pieces on this row: Cust Weight (per Nos) \u00d7 Total Quantity. Once the Drawing exists, change it with \"Update Customer Weight\" on the Drawing.",
    "fieldname": "total_weight",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Customer Provided Weight (Kg)",
-   "read_only_depends_on": "eval:doc.docstatus === 1"
+   "label": "Cust Weight (Total)",
+   "read_only_depends_on": "eval:doc.drawing || doc.docstatus===1"
   },
   {
    "description": "Auto calculated, never typed: the raw materials listed for this drawing add up to this. Compare it with Customer Provided Weight (Kg) -- the raw material is normally the heavier of the two, since the stock is cut down to the finished piece.",
@@ -146,7 +158,7 @@
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-06-24 00:00:00.000000",
+ "modified": "2026-09-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drawing Management",
  "name": "Sales Order DUNO Item",

@@ -227,6 +227,7 @@ def get_data(filters):
 
 	data.sort(key=lambda r: (r["sales_order"] or "", r["production_plan"] or "",
 							 r["subcontracting_order"] or "", r["drawing"] or ""))
+	data.append(_total_row(data, operations))
 	return data, operations
 
 
@@ -307,6 +308,9 @@ def _base_row(sco, pp, d, so_map, weights, sec_nos, completed, excess, consumabl
 	per_piece = flt(done.get("total_weight_kg")) / qty_to_mfg if qty_to_mfg else 0.0
 	completed_nos = flt(done.get("completed_qty_nos"))
 
+	customer_kg = flt(w.get("customer_weight_kg"), 3)
+	rate_per_kg, job_work_amount = _job_work_pricing(done, rate, customer_kg)
+
 	return {
 		"sales_order": d["sales_order"],
 		"customer": so.get("customer") or "",
@@ -319,7 +323,7 @@ def _base_row(sco, pp, d, so_map, weights, sec_nos, completed, excess, consumabl
 		"duno_mark_no": d["duno_mark_no"],
 		"customer_drawing_number": d["customer_drawing_number"],
 		"created_on": created_on.get(name),
-		"customer_weight_kg": flt(w.get("customer_weight_kg")),
+		"customer_weight_kg": customer_kg,
 		"planned_weight_kg": flt(w.get("total_weight_kg")),
 		"planned_sec_nos": flt(sn.get("planned"), 3),
 		"transferred_weight_kg": flt(w.get("transferred_weight_kg")),
@@ -327,7 +331,8 @@ def _base_row(sco, pp, d, so_map, weights, sec_nos, completed, excess, consumabl
 		"waste_pct": _waste_pct(w.get("customer_weight_kg"), w.get("total_weight_kg")),
 		"consumed_rm_cost": flt(rm_cost.get((name, drawing))),
 		"rate_schedule": rate.get("rate_schedule") or "",
-		"rate_per_kg": flt(rate.get("rs_rate_per_kg")),
+		"rate_per_kg": rate_per_kg,
+		"job_work_amount": job_work_amount,
 		"consumables_nos": flt(cons.get("nos"), 3),
 		"consumable_cost": flt(cons.get("cost")),
 		"excess_weight_kg": flt(ex.get("excess"), 3),
@@ -336,6 +341,65 @@ def _base_row(sco, pp, d, so_map, weights, sec_nos, completed, excess, consumabl
 		"completed_drawing_weight_kg": flt(per_piece * completed_nos, 3),
 		"completed_nos": completed_nos,
 	}
+
+
+def _job_work_pricing(sco_row, drawing_rate, customer_kg):
+	"""Rate per Kg and job work amount for one drawing on one Job Work Order.
+
+	The amount is the drawing's Cust Weight (Total) on that order times its Rate per
+	Kg -- the same basis the order is priced on, one order carrying several drawings at
+	different rates. A Job Work Order raised since that pricing went in holds both
+	figures on its own drawing row, and those are what it was priced at, so they are
+	read as they stand. An older order holds neither, and is priced here from the
+	drawing's Rate Schedule instead, so its row is not left blank."""
+	rate = flt(flt(sco_row.get("rate_per_kg")) or flt(drawing_rate.get("rs_rate_per_kg")), 2)
+	amount = flt(sco_row.get("job_work_amount")) or flt(customer_kg, 3) * rate
+	return rate, flt(amount, 2)
+
+
+# Summed straight down the drawing rows: each of these belongs to its drawing, so the
+# column total is the job total.
+_DRAWING_TOTALS = (
+	("customer_weight_kg", 3), ("planned_weight_kg", 3), ("planned_sec_nos", 3),
+	("transferred_weight_kg", 3), ("transferred_sec_nos", 3), ("consumed_rm_cost", 2),
+	("job_work_amount", 2), ("completed_drawing_weight_kg", 3), ("completed_nos", 3),
+)
+# Job-level figures repeat on every drawing row of their job (see _excess_by_sco and
+# _consumables_by_sco), so summing the column would count a job once per drawing.
+_JOB_TOTALS = (
+	("consumables_nos", 3), ("consumable_cost", 2), ("excess_weight_kg", 3),
+	("returned_excess_kg", 3), ("excess_difference_kg", 3),
+)
+
+
+def _total_row(data, operations):
+	"""The overall total, built here rather than by Frappe's own total row.
+
+	Frappe's adds up every numeric column blindly, which is wrong for most of this
+	report: a sum of Rate / Kg or of Waste % means nothing, and the job-level columns
+	would count each job once per drawing. So each column is totalled the way it is
+	read. Rate / Kg and the Rate Schedule are left blank -- a total has no single rate;
+	the Job Work Amount beside it is the figure that adds up."""
+	total = {"sales_order": _("Total"), "is_total_row": 1}
+	for field, precision in _DRAWING_TOTALS:
+		total[field] = flt(sum(flt(r.get(field)) for r in data), precision)
+
+	first_row_of_job = {}
+	for r in data:
+		first_row_of_job.setdefault(r["subcontracting_order"], r)
+	for field, precision in _JOB_TOTALS:
+		total[field] = flt(sum(flt(r.get(field)) for r in first_row_of_job.values()), precision)
+
+	# Waste % over the whole of what is in view, from the totals -- not an average of
+	# the rows' percentages, which would weigh a 10 Kg cleat the same as a 2 t girder.
+	total["waste_pct"] = _waste_pct(total["customer_weight_kg"], total["planned_weight_kg"])
+
+	# Each operation's quantity is drawing-level (Kg issued, or pieces completed), so it
+	# adds up; its status, inspection rounds and gap belong to the operation and do not.
+	for op in operations:
+		field = "op_%s_qty" % op["slug"]
+		total[field] = flt(sum(flt(r.get(field)) for r in data), 3)
+	return total
 
 
 def _waste_pct(customer_kg, planned_kg):
@@ -399,7 +463,9 @@ def _drawing_figures(sco_names):
 
 	Completion goes the other way and is read from the Subcontracting Order's rows only:
 	that is the copy the operations write finished pieces back to, and it is a
-	job-level figure rather than one operation's share of it."""
+	job-level figure rather than one operation's share of it. The job-work rate and
+	amount come from those same rows, for the same reason: they are what the Job Work
+	Order itself was priced at."""
 	weights, sec_nos, completed = {}, {}, {}
 	if not sco_names:
 		return weights, sec_nos, completed
@@ -422,7 +488,7 @@ def _drawing_figures(sco_names):
 			filters={"parent": ["in", list(parent_to_sco)], "parenttype": parenttype},
 			fields=["parent", "drawing", "customer_weight_kg", "total_weight_kg",
 					"transferred_weight_kg", "excess_weight_kg", "qty_to_manufacture",
-					"completed_qty_nos"],
+					"completed_qty_nos", "rate_per_kg", "job_work_amount"],
 		):
 			if not w.drawing:
 				continue
@@ -584,12 +650,19 @@ def _rm_cost_by_drawing(sco_names, mip_by_sco):
 	transfer's rounding surplus.
 
 	The stamp is still the fallback, for a Stock Entry raised outside the plan: there is
-	nothing else to go on there, and one named drawing beats none."""
+	nothing else to go on there, and one named drawing beats none.
+
+	Only entries that issue material count. The finished-goods Manufacture entry names
+	the job too (through subcontracting_order), but it consumes what was already issued
+	and books the finished part: letting it in overwrote the issue's price per Kg with
+	the consumption row's, and its finished-goods rows, which carry a drawing, could be
+	taken for raw material by the stamp fallback. Consumables are left out as well --
+	they have their own Consumable Cost column and would otherwise be counted twice."""
 	if not sco_names:
 		return {}
 	entries = frappe.get_all(
 		"Stock Entry",
-		filters={"docstatus": 1},
+		filters={"docstatus": 1, "purpose": ["not in", ["Manufacture", CONSUMPTION_ENTRY_TYPE]]},
 		or_filters=[["custom_sco_ref", "in", sco_names], ["subcontracting_order", "in", sco_names]],
 		fields=["name", "custom_sco_ref", "subcontracting_order"],
 	)
@@ -704,13 +777,14 @@ def get_columns(operations):
 		# are read together, and a weight without its piece count has repeatedly been the
 		# thing that hides a problem (a rounded-up transfer looks identical in Kg terms
 		# until you see Nos).
-		{"label": _("Customer Weight (Kg)"), "fieldname": "customer_weight_kg", "fieldtype": "Float", "width": 130},
+		{"label": _("Cust Weight (Total)"), "fieldname": "customer_weight_kg", "fieldtype": "Float", "precision": 3, "width": 130,
+		 "description": _("Customer weight in Kg for all the pieces of this drawing on this Job Work Order.")},
 		{"label": _("Planned Weight (Kg)"), "fieldname": "planned_weight_kg", "fieldtype": "Float", "width": 130},
 		{"label": _("Planned Sec Nos"), "fieldname": "planned_sec_nos", "fieldtype": "Float", "precision": 3, "width": 120},
 		# Closes the planned block: the one number that says whether the plan is sane
 		# before anybody looks at what was actually transferred.
 		{"label": _("Waste %"), "fieldname": "waste_pct", "fieldtype": "Float", "precision": 2, "width": 90,
-		 "description": _("Planned Weight over Customer Weight. A few percent is the off-cut; "
+		 "description": _("Planned Weight over Cust Weight (Total). A few percent is the off-cut; "
 						  "negative means the plan holds less material than the part weighs.")},
 		{"label": _("Transferred Weight (Kg)"), "fieldname": "transferred_weight_kg", "fieldtype": "Float", "width": 145},
 		{"label": _("Transferred Sec Nos"), "fieldname": "transferred_sec_nos", "fieldtype": "Float", "precision": 3, "width": 140},
@@ -718,7 +792,11 @@ def get_columns(operations):
 		 "description": _("Value of the raw material issued to this drawing, from the Stock Entries that issued it.")},
 		{"label": _("Rate Schedule"), "fieldname": "rate_schedule", "fieldtype": "Link", "options": "Rate Schedule", "width": 130},
 		{"label": _("Rate / Kg"), "fieldname": "rate_per_kg", "fieldtype": "Currency", "width": 100,
-		 "description": _("The job-work rate on this drawing's Rate Schedule.")},
+		 "description": _("The job-work rate the Job Work Order holds for this drawing; for an older order "
+						  "that holds none, the rate on the drawing's Rate Schedule.")},
+		# Sits right after the rate it is priced at, so the pair reads as one sum.
+		{"label": _("Job Work Amount"), "fieldname": "job_work_amount", "fieldtype": "Currency", "width": 130,
+		 "description": _("Cust Weight (Total) × Rate / Kg.")},
 		{"label": _("Consumables (Nos)"), "fieldname": "consumables_nos", "fieldtype": "Float", "precision": 3, "width": 130,
 		 "description": _("Job-level. From Material Consumption for Manufacture Stock Entries, repeated on every drawing row of the job.")},
 		{"label": _("Consumable Cost"), "fieldname": "consumable_cost", "fieldtype": "Currency", "width": 130,

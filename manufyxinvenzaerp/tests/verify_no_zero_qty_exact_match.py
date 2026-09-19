@@ -46,8 +46,12 @@ def run():
     print("=== every stock check uses it ===")
     check("no bare 'greater than zero' test is left",
           'batch_remaining.get(b["batch_no"], 0) > 0' in src, False)
-    check("all three sites compare against the floor",
-          src.count('batch_remaining.get(b["batch_no"], 0) > BATCH_FREE_EPSILON'), 3)
+    # The floor now lives in _batch_has_free_stock, which also refuses a crumb worth
+    # less than 0.001 Nos (verify_mp_batch_dust covers that).
+    check("all three sites go through _batch_has_free_stock",
+          src.count("if _batch_has_free_stock(\n"), 3)
+    check("which still refuses anything at or under the floor",
+          mp._batch_has_free_stock(mp.BATCH_FREE_EPSILON, 0, 0), False)
 
     print()
     print("=== and nothing writes a row for a quantity that rounds to nothing ===")

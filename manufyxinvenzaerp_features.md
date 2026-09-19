@@ -601,7 +601,7 @@ as stranded; and the whole dialog driven end to end in a browser.
 exact-match waiver loop), `material_planning_available_raw_material.json` (new field),
 `material_issue_plan.js` (the dialog), `material_planning.js` (the row handler).
 Tests: `verify_consolidate_batch_reassign.py`, `verify_arm_reserve_without_dimensions.py`,
-`verify_consolidate_batch_apply.py`. Plan of record: `.claude/tasks/sep10_task1.md`.
+`verify_consolidate_batch_apply.py`.
 
 ---
 
@@ -675,4 +675,244 @@ is still decided by reservations.
 
 ---
 
+## 22. Finished goods in Kg and Nos, per drawing batch (2026-09-19)
+
+Plan: `.claude/tasks/sep14_fg_uom_plan.md` (decisions D1–D31, readings R1–R5). Built in
+four waves: e2951ab (fields, hooks, stubs), 315d838 (masters, Sales Order, production
+chain, FG batches, invoicing), 086180e (Delivery Note and returns), and wave 3 (manual,
+this section, end-to-end test).
+
+**The rule.** Finished goods move in **Kg** everywhere (stock UOM Kg), and every FG row
+also carries its piece count as **Sec Qty in Nos**, per drawing. There is exactly one
+batch per drawing, `FG-<Sales Order>-<DUNO>`, holding both, so Kg per piece is always
+batch Kg ÷ batch Nos. An *FG row* is a row whose item has `custom_parent_item_group =
+"Finished Goods"` — always tested with `fg_stock.is_fg_item()`; the Kg/Nos logic applies
+to FG items that are also batch-tracked (`fg_stock._is_batch_fg_item`).
+
+Rules that hold everywhere:
+
+- **3 decimals** for every Kg figure and comparison (`flt(x, 3)`), no other tolerance
+  (D14). Money 2 dp.
+- **Last-piece rule:** when the Nos asked for is everything that remains (in a batch in
+  a warehouse, pending on an SO line, unbilled on an SO line or DN row, still out on a
+  DN row being returned), the Kg is the exact Kg remaining, never Nos × Kg per piece.
+  Pricing divides the *unrounded* ratio (`fg_stock._price_nos`).
+- **Nos are recounted, never incremented.** Batch Nos, SO Delivered (Nos), SO / DN
+  Billed (Nos) are re-summed from submitted rows on every submit and cancel, so the
+  order of notes, returns, credit notes and cancels cannot leave them wrong.
+- **Customer weight is two figures (D2):** Cust Weight (per Nos) and Cust Weight
+  (Total) = per Nos × drawing Nos. "Total" is what travels downstream everywhere (D30).
+  `Drawing.total_weight` and the SO raw-material `total_weight` are the calculated RM
+  weight and were not touched.
+
+### 22.1 Where it lives
+
+| Stage | Code | What it does |
+|---|---|---|
+| Item | `item_management/item.py:validate_fg_configuration`, `validate_batch_prefix_not_fg` | New FG item: stock UOM Kg, Sec UOM Nos, Has Batch No on, Create New Batch forced off, no batch prefix; items with transactions only get an orange note. A raw-material batch prefix may not be `FG`. |
+| Upload sheet | `drawing_management/so_drawing_import.py:download_bom_template`, `_parse_excel`, `parse_bom_excel` | Columns *Cust Weight (per Nos)* and *Cust Weight (Total)*; old headers *Weight per Pcs (KG)* / *Total Weight (KG)* still read. `weight_per_pcs` staged on the Drawing List row. |
+| Verify | `so_drawing_import.py:_check_fg_weights` (inside `verify_raw_materials`) | Blocking: per Nos and Total present, per Nos × Nos = Total; FG item on the SO items table (D4); per FG line Σ Total = line Kg and Σ Nos = line Qty (Nos). Uses `sales_order.fg_line_totals` / `fg_line_mismatch_text`. |
+| Create Drawing | `so_drawing_import.py:create_drawings_from_import` | Refuses on the first batch unless `custom_raw_materials_verified` (D25); writes `customer_provided_wt` = Total and `weight_per_pcs`. |
+| Sales Order | `drawing_management/sales_order.py:validate_fg_lines` (from `recalculate_raw_material_qty`), `lock_drawn_rows` (also `before_update_after_submit`), `clear_verified_on_fg_change`, `warn_fg_line_totals` | Drawn Drawing List rows locked (D24); FG line Kg/Nos/item or pending-row weight change clears Verify; orange mismatch warning on save. SO client script `_so_fg_pending_nos_dn_btn` (setup.py `SO_CLIENT_SCRIPT`) adds **Create > Delivery Note (pending Nos)** when `per_delivered` ≥ 100 but Nos are pending. |
+| Drawing | `drawing/drawing.py` validate; `drawing_utils.py:update_customer_provided_weight`, `_cascade_customer_weight`, `_recompute_draft_jwo_job_work`, `_so_line_differences` | Total = per Nos × Nos. Update Customer Weight takes the per-Nos figure (D15), writes Drawing + SO row, cascades the Total (per Nos alongside) to PP items, SCO / MIP drawing rows, SOE Drawing Detail and BOM; draft JWOs recompute rate and amount, submitted ones are listed (R5). |
+| BOM | `drawing_utils.py:create_bom_from_drawing` | `quantity` = Cust Weight (Total) in Kg; `custom_sec_qty` = drawing Nos; both Cust Weight fields (D12). Material Planning scales against the BOM's Qty (Nos) (`material_planning.py:get_bom_info`). |
+| Production Plan | `production_plan_management/production_plan.py:apply_fg_nos` (validate, last), `fg_kg_for_nos`, `drawing_fg_weights`, `fg_nos_planned_elsewhere`, `fg_nos_remaining`, `_mark_fg_nos_left` | The only place `planned_qty` of a drawing row is calculated: Total × Nos ÷ drawing Nos (D5, D26). Σ Nos on non-cancelled PPs ≤ drawing Nos, refusal names the other plans (D16). Entry points set only `custom_sec_qty`: picker (remaining Nos, drawings with 0 left hidden), `drawing_utils.create_production_plan_from_bom`, `material_planning.make_production_plan`. |
+| Job Work Order | `subcontracting_management/subcontracting.py:create_sco_from_production_plan`, `_job_work_figures` | Item qty = Σ PP Kg, `custom_sec_qty` = Σ Nos; drawing rows carry Nos, both Cust Weights, `rate_per_kg` (Drawing `rs_rate_per_kg`) and `job_work_amount` = Kg × rate; item rate = Σ amount ÷ Σ Kg (R3). MIP drawing rows take the PP Nos (`material_issue_plan.py:populate_from_production_plan`). |
+| FG batch | `production_management/fg_stock.py:get_or_create_fg_batch`, `refresh_fg_batch`, `fg_batch_nos_by_warehouse`, `fg_batch_available`, `kg_for_nos`, `planned_kg_per_nos` | Batch `FG-<SO>-<DUNO>` (drawing name if DUNO blank or taken), explicit insert with the Batch "FG Details" fields; Nos per warehouse = Sec Qty in − out over submitted SE and DN rows (bundle-aware); Kg per warehouse from submitted Serial and Batch Entries; `custom_weight_per_piece` = batch Kg ÷ Nos. |
+| Final Stock Entry | `subcontracting.py:create_finished_goods_entry`, `_final_fg_rows`, `_fg_already_booked`, `get_final_stock_entry_preview` | One FG row per drawing ready to book: Kg = Nos × per Nos, Sec Qty Nos, drawing batch with `use_serial_batch_fields`. Already-booked counts Sec Qty (qty for old entries). |
+| Stock Entry | `fg_stock.py:validate_fg_stock_entry_rows` (validate), `on_fg_stock_entry_change` (on_submit / on_cancel); `public/js/stock_entry_fg.js` | Batch mandatory. Manufacture: whole Nos; Edit FG Stock Kg off → Kg reset to planned; on → typed Kg kept, warning above the % setting. Transfer / Issue: whole Nos ≤ available in the source warehouse, Kg = `kg_for_nos` (read-only). Receipt: existing batch, Nos, typed Kg. Batch refreshed on submit/cancel; first Manufacture entry becomes the batch reference. |
+| Stock Reconciliation | `stock_management/stock_reconciliation.py:block_stock_reconciliation` (validate); `public/js/stock_reconciliation.js` | Always refused, every purpose (D21). Item `opening_stock` hidden (property setter in `setup.py`). |
+| Delivery Note | `selling_management/mapping.py:make_delivery_note` (override), `_add_fg_lines_skipped_by_kg`; `selling_management/delivery_note.py:compute_fg_rows`, `validate_delivery_note`, `on_submit_delivery_note`, `on_cancel_delivery_note`, `get_fg_batches`, `get_fg_rows_kg`; `public/js/delivery_note.js` | SO → DN maps FG lines with pending Nos and no batch, including lines ERPNext skips because the Kg is used up. Get FG Batches: one row per batch of the row's SO with stock in the warehouse, linked by `against_sales_order` / `so_detail` (D28, D29). Validate: batch of the row's SO, whole Nos, ≤ batch in the warehouse, Σ per SO line ≤ pending (R4), Kg from the batch. Returns: from the DN (`dn_detail`), same batch, Kg = −Nos × the original row's Kg per Nos, ≤ still out. Submit/cancel recount `custom_delivered_sec_qty` and refresh the batch. |
+| Sales Invoice | `mapping.py:make_sales_invoice_from_so`, `make_sales_invoice_from_dn`, `_apply_fg_nos_to_invoice` (overrides); `selling_management/sales_invoice.py:compute_fg_rows`, `validate_sales_invoice`, `on_submit_sales_invoice`, `on_cancel_sales_invoice`, `get_fg_row_kg`; `public/js/sales_invoice.js` | From SO: Kg per Nos = SO line Kg ÷ Nos; from DN: the DN row's own Kg ÷ Nos, net of returns (R2). Whole Nos ≤ unbilled; FG row must come from an SO or DN; Update Stock refused with any FG line (D23). `custom_billed_sec_qty` re-summed on SO line and DN row; credit notes reduce it; debit notes left as typed. |
+| Production Report | `production_management/report/production_report/production_report.py:_base_row`, `_job_work_pricing`, `_total_row` | Rate / Kg and Job Work Amount per drawing row, from the SCO Drawing Item when set, else Cust Weight (Total) × the drawing's rate; summed in the total row. Column relabelled Cust Weight (Total). |
+
+### 22.2 Fields and settings
+
+All added in wave 0 (definitions in `setup.py` and `manufyxinvenzaerp/custom/<doctype>.json`;
+own doctypes in their JSON). Full list: plan §4.1. The ones to know:
+
+- **Sales Order Item:** `custom_sec_qty` "Qty (Nos)" (typed, in list view), `custom_sec_uom`,
+  `custom_delivered_sec_qty`, `custom_billed_sec_qty` (read-only, no_copy).
+- **Sales Order DUNO Item:** `weight_per_pcs` "Cust Weight (per Nos)"; `total_weight` relabelled
+  "Cust Weight (Total)".
+- **Drawing:** `weight_per_pcs` (read-only); `customer_provided_wt` relabelled "Cust Weight (Total)".
+- **BOM / Production Plan Item / Subcontracting Order Item:** `custom_sec_qty`, `custom_sec_uom`,
+  Cust Weight per Nos / Total; PP `planned_qty` labelled "Planned Qty (Kg)", read-only on drawing rows.
+- **SCO Drawing Item:** `cust_weight_per_nos`, `rate_per_kg`, `job_work_amount`.
+- **Batch ("FG Details"):** `custom_sales_order`, `custom_customer`, `custom_drawing`,
+  `custom_duno_mark_no`, `custom_customer_drawing_number`, `custom_job_work_order`,
+  `custom_cust_weight_per_nos` "Planned Kg per Nos", `custom_weight_per_piece` "Actual Kg per Nos".
+- **Delivery Note Item / Sales Invoice Item:** `custom_drawing`, `custom_duno_mark_no`,
+  `custom_sec_qty` (in list view), `custom_sec_uom`, `custom_billed_sec_qty` (DN); `qty` is
+  read-only when `custom_sec_uom` is set (property setter), so non-FG rows have their Sec UOM
+  cleared by the hooks.
+- **Manufyxinvenza Settings:** `edit_fg_stock_kg` "Edit FG Stock Kg" (default 1) and
+  `fg_weight_difference_warning_percent` "FG Weight Difference Warning (%)" (default 5), read
+  through `fg_stock.edit_fg_stock_kg_enabled()` / `fg_weight_difference_warning_percent()`,
+  which fall back to the defaults when the single was never stored
+  (`setup.set_fg_settings_defaults` writes them on migrate).
+
+### 22.3 Hooks and overrides (hooks.py)
+
+- `doc_events`: Stock Entry validate `fg_stock.validate_fg_stock_entry_rows`, on_submit /
+  on_cancel `fg_stock.on_fg_stock_entry_change`; Stock Reconciliation validate
+  `block_stock_reconciliation`; Delivery Note and Sales Invoice validate / on_submit /
+  on_cancel; Production Plan validate `apply_fg_nos` (last in the list); Sales Order
+  `before_update_after_submit` `lock_drawn_rows`.
+- `override_whitelisted_methods`: ERPNext's `sales_order.make_delivery_note`,
+  `sales_order.make_sales_invoice` and `delivery_note.make_sales_invoice` → the three
+  functions in `selling_management/mapping.py`. Each calls the ERPNext original and
+  post-processes the FG rows, keeping the original signature.
+- `doctype_js`: `delivery_note.js`, `sales_invoice.js`, `stock_reconciliation.js`,
+  `stock_entry_fg.js`.
+
+### 22.3a Planning rows: Nos with its UOM, and the Kg beside it (2026-09-20)
+
+Material Planning's Selected BOMs rows showed Qty to Manufacture (the drawing's piece
+count) beside the finished-goods item's stock UOM, so 2 pieces read "2 Kg". Every
+planning row now carries the pair:
+
+| Row | Nos | Kg |
+|---|---|---|
+| Material Planning BOM Item | `qty_to_manufacture` "Qty to Manufacture (Nos)", `uom` = Nos | `qty_to_manufacture_kg` = drawing Cust Weight (Total) x Nos / drawing Nos |
+| Production Plan Item | `custom_sec_qty` | `planned_qty` (unchanged) |
+| SCO Drawing Item (Job Work Order, Material Issue Plan) | `qty_to_manufacture` "Qty to Manufacture (Nos)" | `qty_to_manufacture_kg` = the plan's Planned Qty (Kg) |
+
+- `production_plan.drawing_kg_for_nos(drawing, nos, cache)` is the one Kg helper; it
+  returns 0 for a drawing without a Cust Weight (per Nos), whose "Total" is one piece.
+- Filled by `material_planning.get_bom_info` (and its JS), kept in step on every save by
+  `_update_bom_item_weights`, by the Job Work Order builder and
+  `populate_from_production_plan`, and by `_recompute_draft_jwo_job_work` after a
+  customer-weight change.
+- Patch `v1.fg_nos_kg_on_drawing_rows` corrected existing rows; test
+  `verify_fg_planning_nos_kg` (13 checks).
+
+### 22.4 Known limits
+
+- **Fabricated Structurs is not batch-enabled yet.** It is the live FG item, but 100 Kg of it
+  sits unbatched from MAT-STE-00012 / MAT-STE-00014, so switching Has Batch No on is the
+  user's decision. Until then it behaves the old way (no batch, no Nos tracking on SE / DN).
+- **Old data is skipped (D13):** orders, drawings, BOMs, plans and Job Work Orders from before
+  the change, and FINGOODS001 (Nos, no batch), are not migrated.
+- **Untested paths:** Pick List → Delivery Note, and a Delivery Note return into a different
+  warehouse from the one delivered from.
+- **Over-delivery / over-billing (D10):** ERPNext's allowance is 0%, so a delivery or invoice
+  whose Kg exceeds the ordered Kg (heavier pieces) is refused until the client sets a
+  tolerance. The Nos are always capped by the app (R4); the Kg limit is ERPNext's alone.
+- **Mixed invoicing basis:** billing part of a line from a DN (actual Kg per Nos) and the rest
+  from the SO (ordered Kg per Nos) makes the last SO-based pieces absorb the difference, by
+  the last-piece rule (in the worked example: 7 Nos left after DN 1 = 208.5 Kg, not 210).
+- **Orphan bundle:** a batch picked through ERPNext's batch selector (rather than the batch
+  field / Get FG Batches) leaves an orphan draft Serial and Batch Bundle behind.
+- **Print formats:** custom formats, not changed here (D18). Order status logic unchanged (D9).
+
+### 22.5 Verified
+
+`tests/verify_fg_end_to_end.py` runs the plan's §6 example through every document in one
+rolled-back transaction (every document named `ZZFG-A8-`; a naming guard refuses every
+naming-series counter for the run and `tabSeries` is compared before and after). Shortcuts,
+documented in the test: the last operation's finished pieces are written onto its SOE Drawing
+Detail, and the job's material reaches the supplier warehouse as a ZZFG- consumable (Material
+Receipt + Material Transfer tagged `custom_sco_ref`) instead of through Material Planning.
+Per-package tests: `verify_fg_schema`, `verify_fg_masters`, `verify_fg_sales_order`,
+`verify_fg_bom_pp_kg`, `verify_fg_final_stock_entry`, `verify_fg_stock_movements`,
+`verify_fg_delivery_note`, `verify_fg_sales_invoice`, `verify_production_report`. Four older
+tests commit real documents and are kept out of regression runs: `verify_pp_naming`,
+`verify_internal_job_sco`, `verify_mixed_sco_regression`,
+`verify_create_operation_and_inspection_gate`.
+
+**Manual:** ERP Manual → *Finished Goods — Kg and Nos* (`erp_manual.js`
+`ERP_MANUAL_FINISHED_GOODS_CHILDREN`).
+
+---
+
 *This document covers all major features implemented in the custom app. Minor utility helpers, internal validation guards, and test scaffolding are not listed.*
+
+---
+
+## 23. Check Stock Availability: rounding dust is not free stock (2026-09-20)
+
+A batch shared across several requirements can be left with a crumb of Kg once its
+pieces are all spoken for. Requirement rows carry more decimals than they show, so three
+~530.80395 Kg rows on a 3-piece 1,592.413 Kg bar leave 0.00115 Kg -- just above the old
+0.001 Kg floor. Check Stock Availability handed that crumb to the next drawing
+(MP-2026-00129, 1B8): a 0.001 Kg / 0 Nos Exact Match row, with the rest of the drawing
+short by 530.803 Kg instead of one whole piece.
+
+- `material_planning._batch_has_free_stock(remaining_kg, batch_total_kg, batch_total_sec)`:
+  free only above `BATCH_FREE_EPSILON` Kg **and**, for a batch that counts its pieces,
+  worth at least 0.001 Nos. A genuine part-piece (Reserve Without Dimensions) is still
+  offered.
+- Used at all three places that pick free batches: `check_stock_availability`,
+  `move_to_exact_match`, `update_exact_match_from_consolidate`.
+- Test `verify_mp_batch_dust` (17 checks) replays MP-2026-00129 through the real
+  `check_stock_availability`, with and without the new bar, and shows the old Kg-only
+  rule reproducing the live 0.001 Kg / 0 Nos row. `verify_no_zero_qty_exact_match`
+  now checks the three sites use the helper.
+- Existing plans are not changed. MP-2026-00129 still has its row 7 (0.001 Kg on R005,
+  reserved) and row 8 (530.803 Kg on R037, not reserved).
+
+---
+
+## 24. Material Planning: stock after a purchase (2026-09-20)
+
+Plan: `.claude/tasks/sep20_mp_stock_matching.md`. On MP-2026-00129, a receipt's stock was
+reserved, then unreserved, and a re-check sent 76 requirements back to purchase.
+
+1. **Re-check matches received stock first.** `_pending_purchase_items(mp)` replaces
+   `_ordered_item_codes` in `check_stock_availability`. An item counts only while its
+   Material Request line has `received_qty < stock_qty`. A requirement is matched to
+   stock like any other; its protected Unavailable row is kept only for the part stock
+   can't cover (`_keep_protected`, qty and Nos scaled), or dropped when covered.
+2. **Check stock without dimensions** (`Material Planning.check_stock_without_dimensions`):
+   - Plates / Structurals (`DIMENSIONLESS_GROUPS`): any batch of the same item, own size
+     first, then largest free.
+   - Rows via `_dimensionless_arm_fields`: the batch's dimensions,
+     `reserve_without_dimensions = 1`, and `sec_qty` = Kg / the batch piece.
+   - A shortfall row's Nos is proportional to the drawing's own pieces.
+   - Reserved Exact Match / Material Mapping rows are kept: covered by
+     `_coverage_key` (item, DUNO, item no), their batches' Kg is not offered again, and a
+     batch held in Material Mapping is not offered to Exact Match.
+   - Returns `kept_reserved`; the form keeps reserved rows in place (`_mp_clear_unreserved`),
+     because the Material Issue Plan's `source_row` points at them by name. The re-check
+     guard is lifted only with the box ticked.
+3. **Allocate from Purchase Receipt** (Material Mapping grid button, blue →
+   `allocate_receipt_to_plan`):
+   - receipt batches (`_receipt_batch_names`: bundles plus `batch_no`), free Kg in the
+     plan's warehouse (less every plan's reservations and this plan's rows);
+   - batches already in this plan's Exact Match are skipped (a batch serves one table);
+   - rows land in **Material Mapping**, where a different-size batch belongs: a row
+     already waiting as "Not Mapped" is filled in place (`_mapping_row_from_batch`), the
+     part a batch can't cover stays as its own Not Mapped row, and a requirement with no
+     row gets one (`_requirement_fields` + the batch fields). The requirement keeps its
+     own size; the batch's goes on `batch_*`, with `reserve_without_dimensions = 1`;
+   - covered Kg comes off Unavailable Items;
+   - nothing is reserved, and running it twice allocates nothing more.
+4. Test: `verify_mp_stock_without_dimensions` (29 checks: the real `check_stock_availability`
+   with stand-in stock, and `allocate_receipt_to_plan` on a real draft plan in a rolled-back
+   transaction).
+
+---
+
+## 25. The Final Stock Entry leaves booked excess behind (2026-09-20)
+
+MIP-2026-00007: the transfer sent more than the drawings called for and the popup's
+consolidated excess tab booked the off-cut to return (PLATE8 666.308 Kg, PLATE25 130.467,
+FLAT 30.222). The Manufacture entry then consumed every kilo at the supplier, so Return
+Excess Entry refused: *"There is not enough of this material left ... PLATE8: 666.308 Kg
+short ... It has already been consumed by the final Stock Entry."*
+
+The per-drawing cap in `_consumption_for_completed` could not help: that plan's rows carry
+`drawing_planned_weight` equal to `transferred_qty`, so there was nothing to cap.
+
+- `_excess_booked_to_return(mip)` returns Kg per item from Excess Material Items rows that
+  are not yet a Stock Entry (`stock_entry_created = 0`) and not claimed
+  (`mapped_material_planning` empty).
+- `_consumption_for_completed` holds that back per item: what a row would not have
+  consumed anyway counts first, then the consumption itself, and any remainder carries to
+  the item's other rows.
+- Test `verify_fg_entry_leaves_excess` (7 checks) replays MIP-2026-00007 through the real
+  function: 3,931.705 Kg at the supplier with 666.201 booked leaves exactly 666.201, and
+  nothing changes when nothing is booked.
+- Entries already made are not corrected: their material is consumed. Write the difference
+  off as Process Loss, or cancel and re-make the entry.
