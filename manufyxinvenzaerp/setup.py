@@ -1112,15 +1112,22 @@ function _so_load_excel(frm) {
 			callback: function(r) {
 				if (!r.message) return;
 				var res = r.message;
-				var msg = __("{0} drawing(s) and {1} raw material row(s) loaded.", [res.drawing_count, res.item_count]);
-				if (res.warnings && res.warnings.length) {
-					frappe.msgprint({ title: __("Loaded with Warnings"),
-						message: msg + "<br><br><b>" + __("Warnings:") + "</b><br>" + res.warnings.join("<br>"),
-						indicator: "orange" });
-				} else {
-					frappe.show_alert({ message: msg, indicator: "green" }, 5);
-				}
-				frm.reload_doc();
+				frm.reload_doc().then(function() {
+					return _so_sync_fg_lines_from_drawings(frm);
+				}).then(function(sync) {
+					var msg = __("{0} drawing(s) and {1} raw material row(s) loaded.", [res.drawing_count, res.item_count]);
+					if (sync.updated) {
+						msg += "<br>" + __("Sales Order Kg and Nos updated from the Drawing List for {0} item(s).", [sync.updated]);
+					}
+					var warnings = (res.warnings || []).concat(sync.warnings);
+					if (warnings.length) {
+						frappe.msgprint({ title: __("Loaded with Warnings"),
+							message: msg + "<br><br><b>" + __("Warnings:") + "</b><br>" + warnings.join("<br>"),
+							indicator: "orange" });
+					} else {
+						frappe.show_alert({ message: $("<div>").html(msg).text(), indicator: "green" }, 5);
+					}
+				});
 			}
 		});
 	};
@@ -1129,6 +1136,63 @@ function _so_load_excel(frm) {
 	} else {
 		do_load();
 	}
+}
+
+// The Excel loader stages Drawing List rows directly in the database. Copy their
+// customer-provided Kg and Total Qty into the matching FG order line, then save
+// through the form so ERPNext recalculates amounts and order totals as usual.
+function _so_sync_fg_lines_from_drawings(frm) {
+	var totals = {};
+	(frm.doc.custom_duno_items || []).forEach(function(row) {
+		if (!row.item) return;
+		var t = totals[row.item] || (totals[row.item] = { kg: 0, nos: 0 });
+		t.kg += flt(row.total_weight);
+		t.nos += flt(row.total_quantity);
+	});
+	var warnings = [], changes = [], updated = 0;
+	Object.keys(totals).forEach(function(item_code) {
+		var lines = (frm.doc.items || []).filter(function(line) { return line.item_code === item_code; });
+		// A new order can have one default FG placeholder line before the sheet is
+		// loaded. Replace it only when the sheet names exactly one FG item and the
+		// line still has the default 1 Kg / 0 Nos; other mismatches need review.
+		var placeholder = !lines.length && Object.keys(totals).length === 1
+			&& (frm.doc.items || []).length === 1 ? frm.doc.items[0] : null;
+		if (placeholder && flt(placeholder.qty, 3) === 1
+			&& flt(placeholder.custom_sec_qty, 3) === 0) {
+			lines = [placeholder];
+		}
+		if (lines.length !== 1) {
+			warnings.push(__("FG Item {0}: expected one matching Sales Order item line, found {1}. Match its FG item, Kg and Nos to the drawing sheet.",
+				[item_code, lines.length]));
+			return;
+		}
+		var line = lines[0], t = totals[item_code];
+		var kg = flt(t.kg, 3), nos = flt(t.nos, 3);
+		if (line.item_code === item_code && flt(line.qty, 3) === kg
+			&& flt(line.custom_sec_qty, 3) === nos) return;
+		changes.push({ line: line, item_code: item_code, kg: kg, nos: nos });
+	});
+	if (!changes.length) return Promise.resolve({ updated: 0, warnings: warnings });
+	if (frm.doc.docstatus !== 0) {
+		warnings.push(__("Submit-state Sales Order item quantities cannot be updated by Load Items. Set the Kg and Nos through the permitted amendment flow."));
+		return Promise.resolve({ updated: 0, warnings: warnings });
+	}
+	var chain = Promise.resolve();
+	changes.forEach(function(change) {
+		chain = chain.then(function() {
+			if (change.line.item_code !== change.item_code) {
+				return frappe.model.set_value(change.line.doctype, change.line.name,
+					"item_code", change.item_code);
+			}
+		}).then(function() {
+			return frappe.model.set_value(change.line.doctype, change.line.name, "qty", change.kg);
+		}).then(function() {
+			return frappe.model.set_value(change.line.doctype, change.line.name, "custom_sec_qty", change.nos);
+		}).then(function() { updated += 1; });
+	});
+	return chain.then(function() {
+		return frm.save().then(function() { return { updated: updated, warnings: warnings }; });
+	});
 }
 
 function _so_create_drawings(frm) {
