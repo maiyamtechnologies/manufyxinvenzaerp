@@ -945,6 +945,9 @@ function _excess_weight(d, L, W, S) {
 //
 // Scoped to .mip-transfer-theme so no other dialog in the desk is touched.
 var MIP_THEME_CSS = `
+/* Frappe's toast container uses z-index 1050, the same layer as a modal.
+   Raise it only while this transfer popup is open so its warnings stay legible. */
+body.mip-transfer-alerts-front #alert-container { z-index: 1060; }
 .mip-transfer-theme .mip-tab {
 	display:inline-block; padding:9px 22px; margin-right:14px; cursor:pointer;
 	font-size:12px; font-weight:600; border-radius:8px 8px 0 0; position:relative; top:1px;
@@ -973,6 +976,43 @@ var MIP_THEME_CSS = `
 function _mip_inject_theme() {
 	if (document.getElementById("mip-transfer-theme-css")) return;
 	$("<style id='mip-transfer-theme-css'>").text(MIP_THEME_CSS).appendTo(document.head);
+}
+
+function _show_mip_transfer_entry_created(frm, stock_entry_name) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Stock Entry Created"),
+		fields: [{ fieldtype: "HTML", fieldname: "message" }],
+		primary_action_label: __("Submit Stock Entry"),
+		primary_action() {
+			frappe.call({
+				method: "manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer.submit_mip_transfer_entry",
+				args: { mip_name: frm.doc.name, stock_entry_name: stock_entry_name },
+				freeze: true,
+				freeze_message: __("Submitting Stock Entry…"),
+				callback(r) {
+					if (!r.message || !r.message.name) return;
+					dialog.hide();
+					frappe.msgprint({
+						title: __("Stock Entry Submitted"),
+						message: __("Stock Entry {0} submitted successfully.",
+							[frappe.utils.escape_html(r.message.name)]),
+						indicator: "green",
+					});
+					frm.reload_doc();
+				},
+			});
+		},
+		secondary_action_label: __("Open Stock Entry"),
+		secondary_action() {
+			dialog.hide();
+			frappe.set_route("Form", "Stock Entry", stock_entry_name);
+		},
+	});
+	dialog.fields_dict.message.$wrapper.html(
+		$("<p>").text(__("Stock Entry {0} created. Submit it to transfer the stock.",
+			[stock_entry_name]))
+	);
+	dialog.show();
 }
 
 function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
@@ -1075,9 +1115,15 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 	// Anything parked by a previous "Save and Close" comes back onto the rows it was
 	// entered against. Fetched after the table is built, so it can simply replay the
 	// same handlers a user would have triggered by typing.
+	//
+	// Scoped to THIS popup: all three park against the same consolidate rows, and this
+	// one and the CNC-to-supplier popup key their rows identically (cnc_process is 0 in
+	// both). A draft of "1 whole plate" saved against the stock in stores came back on
+	// the CNC popup, which is looking at the far smaller amount that has reached the
+	// CNC warehouse, and it opened refusing to transfer for want of stock.
 	frappe.call({
 		method: "manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan.get_transfer_draft",
-		args: { mip_name: frm.doc.name },
+		args: { mip_name: frm.doc.name, transfer_type: is_cnc_fwd ? "cnc_forward" : transfer_type },
 		callback: function(r) {
 			var draft = r.message || {};
 			if (!Object.keys(draft).length) return;
@@ -1097,8 +1143,8 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				}
 				// The off-cut was parked per item, against every batch row of it --
 				// first one found answers for the item.
-				if (flt(saved.draft_excess_length) || flt(saved.draft_excess_width) ||
-					flt(saved.draft_excess_sec_qty)) {
+			if (!is_cnc_fwd && (flt(saved.draft_excess_length) || flt(saved.draft_excess_width) ||
+				flt(saved.draft_excess_sec_qty))) {
 					dlg._excess_plan = dlg._excess_plan || {};
 					if (!dlg._excess_plan[d.item_code]) {
 						dlg._excess_plan[d.item_code] = {
@@ -1315,9 +1361,12 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 		+ "</div>";
 
 	if (short_rows.length) {
+		var short_warehouse = is_cnc_fwd ? frm.doc.cnc_warehouse : frm.doc.source_warehouse;
 		summary += "<div style='background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#7f1d1d'>"
-			+ "⚠ <b>" + __("{0} item(s) do not have enough stock in {1} yet", [short_rows.length, frappe.utils.escape_html(frm.doc.source_warehouse || "-")]) + "</b><br>"
-			+ __("Their <b>In Stock</b> figure is below what is pending — usually the Purchase Receipt has not been made yet. These rows are left unticked; transfer the rest now and come back for them.")
+			+ "⚠ <b>" + __("{0} item(s) do not have enough stock in {1} yet", [short_rows.length, frappe.utils.escape_html(short_warehouse || "-")]) + "</b><br>"
+			+ (is_cnc_fwd
+				? __("Their <b>In Stock</b> figure is below what is waiting to move from CNC. Submit the incoming CNC Stock Entry or transfer a smaller quantity.")
+				: __("Their <b>In Stock</b> figure is below what is pending — usually the Purchase Receipt has not been made yet. These rows are left unticked; transfer the rest now and come back for them."))
 			+ "</div>";
 	}
 
@@ -1365,7 +1414,10 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 	var $pane_transfer = $("<div class='mip-pane' data-pane='transfer'>")
 		.append($(summary).addClass("mip-summary"), $filter_row, $actions, $table);
 	var $pane_excess = $("<div class='mip-pane' data-pane='excess' style='display:none'>");
-	var $content = $("<div>").append($tab_nav, $pane_transfer, $pane_excess);
+	var $content = $("<div>");
+	if (!is_cnc_fwd) $content.append($tab_nav);
+	$content.append($pane_transfer);
+	if (!is_cnc_fwd) $content.append($pane_excess);
 
 	$tab_nav.on("click", "a", function(e) {
 		e.preventDefault();
@@ -1579,7 +1631,8 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				args: {
 					mip_name: frm.doc.name,
 					rows_json: JSON.stringify(draft),
-					excess_plan_json: JSON.stringify(dlg._excess_plan || {}),
+					excess_plan_json: JSON.stringify(is_cnc_fwd ? {} : (dlg._excess_plan || {})),
+					transfer_type: is_cnc_fwd ? "cnc_forward" : transfer_type,
 				},
 				freeze: true,
 				freeze_message: __("Saving draft…"),
@@ -1609,6 +1662,12 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			});
 			if (!selected.length) {
 				frappe.msgprint(__("Please select at least one item."));
+				return;
+			}
+			// Forwarding stock already received at CNC does not create another
+			// off-cut. The source-warehouse legs alone plan and book excess.
+			if (is_cnc_fwd) {
+				_do_transfer(selected);
 				return;
 			}
 
@@ -1715,7 +1774,7 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				freeze_message: __("Creating transfer entry…"),
 				callback: function(r) {
 					if (r.message) {
-						frappe.msgprint({ title: __("Stock Entry Created"), message: __("Transfer entry: ") + '<a href="/app/stock-entry/' + encodeURIComponent(r.message) + '">' + r.message + "</a>", indicator: "green" });
+						_show_mip_transfer_entry_created(frm, r.message);
 						frm.reload_doc();
 					}
 				},
@@ -1730,6 +1789,9 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 	}
 
 	dlg.$wrapper.addClass("mip-transfer-theme");
+	dlg.$wrapper
+		.on("shown.bs.modal", function() { $("body").addClass("mip-transfer-alerts-front"); })
+		.on("hidden.bs.modal", function() { $("body").removeClass("mip-transfer-alerts-front"); });
 	dlg.fields_dict.content.$wrapper.html($content);
 	dlg.show();
 }

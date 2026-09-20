@@ -17,3 +17,4 @@ manufyxinvenzaerp.patches.v1.scale_customer_weight_by_qty
 manufyxinvenzaerp.patches.v1.backfill_sco_status
 manufyxinvenzaerp.patches.v1.backfill_production_plan_status
 manufyxinvenzaerp.patches.v1.fg_nos_kg_on_drawing_rows
+manufyxinvenzaerp.patches.v1.fix_mip_drawing_weight_shares

@@ -24,6 +24,7 @@ from manufyxinvenzaerp.subcontracting_management.subcontracting import _get_mp_r
 from manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan import (
     _clear_transfer_draft,
     get_target_context,
+    requirement_weight_shares,
     _throw_claimed_excess_locked,
 )
 from manufyxinvenzaerp.utils.dimension_formula import calculate_qty
@@ -242,6 +243,23 @@ def _tag_stock_entry(se_dict, mip_name, ctx):
     se_dict[ctx.link_field] = ctx.name
     se_dict[ctx.ref_field] = ctx.name
     return se_dict
+
+
+@frappe.whitelist()
+def submit_mip_transfer_entry(mip_name, stock_entry_name):
+    """Submit a transfer draft from its Material Issue Plan creation dialog."""
+    mip = frappe.get_doc("Material Issue Plan", mip_name)
+    mip.check_permission("read")
+    se = frappe.get_doc("Stock Entry", stock_entry_name)
+    if se.custom_mip_ref != mip.name:
+        frappe.throw(_("Stock Entry {0} does not belong to Material Issue Plan {1}.").format(
+            se.name, mip.name
+        ))
+    if se.docstatus != 0:
+        frappe.throw(_("Stock Entry {0} is no longer a draft.").format(se.name))
+    se.check_permission("submit")
+    se.submit()
+    return {"name": se.name}
 
 
 def _cut_sheet_caps(mip):
@@ -510,6 +528,7 @@ def _excess_return_source_rows(mip, in_rows):
 
     for item in in_rows:
         wanted = flt(item["qty"], 3)
+        requested = wanted
         item_code = item["item_code"]
         candidates = sorted(
             [(k, v) for k, v in available.items() if k[0] == item_code and v > 0],
@@ -538,7 +557,9 @@ def _excess_return_source_rows(mip, in_rows):
 
         if wanted > 0.001:
             shortfalls.append(
-                _("{0}: {1} Kg short").format(item_code, flt(wanted, 3))
+                _("{0}: {1} Kg requested, {2} Kg available, {3} Kg short").format(
+                    item_code, requested, flt(requested - wanted, 3), flt(wanted, 3)
+                )
             )
 
     return out_rows, shortfalls
@@ -648,31 +669,21 @@ def get_mip_pending_items(mip_name):
     # weigh. The consolidated excess tab is the difference between the two.
     #
     # drawing_planned_weight on a row is the WHOLE requirement's weight, not that
-    # row's share of it: a drawing needing 324.224 Kg of ISA100 that is filled
-    # from two batches carries 324.224 on both rows. So neither reading is right
-    # on its own -- taking one row's figure understates a batch covering many
-    # requirements, and adding them up counts a split requirement twice. Each row
-    # is given its share instead, in proportion to the weight it actually carries,
-    # so the shares add back to the requirement exactly.
-    req_totals = {}
-    for r in (mip.raw_materials or []):
-        req_key = ((r.planned_item or r.item_code), r.customer_drawing_number or "",
-                   flt(r.length), flt(r.width), flt(r.thickness))
-        agg = req_totals.setdefault(req_key, {"weight": 0.0, "qty": 0.0})
-        agg["weight"] = flt(r.drawing_planned_weight)
-        agg["qty"] = flt(agg["qty"] + flt(r.qty), 3)
-
+    # row's share of it (see requirement_weight_shares, which divides it), so the
+    # shares are what gets added up here.
+    #
+    # Keyed by the CNC leg as well as item+batch, exactly as `totals` below is: one
+    # batch feeding both a CNC drawing and a direct one produces TWO pending lines,
+    # and a key without the leg hands each of them the whole requirement. The direct
+    # line then reported 51.935 Kg planned against the 7.858 Kg it carries -- a
+    # 44.077 Kg shortfall that was simply the CNC leg's own material, counted here
+    # and again over there.
     drawing_wt_by_key = {}
-    for r in (mip.raw_materials or []):
-        req_key = ((r.planned_item or r.item_code), r.customer_drawing_number or "",
-                   flt(r.length), flt(r.width), flt(r.thickness))
-        agg = req_totals.get(req_key) or {"weight": 0.0, "qty": 0.0}
-        share = (
-            flt(agg["weight"]) * (flt(r.qty) / flt(agg["qty"]))
-            if flt(agg["qty"]) else flt(agg["weight"])
-        )
-        key = ((r.planned_item or r.item_code), r.batch_no or "")
-        drawing_wt_by_key[key] = flt(drawing_wt_by_key.get(key, 0) + share, 3)
+    raw_material_rows = list(mip.raw_materials or [])
+    for r, share in zip(raw_material_rows, requirement_weight_shares(raw_material_rows)):
+        key = ((r.planned_item or r.item_code), r.batch_no or "",
+               1 if (r.cnc_process and cnc_warehouse) else 0)
+        drawing_wt_by_key[key] = flt(drawing_wt_by_key.get(key, 0) + flt(share), 3)
 
     so_by_key = _by_key("sales_order")
     cdn_by_key = _by_key("customer_drawing_number")
@@ -769,7 +780,7 @@ def get_mip_pending_items(mip_name):
             # the tab must compare what is being sent against the share of the
             # requirement it covers, not against the whole of it.
             "drawing_planned_weight": flt(
-                flt(drawing_wt_by_key.get((item_code, batch_no), 0)) * ratio, 3),
+                flt(drawing_wt_by_key.get((item_code, batch_no, 1 if is_cnc else 0), 0)) * ratio, 3),
         })
 
     for row in result:
@@ -1755,8 +1766,10 @@ def create_mip_transfer_entry(mip_name):
     frappe.db.commit()  # release read-locks before SE insert to avoid gap-lock deadlock
     se.insert(ignore_permissions=True)
     _log_round_up_excess(mip, primary_rows)
-    # The parked popup state described what was about to happen; it just did.
-    _clear_transfer_draft(mip.name, primary_rows)
+    # The parked popup state described what was about to happen; it just did. Only the
+    # RM-to-supplier popup's own: this sends primary rows, and the CNC popups' drafts
+    # sit on the same consolidate rows.
+    _clear_transfer_draft(mip.name, primary_rows, "primary")
     return {"primary_se": se.name}
 
 
@@ -1899,7 +1912,9 @@ def get_mip_cnc_pending_items(mip_name):
 def create_mip_cnc_partial_forward(mip_name, selected_items_json):
     """Forward a caller-selected subset out of the CNC warehouse -- the partial
     counterpart to create_mip_cnc_forward_entry, so a CNC batch can be released to
-    the supplier in stages as machining finishes rather than all at once."""
+    the supplier in stages as machining finishes rather than all at once. This
+    second leg does not create any new excess; excess belongs to the transfer out
+    of the raw material warehouse."""
     selected = _json.loads(selected_items_json) if isinstance(selected_items_json, str) else selected_items_json
     if not selected:
         frappe.throw(_("No items selected for transfer."))
@@ -1931,6 +1946,10 @@ def create_mip_cnc_partial_forward(mip_name, selected_items_json):
         if qty > flt(row["qty"]) + 0.001:
             problems.append(_("{0} ({1}): {2} selected but only {3} is still at CNC.").format(
                 key[0], key[1] or "-", qty, flt(row["qty"], 3)))
+            continue
+        if qty > flt(row["available_qty"]) + 0.001:
+            problems.append(_("{0} ({1}): {2} selected but only {3} is in the CNC warehouse.").format(
+                key[0], key[1] or "-", qty, flt(row["available_qty"], 3)))
             continue
         se_items.append({
             "item_code": row["item_code"],
@@ -1968,6 +1987,7 @@ def create_mip_cnc_partial_forward(mip_name, selected_items_json):
     }, mip_name, ctx))
     frappe.db.commit()
     se.insert(ignore_permissions=True)
+    _clear_transfer_draft(mip.name, selected, "cnc_forward")
     return se.name
 
 
@@ -2092,6 +2112,41 @@ def _override_changes_dimensions(excess_row, override, group):
         override.get(f) not in (None, "") and flt(override.get(f), 3) != flt(excess_row.get(f), 3)
         for f in fields
     )
+
+
+def _set_excess_repack_rates(se):
+    """Value each returned item from the matching material leaving the supplier.
+
+    ERPNext requires a manual basic rate for every incoming row when a Repack
+    receives more than one distinct item. Use its own outgoing rate calculation
+    (including batch valuation), then allocate each item's actual source cost
+    over the weight returned for that item. Zero-valued source stock stays zero.
+    """
+    incoming = [r for r in se.items if r.t_warehouse and not r.s_warehouse]
+    if len({r.item_code for r in incoming}) <= 1:
+        return
+
+    se.validate_posting_time()
+    se.validate_item()
+    se.set_transfer_qty()
+    se.set_rate_for_outgoing_items(raise_error_if_no_rate=False)
+
+    source_cost = {}
+    for row in se.items:
+        if row.s_warehouse and not row.t_warehouse:
+            source_cost[row.item_code] = source_cost.get(row.item_code, 0) + flt(row.basic_amount)
+
+    incoming_qty = {}
+    for row in incoming:
+        incoming_qty[row.item_code] = incoming_qty.get(row.item_code, 0) + flt(row.transfer_qty)
+
+    for row in incoming:
+        if row.item_code not in source_cost or not incoming_qty[row.item_code]:
+            frappe.throw(_("Cannot value excess return item {0}: no matching supplier material cost was found.")
+                         .format(row.item_code))
+        row.set_basic_rate_manually = 1
+        row.basic_rate = source_cost[row.item_code] / incoming_qty[row.item_code]
+        row.basic_amount = flt(row.transfer_qty * row.basic_rate, row.precision("basic_amount"))
 
 
 @frappe.whitelist()
@@ -2250,8 +2305,8 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
     if shortfalls:
         frappe.throw(
             _("There is not enough of this material left at {0} to return:<br><br>{1}<br><br>"
-              "It has already been consumed by the final Stock Entry, or returned before. "
-              "Reduce the return quantity, or write the difference off as Process Loss.")
+              "Check the submitted transfer entries and the recorded excess quantity. "
+              "Only material actually at this warehouse for this job can be returned.")
             .format(mip.supplier_warehouse or _("the supplier"), "<br>".join(shortfalls)),
             title=_("Not Enough Left to Return"),
         )
@@ -2264,6 +2319,8 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
         "custom_sco_ref": mip.subcontracting_order or None,
         "items": out_rows + se_items,
     })
+    if out_rows:
+        _set_excess_repack_rates(se)
     frappe.db.commit()
     se.insert(ignore_permissions=True)
 
