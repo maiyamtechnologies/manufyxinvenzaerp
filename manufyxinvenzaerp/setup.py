@@ -4814,35 +4814,42 @@ frappe.ui.form.on("SOE Consumption Log", {
 
 frappe.ui.form.on("Supplier Operation Entry", {
 \tstatus: function(frm) {
-\t\t// Completed is the last thing that happens to an operation: submitting is
-\t\t// gated on it, and submitting is what hands this quantity to the next
-\t\t// operation. So ask once, here, and carry it through -- rather than leaving
-\t\t// a Completed-but-draft entry sitting there looking finished while the next
-\t\t// operation still shows nothing available.
-\t\t//
-\t\t// The server refuses Completed while any drawing is short or an inspection
-\t\t// round is still open (see _validate_completed_status), so a save that fails
-\t\t// puts the status back and never reaches the submit.
-\t\tif (frm.doc.status !== "Completed" || frm.doc.docstatus !== 0 || frm.is_new()) return;
+\t\tif (frm.doc.status !== "Completed") {
+\t\t\tfrm.__mfx_prev_status = frm.doc.status;
+\t\t\treturn;
+\t\t}
+\t\tif (frm.doc.docstatus !== 0 || frm.is_new()) return;
 \t\tif (frm._mfx_completing) return;
 
-\t\tfrappe.confirm(
-\t\t\t__("Mark this operation Completed and submit it?<br><br>Submitting passes its finished quantity to the next operation. It cannot be cancelled on its own afterwards — only by cancelling the whole Job Work Order."),
-\t\t\tfunction() {
-\t\t\t\t// save("Submit") rather than savesubmit(): savesubmit() raises its own
-\t\t\t\t// "Permanently Submit?" confirmation, and asking twice for one decision
-\t\t\t\t// trains people to click through both.
-\t\t\t\tfrm._mfx_completing = true;
-\t\t\t\tfrm.save("Submit").always(function() { frm._mfx_completing = false; });
+\t\tvar previous = frm.__mfx_prev_status ||
+\t\t\t((frm.doc.consumption_log || []).length ? "In Progress" : "Open");
+\t\tfunction restore_status() {
+\t\t\tfrm._mfx_completing = false;
+\t\t\tfrm.set_value("status", previous);
+\t\t}
+\t\tfrm._mfx_completing = true;
+\t\tfrappe.call({
+\t\t\tmethod: "manufyxinvenzaerp.subcontracting_management.subcontracting.check_soe_completion_before_confirm",
+\t\t\targs: { doc: frm.doc },
+\t\t\tfreeze: true,
+\t\t\tfreeze_message: __("Validating operation…"),
+\t\t\tcallback: function(r) {
+\t\t\t\tif (!r.message || !r.message.ready) { restore_status(); return; }
+\t\t\t\tfrappe.confirm(
+\t\t\t\t\t__("Mark as complete and submit the Operation Entry?<br><br>Submitting passes its finished quantity to the next operation. It cannot be cancelled on its own afterwards — only by cancelling the whole Job Work Order."),
+\t\t\t\t\tfunction() {
+\t\t\t\t\t\t// Submit directly: savesubmit() would ask for a second confirmation.
+\t\t\t\t\t\tfrm.save("Submit", function() { frm._mfx_completing = false; }, null, restore_status);
+\t\t\t\t\t},
+\t\t\t\t\trestore_status
+\t\t\t\t);
 \t\t\t},
-\t\t\tfunction() {
-\t\t\t\t// Declined -- put the status back so the form matches what was saved.
-\t\t\t\tfrm.set_value("status", (frm.doc.consumption_log || []).length ? "In Progress" : "Open");
-\t\t\t}
-\t\t);
+\t\t\terror: restore_status,
+\t\t});
 \t},
 
 \trefresh: function(frm) {
+\t\tif (frm.doc.status !== "Completed") frm.__mfx_prev_status = frm.doc.status;
 \t\t_sync_drawing_nos(frm);
 \t\t// Filter drawing link in log to only drawings present in this SOE
 \t\tvar valid_drawings = (frm.doc.drawing_details || []).map(function(r) {

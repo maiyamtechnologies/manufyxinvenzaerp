@@ -959,6 +959,46 @@ def _soe_consumed_kg(doc):
     return flt(total, 3)
 
 
+@frappe.whitelist()
+def check_soe_completion_before_confirm(doc):
+    """Check the edited draft before asking whether to submit it.
+
+    Run the same validate and before_submit hooks on an in-memory document.
+    This does not save or submit anything; the final Submit runs them again
+    against the latest site state after the user confirms.
+    """
+    data = frappe.parse_json(doc)
+    if not isinstance(data, dict) or data.get("doctype") != "Supplier Operation Entry" or not data.get("name"):
+        frappe.throw(_("A saved Supplier Operation Entry is required."))
+
+    current = frappe.get_doc("Supplier Operation Entry", data["name"])
+    current.check_permission("write")
+    current.check_permission("submit")
+    if current.docstatus != 0:
+        frappe.throw(_("Supplier Operation Entry {0} is no longer a draft.").format(current.name))
+
+    candidate = frappe.get_doc(data)
+    candidate.status = "Completed"
+    candidate._action = "submit"
+    candidate._validate_links()
+    candidate.run_method("before_validate")
+    candidate.run_method("validate")
+    candidate.run_method("before_submit")
+    # Document._validate() also runs save-time routines that require
+    # _doc_before_save (and may write password fields). This preflight has no
+    # save context, so run only its read-only field checks here. The actual
+    # submit will run Frappe's full validation again.
+    candidate._validate_mandatory()
+    for row in [candidate, *candidate.get_all_children()]:
+        row._validate_data_fields()
+        row._validate_selects()
+        row._validate_non_negative()
+        row._validate_length()
+        row._validate_code_fields()
+    candidate.validate_workflow()
+    return {"ready": True}
+
+
 def validate_supplier_operation_entry(doc, method):
     """Per-drawing Nos tracking + validation.
 
