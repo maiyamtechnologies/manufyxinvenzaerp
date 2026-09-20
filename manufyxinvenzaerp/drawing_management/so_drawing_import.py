@@ -200,6 +200,10 @@ def parse_bom_excel(so_name):
             fields=[
                 "name", "item_name", "item_group", "custom_unit_weight",
                 "custom_parent_item_group", "custom_secondary_uom", "stock_uom",
+                # Staged rows are written with a raw SQL insert, which bypasses the
+                # fetch_from that fills Material Spec everywhere else -- so it has to
+                # be carried across by hand here or the column lands empty.
+                "custom_material_spec",
             ],
         ):
             item_data_map[item.name] = item
@@ -302,7 +306,7 @@ def parse_bom_excel(so_name):
         "name", "parent", "parenttype", "parentfield", "idx",
         "creation", "modified", "modified_by", "owner", "docstatus",
         "customer_drawing_number", "item_no", "material_code", "material_name",
-        "item_group", "parent_item_group",
+        "item_group", "parent_item_group", "material_spec",
         "grade", "thickness", "width", "length",
         "sec_qty", "sec_uom", "total_sec_qty", "unit_weight", "qty", "uom", "total_weight", "is_locked",
     ]
@@ -344,6 +348,7 @@ def parse_bom_excel(so_name):
                 idata.get("item_name") or item["material_code"],
                 idata.get("item_group") or "",
                 pig,
+                idata.get("custom_material_spec") or "",
                 item["grade"],
                 flt(item["thickness"], 3), flt(item["width"], 3), flt(item["length"], 3),
                 flt(sec_qty, 3),
@@ -791,6 +796,36 @@ def _check_drawing_masters(so):
     return issues
 
 
+def _check_raw_material_grades(so):
+    """Grade on each imported raw-material row must already exist in the Material
+    Grade master.
+
+    Same rule and same reason as _check_drawing_masters above: the staging rows are
+    written with a raw SQL insert that bypasses Link validation, so a grade that is
+    not in the master lands in the table regardless and has to be caught here, against
+    the row it came from. Checked by record name only -- the master is named by the
+    grade itself, so the name IS what the sheet types.
+
+    Blank is allowed. Grade has never been mandatory, older imports predate the column,
+    and a sheet that simply leaves it out should not be refused."""
+    rows = [r for r in (so.get("custom_so_raw_materials") or []) if not r.get("is_locked")]
+    wanted = {r.grade for r in rows if r.get("grade")}
+    if not wanted:
+        return []
+
+    existing = set(frappe.get_all(
+        "Material Grade", filters={"name": ["in", list(wanted)]}, pluck="name"))
+
+    issues = []
+    for r in rows:
+        if r.get("grade") and r.grade not in existing:
+            issues.append(_at(RAW_MATERIALS, r.idx,
+                _("{0} / {1}: Grade <b>{2}</b> is not in the Material Grade master. "
+                  "Correct it in the sheet (or create the grade) and import again.")
+                .format(r.customer_drawing_number or "?", r.material_code or "?", r.grade)))
+    return issues
+
+
 # Every dimension the weight formula reads, per group. A dimension NOT listed
 # for a group takes no part in that group's formula, so a value sitting in it
 # describes nothing -- see _check_unused_dimensions.
@@ -1003,7 +1038,8 @@ def verify_raw_materials(so_name):
     # Drawings were re-verified and could fail on a sheet correction that no
     # longer applies to them.
     unlocked = [r for r in (so.custom_so_raw_materials or []) if not r.get("is_locked")]
-    issues = _check_drawing_masters(so) + _check_drawing_headers(so) + _check_fg_weights(so)
+    issues = (_check_drawing_masters(so) + _check_raw_material_grades(so)
+              + _check_drawing_headers(so) + _check_fg_weights(so))
     # Kept OUT of `issues` on purpose. `verified` is `not issues`, so anything added
     # there blocks drawing creation -- and a mark reused by an unrelated customer is
     # not a fault in this sheet. It is reported separately so it is seen at import

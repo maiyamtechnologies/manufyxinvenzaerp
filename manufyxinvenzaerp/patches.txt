@@ -7,6 +7,8 @@ manufyxinvenzaerp.patches.v1.remove_wo_transfer_fields
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+manufyxinvenzaerp.patches.v1.convert_item_material_spec_to_link
+manufyxinvenzaerp.patches.v1.seed_existing_material_grades
 manufyxinvenzaerp.patches.v1.backfill_payment_entry_created_flag
 manufyxinvenzaerp.patches.v1.rename_excess_batch_mapped_statuses
 manufyxinvenzaerp.patches.v1.backfill_drawing_rate_schedule_type

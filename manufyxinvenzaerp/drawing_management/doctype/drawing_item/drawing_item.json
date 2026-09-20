@@ -13,6 +13,7 @@
   "column_break_1",
   "raw_material_description",
   "material_spec",
+  "material_grade",
   "section_break_dims",
   "batch",
   "unit_weight",
@@ -84,6 +85,13 @@
    "fieldname": "material_spec",
    "fieldtype": "Data",
    "label": "Material Spec",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "material_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
    "read_only": 1
   },
   {

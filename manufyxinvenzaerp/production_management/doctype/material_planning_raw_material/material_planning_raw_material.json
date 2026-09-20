@@ -25,6 +25,7 @@
   "shortage_qty",
   "unit_weight",
   "material_spec",
+  "material_grade",
   "warehouse",
   "store_location"
  ],
@@ -174,6 +175,14 @@
    "fieldname": "material_spec",
    "fieldtype": "Data",
    "label": "Material Spec",
+   "read_only": 1,
+   "fetch_from": "item_code.custom_material_spec"
+  },
+  {
+   "fetch_from": "item_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
    "read_only": 1
   },
   {

@@ -8,6 +8,7 @@
   "customer_drawing_number",
   "item_no",
   "material_code",
+  "material_spec",
   "material_name",
   "item_group",
   "parent_item_group",
@@ -51,6 +52,13 @@
    "read_only_depends_on": "eval:doc.is_locked"
   },
   {
+   "fetch_from": "material_code.custom_material_spec",
+   "fieldname": "material_spec",
+   "fieldtype": "Data",
+   "label": "Material Spec",
+   "read_only": 1
+  },
+  {
    "fetch_from": "material_code.item_name",
    "fieldname": "material_name",
    "fieldtype": "Data",
@@ -79,10 +87,13 @@
    "fieldtype": "Column Break"
   },
   {
+   "description": "The grade typed in the import sheet for this line. A master rather than free text since Sep 2026 — the three grades already in use are seeded by setup.seed_material_grades, and the import refuses a grade that is not one of them (see _check_raw_material_grades).",
    "fieldname": "grade",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Material Grade",
    "in_list_view": 1,
    "label": "Grade",
+   "read_only": 1,
    "read_only_depends_on": "eval:doc.is_locked"
   },
   {

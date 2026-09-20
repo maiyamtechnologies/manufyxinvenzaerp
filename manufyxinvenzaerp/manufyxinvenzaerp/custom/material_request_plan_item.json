@@ -474,7 +474,7 @@
    "property": "field_order",
    "property_type": "Data",
    "row_name": null,
-   "value": "[\"item_code\", \"from_warehouse\", \"warehouse\", \"item_name\", \"material_request_type\", \"quantity\", \"required_bom_qty\", \"column_break_4\", \"schedule_date\", \"uom\", \"conversion_factor\", \"custom_parent_item_group\", \"item_details\", \"description\", \"min_order_qty\", \"custom_length\", \"custom_width\", \"custom_thickness\", \"custom_unit_weight\", \"custom_sec_qty\", \"section_break_8\", \"sales_order\", \"bin_qty_section\", \"actual_qty\", \"requested_qty\", \"reserved_qty_for_production\", \"column_break_yhelv\", \"ordered_qty\", \"projected_qty\", \"safety_stock\"]"
+   "value": "[\"item_code\", \"from_warehouse\", \"warehouse\", \"item_name\", \"custom_material_spec\", \"custom_material_grade\", \"material_request_type\", \"quantity\", \"required_bom_qty\", \"column_break_4\", \"schedule_date\", \"uom\", \"conversion_factor\", \"custom_parent_item_group\", \"item_details\", \"description\", \"min_order_qty\", \"custom_length\", \"custom_width\", \"custom_thickness\", \"custom_unit_weight\", \"custom_sec_qty\", \"section_break_8\", \"sales_order\", \"bin_qty_section\", \"actual_qty\", \"requested_qty\", \"reserved_qty_for_production\", \"column_break_yhelv\", \"ordered_qty\", \"projected_qty\", \"safety_stock\"]"
   }
  ],
  "sync_on_migrate": 1

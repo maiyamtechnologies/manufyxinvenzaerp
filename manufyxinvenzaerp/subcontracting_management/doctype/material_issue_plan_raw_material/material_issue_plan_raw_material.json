@@ -7,12 +7,15 @@
  "field_order": [
   "section_item_details",
   "item_code",
+  "material_spec",
+  "material_grade",
   "update_batch_btn",
   "item_name",
   "description",
   "col_break_item_1",
   "duno_mark_no",
   "customer_drawing_number",
+  "item_number",
   "sales_order",
   "col_break_item_2",
   "parent_item_group",
@@ -74,6 +77,20 @@
    "read_only": 1
   },
   {
+   "fetch_from": "item_code.custom_material_spec",
+   "fieldname": "material_spec",
+   "fieldtype": "Data",
+   "label": "Material Spec",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
+   "read_only": 1
+  },
+  {
    "depends_on": "eval:doc.source_table !== 'Material Planning Unavailable Item'",
    "fieldname": "update_batch_btn",
    "fieldtype": "Button",
@@ -110,6 +127,13 @@
    "fieldname": "customer_drawing_number",
    "fieldtype": "Data",
    "label": "Customer Drawing Number",
+   "read_only": 1
+  },
+  {
+   "description": "The Sales Order Drawing Raw Material row this covers (its Item No). Identifies the requirement exactly, which dimensions cannot: a plan row carries the BATCH's size, not the cut size.",
+   "fieldname": "item_number",
+   "fieldtype": "Data",
+   "label": "Item No",
    "read_only": 1
   },
   {
