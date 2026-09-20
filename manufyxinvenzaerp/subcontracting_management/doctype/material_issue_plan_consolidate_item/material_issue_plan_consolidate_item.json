@@ -7,6 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "item_code",
+  "material_spec",
+  "material_grade",
   "item_name",
   "batch_no",
   "update_batch_btn",
@@ -36,7 +38,8 @@
   "column_break_draft",
   "draft_excess_sec_qty",
   "draft_return_warehouse",
-  "draft_saved_on"
+  "draft_saved_on",
+  "draft_transfer_type"
  ],
  "fields": [
   {
@@ -47,6 +50,20 @@
    "options": "Item",
    "read_only": 1,
    "columns": 2
+  },
+  {
+   "fetch_from": "item_code.custom_material_spec",
+   "fieldname": "material_spec",
+   "fieldtype": "Data",
+   "label": "Material Spec",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
+   "read_only": 1
   },
   {
    "fieldname": "item_name",
@@ -239,6 +256,13 @@
    "fieldname": "draft_saved_on",
    "fieldtype": "Datetime",
    "label": "Draft Saved On",
+   "read_only": 1
+  },
+  {
+   "description": "Which transfer popup parked this draft: primary (RM to supplier), cnc (RM to the CNC warehouse) or cnc_forward (CNC on to the supplier). A draft is only ever restored into the popup it was typed in.",
+   "fieldname": "draft_transfer_type",
+   "fieldtype": "Data",
+   "label": "Draft Transfer Type",
    "read_only": 1
   }
  ],

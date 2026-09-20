@@ -1300,7 +1300,10 @@ def get_raw_materials(doc):
                 "duno_mark_no": duno_mark_no,
                 "customer_drawing_number": customer_drawing_number,
                 "parent_item_group": group,
-                "material_spec": "",
+                # Material Spec and Material Grade are not set here: both are declared
+                # with fetch_from on item_code, so Frappe fills them from the Item on
+                # save. This line used to write "" and that was the whole story --
+                # every plan showed a blank spec because nothing ever filled it in.
                 "unit_weight": unit_weight,
                 "thickness": thickness,
                 "length": length,

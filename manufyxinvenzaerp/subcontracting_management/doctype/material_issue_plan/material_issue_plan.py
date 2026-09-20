@@ -347,7 +347,7 @@ def refresh_mip_raw_materials(mip_name):
             sec_qty = row.batch_sec_qty if row.batch else row.sec_qty
             planned_weight = _lookup_drawing_planned_weight(
                 row.sales_order, row.customer_drawing_number, row.item_code,
-                row.length, row.width, row.thickness)
+                row.length, row.width, row.thickness, row.item_number)
             new_row = mip.append("raw_materials", {
                 "material_planning": mp_name,
                 "source_table": "Material Planning Material Mapping",
@@ -357,6 +357,7 @@ def refresh_mip_raw_materials(mip_name):
                 "planned_item": row.planned_item,
                 "duno_mark_no": row.duno_mark_no,
                 "customer_drawing_number": row.customer_drawing_number,
+                "item_number": row.item_number,
                 "sales_order": row.sales_order,
                 "batch_no": row.batch,
                 "purchase_receipt": row.purchase_receipt,
@@ -371,7 +372,6 @@ def refresh_mip_raw_materials(mip_name):
                 "qty": qty,
                 "transferred_qty": qty if row.batch and row.batch in transferred_batches else 0,
                 "drawing_planned_weight": planned_weight,
-                "excess_qty": flt(flt(qty) - planned_weight, 3) if planned_weight is not None else 0,
                 "is_reserved": row.is_reserved,
                 "is_unavailable": 0,
                 "cnc_process": row.cnc_process,
@@ -383,7 +383,7 @@ def refresh_mip_raw_materials(mip_name):
                 continue
             planned_weight = _lookup_drawing_planned_weight(
                 row.sales_order, row.customer_drawing_number, row.item_code,
-                row.length, row.width, row.thickness)
+                row.length, row.width, row.thickness, row.item_number)
             new_row = mip.append("raw_materials", {
                 "material_planning": mp_name,
                 "source_table": "Material Planning Available Raw Material",
@@ -392,6 +392,7 @@ def refresh_mip_raw_materials(mip_name):
                 "item_name": row.item_name,
                 "duno_mark_no": row.duno_mark_no,
                 "customer_drawing_number": row.customer_drawing_number,
+                "item_number": row.item_number,
                 "sales_order": row.sales_order,
                 "batch_no": row.batch_no,
                 "purchase_receipt": row.purchase_receipt,
@@ -406,7 +407,6 @@ def refresh_mip_raw_materials(mip_name):
                 "qty": row.required_qty,
                 "transferred_qty": row.required_qty if row.batch_no and row.batch_no in transferred_batches else 0,
                 "drawing_planned_weight": planned_weight,
-                "excess_qty": flt(flt(row.required_qty) - planned_weight, 3) if planned_weight is not None else 0,
                 "is_reserved": row.is_reserved,
                 "is_unavailable": 0,
                 "cnc_process": row.cnc_process,
@@ -424,6 +424,11 @@ def refresh_mip_raw_materials(mip_name):
                 "item_name": row.item_name,
                 "duno_mark_no": row.duno_mark_no,
                 "customer_drawing_number": row.customer_drawing_number,
+                # Carried even though an unavailable row has no batch and no Excess Qty
+                # of its own: without it, every unavailable row of one item on one
+                # drawing shares the empty requirement key, and the shortfall they
+                # represent is pooled into whichever requirement they land beside.
+                "item_number": row.item_number,
                 "sales_order": row.sales_order,
                 "parent_item_group": row.parent_item_group,
                 "length": row.length,
@@ -451,6 +456,13 @@ def refresh_mip_raw_materials(mip_name):
         if (old and flt(old.get("transfer_excess_kg"))
                 and (old.batch_no or "") == (new_row.batch_no or "")):
             new_row.transfer_excess_kg = flt(old.transfer_excess_kg, 3)
+
+    # Excess Qty is measured against this row's SHARE of the requirement, not the
+    # whole of it -- set once here, after every row exists, because a share cannot be
+    # worked out until its siblings are known. Stamping it row by row above compared
+    # one batch's contribution against the entire drawing's need and reported the rest
+    # of the requirement as a shortfall on every row that was split.
+    _apply_requirement_excess(mip.raw_materials or [])
 
     mip.save(ignore_permissions=True)
     refresh_weight_summary(mip_name)
@@ -492,31 +504,33 @@ def _sync_transferred_qty(mip):
     never affected: it computes its own figures live (see get_mip_pending_items).
 
     Counted as "left the source warehouse", so the Stores -> CNC -> supplier route
-    contributes once (on its first leg) rather than twice. Where several requirement
-    rows share one batch they split its total by planned-qty share, the same weighting
-    the transfer popup uses to aggregate them; the last row absorbs the rounding
-    remainder so the parts sum back to the whole exactly."""
+    contributes once (on its first leg) rather than twice. CNC and direct rows can
+    share the same item and batch, so keep their transfers separate by destination.
+    Where several requirement rows share a batch and route, they split its total by
+    planned-qty share; the last row absorbs the rounding remainder."""
     if not mip.source_warehouse:
         return
 
     moved = {}
     for r in frappe.db.sql(
         """
-        SELECT sed.item_code, sed.batch_no, SUM(sed.qty) AS qty
+        SELECT sed.item_code, sed.batch_no, sed.t_warehouse, SUM(sed.qty) AS qty
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON se.name = sed.parent
         WHERE se.custom_mip_ref = %s AND se.docstatus = 1 AND sed.s_warehouse = %s
-        GROUP BY sed.item_code, sed.batch_no
+        GROUP BY sed.item_code, sed.batch_no, sed.t_warehouse
         """,
         (mip.name, mip.source_warehouse),
         as_dict=True,
     ):
-        moved[(r.item_code, r.batch_no or "")] = flt(r.qty)
+        is_cnc = bool(mip.cnc_warehouse and r.t_warehouse == mip.cnc_warehouse)
+        key = (r.item_code, r.batch_no or "", is_cnc)
+        moved[key] = flt(moved.get(key, 0) + flt(r.qty))
 
     # Keyed on the batch's own item -- an alternate-item row's Stock Entry line is
     # booked against planned_item, not the requirement's item_code.
     def key(row):
-        return ((row.planned_item or row.item_code), row.batch_no or "")
+        return ((row.planned_item or row.item_code), row.batch_no or "", bool(row.cnc_process))
 
     rows_by_key = defaultdict(list)
     for row in (mip.raw_materials or []):
@@ -538,8 +552,17 @@ def _sync_transferred_qty(mip):
 
 
 @frappe.whitelist()
-def save_transfer_draft(mip_name, rows_json, excess_plan_json=None):
+def save_transfer_draft(mip_name, rows_json, excess_plan_json=None, transfer_type=None):
     """Park what has been typed into the transfer popup without transferring anything.
+
+    Stamped with WHICH popup it was typed in. Three of them park against the same
+    consolidate rows, and the CNC-to-supplier popup builds its lines with cnc_process=0
+    -- the same key the plain RM-to-supplier popup uses. So a draft saved against the
+    raw material waiting in stores came back on the CNC popup, which is looking at the
+    much smaller amount that has actually reached the CNC warehouse: a parked "1 whole
+    plate" (1,570 Kg) reopened there as a demand for 1,570 Kg against 48.006 Kg on hand,
+    and the popup refused to transfer with "Not Enough Stock" on a plan nobody had
+    touched.
 
     Deliberately unvalidated. The whole point of "Save and Close" is to step away
     mid-decision -- a half-entered Sec Nos, an off-cut not yet measured, a warehouse not
@@ -579,6 +602,7 @@ def save_transfer_draft(mip_name, rows_json, excess_plan_json=None):
             "draft_excess_sec_qty": flt(excess.get("sec_qty")),
             "draft_return_warehouse": excess.get("return_warehouse") or "",
             "draft_saved_on": now(),
+            "draft_transfer_type": transfer_type or _DEFAULT_TRANSFER_TYPE,
         }, update_modified=False)
         saved += 1
 
@@ -587,8 +611,14 @@ def save_transfer_draft(mip_name, rows_json, excess_plan_json=None):
 
 
 @frappe.whitelist()
-def get_transfer_draft(mip_name):
-    """The parked popup state, keyed the same way the popup keys its own rows."""
+def get_transfer_draft(mip_name, transfer_type=None):
+    """The parked popup state, keyed the same way the popup keys its own rows.
+
+    Only the drafts this popup parked itself -- see save_transfer_draft for what
+    restoring another popup's figures did. A draft saved before the type was recorded
+    answers to the plain RM-to-supplier popup, which is the only one that could have
+    written it before the CNC popups existed."""
+    wanted = transfer_type or _DEFAULT_TRANSFER_TYPE
     rows = frappe.get_all(
         "Material Issue Plan Consolidate Item",
         filters={"parent": mip_name, "draft_saved_on": ["is", "set"]},
@@ -597,25 +627,32 @@ def get_transfer_draft(mip_name):
     return {
         "%s|%s|%s" % (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0): r
         for r in rows
+        if (r.draft_transfer_type or _DEFAULT_TRANSFER_TYPE) == wanted
     }
 
 
-def _clear_transfer_draft(mip_name, items):
+def _clear_transfer_draft(mip_name, items, transfer_type=None):
     """Drop the parked state for rows that have just been transferred -- it described
-    what was about to happen, and it has now happened."""
+    what was about to happen, and it has now happened.
+
+    Only this popup's own drafts: the three popups share these rows, so clearing by
+    item+batch alone threw away a draft still waiting to be used somewhere else."""
     keys = {(i.get("item_code"), i.get("batch_no") or "", 1 if i.get("cnc_process") else 0)
             for i in (items or [])}
     if not keys:
         return
+    wanted = transfer_type or _DEFAULT_TRANSFER_TYPE
     for r in frappe.get_all(
         "Material Issue Plan Consolidate Item",
         filters={"parent": mip_name, "draft_saved_on": ["is", "set"]},
-        fields=["name", "item_code", "batch_no", "cnc_process"],
+        fields=["name", "item_code", "batch_no", "cnc_process", "draft_transfer_type"],
     ):
+        if (r.draft_transfer_type or _DEFAULT_TRANSFER_TYPE) != wanted:
+            continue
         if (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0) in keys:
             frappe.db.set_value(
                 "Material Issue Plan Consolidate Item", r.name,
-                {f: (None if f in ("draft_return_warehouse", "draft_saved_on") else 0)
+                {f: (None if f in _CONSOLIDATE_DRAFT_TEXT_FIELDS else 0)
                  for f in _CONSOLIDATE_DRAFT_FIELDS},
                 update_modified=False,
             )
@@ -629,7 +666,20 @@ _CONSOLIDATE_DRAFT_FIELDS = (
     "draft_excess_sec_qty",
     "draft_return_warehouse",
     "draft_saved_on",
+    "draft_transfer_type",
 )
+
+# The ones that hold text rather than a number, so they are emptied to None rather
+# than 0 and are not measured with flt() when asking "does this row hold a draft".
+_CONSOLIDATE_DRAFT_TEXT_FIELDS = (
+    "draft_return_warehouse",
+    "draft_saved_on",
+    "draft_transfer_type",
+)
+
+# Which popup a draft belongs to when nothing says: the plain RM-to-supplier one, the
+# only popup that existed when the drafts already on site were parked.
+_DEFAULT_TRANSFER_TYPE = "primary"
 
 
 def _sync_consolidate_items(mip):
@@ -672,8 +722,10 @@ def _sync_consolidate_items(mip):
             f: r.get(f) for f in _CONSOLIDATE_DRAFT_FIELDS
         }
         for r in (mip.consolidate_items or [])
-        if any(flt(r.get(f)) if f != "draft_return_warehouse" and f != "draft_saved_on"
-               else r.get(f) for f in _CONSOLIDATE_DRAFT_FIELDS)
+        # draft_transfer_type says which popup a draft belongs to, never that there IS
+        # one -- measuring it here would make a row that holds nothing else look drafted.
+        if any(r.get(f) if f in ("draft_return_warehouse", "draft_saved_on") else flt(r.get(f))
+               for f in _CONSOLIDATE_DRAFT_FIELDS if f != "draft_transfer_type")
     }
 
     # Item names in one query rather than one per group. At 500 drawings a plan can
@@ -802,30 +854,41 @@ def _cut_sheet_reference(mp_row):
 
 
 def _lookup_drawing_planned_weight(sales_order, customer_drawing_number, item_code,
-                                   length=None, width=None, thickness=None):
+                                   length=None, width=None, thickness=None,
+                                   item_number=None):
     """Engineering/planned raw material weight for this requirement, from Sales
     Order Drawing Raw Material's own Total Weight -- the "Drawing/planned RM
     weight" Excess Qty is measured against (client change request Phase 5.3's
     worked example: 14 Kg mapped batch − 13 Kg drawing-planned = 1 Kg excess).
 
-    Matched on DIMENSIONS as well as item + drawing. One drawing routinely needs
-    the same item in several sizes -- 1B9 alone needs PLATE10 at 192.31, 200.0 and
-    225.86 mm -- and matching on item + drawing alone returned whichever of those
-    rows came first, then measured every one of them against that single figure.
-    The result was a scatter of meaningless positives and negatives (a 3.404 Kg
-    piece judged against a 5.435 Kg one reported -2.031 Kg of "excess"), even
-    though the mapping covered the requirement exactly.
+    Matched on ITEM NUMBER first -- the requirement row's own Item No, carried
+    down the chain on the planning rows. One drawing routinely needs the same item
+    in several sizes (1B5 needs ISA100 at 320 mm and at 390 mm; 1B9 needs PLATE10
+    at 192.31, 200.0 and 225.86 mm), and only the Item No says which of them a
+    given row covers.
 
-    Falls back to the item + drawing match when nothing matches dimensionally, so
-    a row whose dimensions have since been edited still gets a figure rather than
-    silently losing its comparison. Returns None (not 0) when no match exists at
-    all, so callers can tell "genuinely 0 Kg planned" apart from "no comparison
+    The dimension match below it is a fallback, not the primary route, because a
+    planning row carries the BATCH's dimensions (a 12000 mm bar) and never the cut
+    size (340 mm) -- so it misses on exactly the rows it was meant to separate and
+    drops through to the loose item + drawing match, where "first row wins". That
+    is how 1B5's two ISA100 requirements (9.536 + 11.622 Kg) both came to be
+    measured against 11.622, reporting excess on a plan that covered the
+    requirement exactly.
+
+    Falls back to the item + drawing match when nothing else matches, so a row
+    with no Item No (older plans, or an alternate item) still gets a figure rather
+    than silently losing its comparison. Returns None (not 0) when no match exists
+    at all, so callers can tell "genuinely 0 Kg planned" apart from "no comparison
     available yet"."""
     if not sales_order or not item_code:
         return None
 
     cached = _drawing_planned_weights(sales_order)
     cdn = customer_drawing_number or ""
+    if item_number:
+        hit = cached["by_item_no"].get((cdn, item_code, item_number))
+        if hit is not None:
+            return hit
     if length is not None:
         hit = cached["exact"].get(
             (cdn, item_code, flt(length), flt(width), flt(thickness)))
@@ -835,8 +898,9 @@ def _lookup_drawing_planned_weight(sales_order, customer_drawing_number, item_co
 
 
 def _drawing_planned_weights(sales_order):
-    """Every planned raw-material weight for a Sales Order, in one query, keyed both
-    ways this is looked up: exactly (drawing, item, L, W, T) and loosely (drawing, item).
+    """Every planned raw-material weight for a Sales Order, in one query, keyed the
+    three ways this is looked up: by Item No (drawing, item, item_no), exactly
+    (drawing, item, L, W, T) and loosely (drawing, item).
 
     Cached for the life of the request. This is called once per raw-material row while
     a Material Issue Plan is rebuilt, and it used to run one or two queries each time --
@@ -852,22 +916,120 @@ def _drawing_planned_weights(sales_order):
     if sales_order in store:
         return store[sales_order]
 
-    exact, loose = {}, {}
+    by_item_no, exact, loose = {}, {}, {}
     for r in frappe.get_all(
         "Sales Order Drawing Raw Material",
         filters={"parent": sales_order},
-        fields=["customer_drawing_number", "material_code", "length", "width",
-                "thickness", "total_weight"],
+        fields=["customer_drawing_number", "item_no", "material_code", "length",
+                "width", "thickness", "total_weight"],
     ):
         cdn = r.customer_drawing_number or ""
+        if r.item_no:
+            by_item_no.setdefault((cdn, r.material_code, r.item_no), r.total_weight)
         exact.setdefault(
             (cdn, r.material_code, flt(r.length), flt(r.width), flt(r.thickness)),
             r.total_weight)
         # First row wins, matching the single get_value this replaced.
         loose.setdefault((cdn, r.material_code), r.total_weight)
 
-    store[sales_order] = {"exact": exact, "loose": loose}
+    store[sales_order] = {"by_item_no": by_item_no, "exact": exact, "loose": loose}
     return store[sales_order]
+
+
+def _apply_requirement_excess(rows):
+    """Set Excess Qty on each raw-material row: what it carries, less its share of the
+    requirement. Zero where the allocation covers the requirement exactly.
+
+    Unavailable rows are skipped -- they have no batch and nothing to be in excess of."""
+    shares = requirement_weight_shares(rows)
+    for row, share in zip(rows, shares):
+        if row.get("is_unavailable"):
+            continue
+        row.excess_qty = flt(flt(row.get("qty")) - share, 3) if share is not None else 0
+
+
+def requirement_key(row):
+    """Which Sales Order requirement a raw-material row covers.
+
+    Item No rather than dimensions, for the reason given in
+    _lookup_drawing_planned_weight: a plan row carries the batch's size, so two rows
+    filling ONE requirement from two differently-sized batches (a 12000 mm bar and a
+    5136 mm off-cut) look like two requirements to a dimensional key -- and each then
+    claims the whole requirement's weight. That is how a plan needing 6,836.131 Kg of
+    ISMB400 reported 13,672.262 Kg planned and a 6,836.131 Kg shortfall it did not have.
+
+    Keyed on `item_code` -- the REQUIREMENT's own item -- and deliberately not on
+    `planned_item or item_code` the way the batch-facing keys in this module are. An
+    alternate item issued against a requirement is still that one requirement: on
+    MIP-2026-00007 a 56.167 Kg PLATE25 requirement is filled by one PLATE25 batch and
+    one FLAT batch, and keying on the batch's item splits it into two, each claiming
+    the whole 56.167 Kg. That is the same double count this key exists to prevent,
+    arriving by the other door. It also has to agree with _lookup_drawing_planned_weight,
+    which looks the weight up by `item_code`.
+
+    With no Item No -- rows built before the field reached this table, or a Material
+    Planning row that never carried one -- the stamped weight stands in as the
+    discriminator. Two rows filling ONE requirement from two batches carry the same
+    figure and must merge; two different requirements on one drawing (1B7 needs ISA100
+    in two lengths) carry different figures and must not. Without that, they merged and
+    the group took whichever weight was seen first, losing the other requirement
+    entirely.
+    """
+    return (
+        row.get("sales_order") or "",
+        row.get("customer_drawing_number") or "",
+        row.get("item_number") or "wt:%s" % flt(row.get("drawing_planned_weight"), 3),
+        row.get("item_code") or "",
+    )
+
+
+def requirement_weight_shares(rows):
+    """Each row's share of its requirement's planned drawing weight, as a list running
+    parallel to `rows`.
+
+    drawing_planned_weight on a row is the WHOLE requirement's weight, not that row's
+    part of it: a drawing needing 6,836.131 Kg of ISMB400 filled from two batches
+    carries 6,836.131 on both rows. Neither reading is usable on its own -- one row's
+    figure understates a requirement split across batches, and adding the rows up
+    counts it twice. Each row gets its share in proportion to the weight it actually
+    carries, so the shares add back to the requirement exactly.
+
+    Lives here, beside the lookup that stamps the figure, because both the per-row
+    Excess Qty and the transfer popup's consolidated excess tab have to divide it the
+    same way. Two copies of this rule would be two chances for the two of them to
+    disagree about what a row is owed.
+
+    A share is None where the requirement has no weight to compare against at all,
+    so callers keep the "no comparison available" case distinct from 0 Kg.
+
+    Unavailable rows count toward their requirement's qty even though they carry no
+    weight of their own and get no Excess Qty. A requirement half reserved and half
+    still to buy is half covered, and the reserved row should be judged against the
+    half it covers -- the same proportionality the transfer popup applies to a partial
+    transfer. Dropping them instead would measure what IS being sent against the whole
+    requirement, putting a shortfall on every plan whose material has not all been
+    purchased yet.
+    """
+    totals = {}
+    for row in rows:
+        agg = totals.setdefault(requirement_key(row), {"weight": None, "qty": 0.0, "rows": 0})
+        if agg["weight"] is None and row.get("drawing_planned_weight") is not None:
+            agg["weight"] = flt(row.get("drawing_planned_weight"))
+        agg["qty"] = flt(agg["qty"] + flt(row.get("qty")), 3)
+        agg["rows"] += 1
+
+    shares = []
+    for row in rows:
+        agg = totals[requirement_key(row)]
+        if agg["weight"] is None:
+            shares.append(None)
+        elif agg["qty"]:
+            shares.append(flt(agg["weight"] * (flt(row.get("qty")) / agg["qty"]), 3))
+        else:
+            # Nothing allocated anywhere on the requirement: split it evenly rather
+            # than handing every row the whole of it.
+            shares.append(flt(agg["weight"] / agg["rows"], 3))
+    return shares
 
 
 #  Claimed-off-cut lock ────────────────────────────────────────────────────────

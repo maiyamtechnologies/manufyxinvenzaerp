@@ -6,6 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "item_code",
+  "material_spec",
+  "material_grade",
   "item_name",
   "batch_no",
   "col_break_1",
@@ -30,6 +32,20 @@
    "options": "Item",
    "read_only": 1,
    "reqd": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_spec",
+   "fieldname": "material_spec",
+   "fieldtype": "Data",
+   "label": "Material Spec",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
+   "read_only": 1
   },
   {
    "fetch_from": "item_code.item_name",

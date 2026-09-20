@@ -8,6 +8,8 @@
   "item_number",
   "sales_order",
   "item_code",
+  "material_spec",
+  "material_grade",
   "item_name",
   "bom_no",
   "drawing",
@@ -100,6 +102,20 @@
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_spec",
+   "fieldname": "material_spec",
+   "fieldtype": "Data",
+   "label": "Material Spec",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.custom_material_grade",
+   "fieldname": "material_grade",
+   "fieldtype": "Data",
+   "label": "Material Grade",
+   "read_only": 1
   },
   {
    "fetch_from": "item_code.item_name",

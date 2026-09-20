@@ -1112,15 +1112,22 @@ function _so_load_excel(frm) {
 			callback: function(r) {
 				if (!r.message) return;
 				var res = r.message;
-				var msg = __("{0} drawing(s) and {1} raw material row(s) loaded.", [res.drawing_count, res.item_count]);
-				if (res.warnings && res.warnings.length) {
-					frappe.msgprint({ title: __("Loaded with Warnings"),
-						message: msg + "<br><br><b>" + __("Warnings:") + "</b><br>" + res.warnings.join("<br>"),
-						indicator: "orange" });
-				} else {
-					frappe.show_alert({ message: msg, indicator: "green" }, 5);
-				}
-				frm.reload_doc();
+				frm.reload_doc().then(function() {
+					return _so_sync_fg_lines_from_drawings(frm);
+				}).then(function(sync) {
+					var msg = __("{0} drawing(s) and {1} raw material row(s) loaded.", [res.drawing_count, res.item_count]);
+					if (sync.updated) {
+						msg += "<br>" + __("Sales Order Kg and Nos updated from the Drawing List for {0} item(s).", [sync.updated]);
+					}
+					var warnings = (res.warnings || []).concat(sync.warnings);
+					if (warnings.length) {
+						frappe.msgprint({ title: __("Loaded with Warnings"),
+							message: msg + "<br><br><b>" + __("Warnings:") + "</b><br>" + warnings.join("<br>"),
+							indicator: "orange" });
+					} else {
+						frappe.show_alert({ message: $("<div>").html(msg).text(), indicator: "green" }, 5);
+					}
+				});
 			}
 		});
 	};
@@ -1129,6 +1136,63 @@ function _so_load_excel(frm) {
 	} else {
 		do_load();
 	}
+}
+
+// The Excel loader stages Drawing List rows directly in the database. Copy their
+// customer-provided Kg and Total Qty into the matching FG order line, then save
+// through the form so ERPNext recalculates amounts and order totals as usual.
+function _so_sync_fg_lines_from_drawings(frm) {
+	var totals = {};
+	(frm.doc.custom_duno_items || []).forEach(function(row) {
+		if (!row.item) return;
+		var t = totals[row.item] || (totals[row.item] = { kg: 0, nos: 0 });
+		t.kg += flt(row.total_weight);
+		t.nos += flt(row.total_quantity);
+	});
+	var warnings = [], changes = [], updated = 0;
+	Object.keys(totals).forEach(function(item_code) {
+		var lines = (frm.doc.items || []).filter(function(line) { return line.item_code === item_code; });
+		// A new order can have one default FG placeholder line before the sheet is
+		// loaded. Replace it only when the sheet names exactly one FG item and the
+		// line still has the default 1 Kg / 0 Nos; other mismatches need review.
+		var placeholder = !lines.length && Object.keys(totals).length === 1
+			&& (frm.doc.items || []).length === 1 ? frm.doc.items[0] : null;
+		if (placeholder && flt(placeholder.qty, 3) === 1
+			&& flt(placeholder.custom_sec_qty, 3) === 0) {
+			lines = [placeholder];
+		}
+		if (lines.length !== 1) {
+			warnings.push(__("FG Item {0}: expected one matching Sales Order item line, found {1}. Match its FG item, Kg and Nos to the drawing sheet.",
+				[item_code, lines.length]));
+			return;
+		}
+		var line = lines[0], t = totals[item_code];
+		var kg = flt(t.kg, 3), nos = flt(t.nos, 3);
+		if (line.item_code === item_code && flt(line.qty, 3) === kg
+			&& flt(line.custom_sec_qty, 3) === nos) return;
+		changes.push({ line: line, item_code: item_code, kg: kg, nos: nos });
+	});
+	if (!changes.length) return Promise.resolve({ updated: 0, warnings: warnings });
+	if (frm.doc.docstatus !== 0) {
+		warnings.push(__("Submit-state Sales Order item quantities cannot be updated by Load Items. Set the Kg and Nos through the permitted amendment flow."));
+		return Promise.resolve({ updated: 0, warnings: warnings });
+	}
+	var chain = Promise.resolve();
+	changes.forEach(function(change) {
+		chain = chain.then(function() {
+			if (change.line.item_code !== change.item_code) {
+				return frappe.model.set_value(change.line.doctype, change.line.name,
+					"item_code", change.item_code);
+			}
+		}).then(function() {
+			return frappe.model.set_value(change.line.doctype, change.line.name, "qty", change.kg);
+		}).then(function() {
+			return frappe.model.set_value(change.line.doctype, change.line.name, "custom_sec_qty", change.nos);
+		}).then(function() { updated += 1; });
+	});
+	return chain.then(function() {
+		return frm.save().then(function() { return { updated: updated, warnings: warnings }; });
+	});
 }
 
 function _so_create_drawings(frm) {
@@ -1556,6 +1620,7 @@ def create_default_warehouse_types():
 
 def after_install():
     create_default_warehouse_types()
+    seed_material_grades()
     create_item_custom_fields()
     create_item_client_script()
     create_purchase_order_custom_fields()
@@ -1616,6 +1681,10 @@ def after_migrate():
     add_module_defs("manufyxinvenzaerp", ignore_if_duplicate=True)
 
     create_default_warehouse_types()
+    # Before the Item fields, which Link to it, and before anything validates a grade
+    # already stored on a Sales Order against the master.
+    seed_material_grades()
+    prepare_material_spec_link()
     create_item_custom_fields()
     create_item_client_script()
     create_purchase_order_custom_fields()
@@ -1721,6 +1790,60 @@ def setup_storage_location():
     frappe.db.commit()
 
 
+def seed_material_grades():
+    """Create the grades already in use, so converting Sales Order Drawing Raw
+    Material.grade from free text to a Link does not orphan a single existing row.
+
+    These three are every distinct value on site across 1,197 rows -- IS2062 (1001),
+    IS 2062-E250BR (154) and EN 10029-HARDOX400 (42) -- seeded verbatim, spacing and
+    all. Tidying "IS2062" and "IS 2062-E250BR" into one grade is a judgement about the
+    steel, not something a migration should decide: renaming a master record here would
+    silently repoint a thousand drawing rows.
+
+    Only ever inserts. A grade someone has since renamed or disabled is left alone."""
+    for grade in ("IS2062", "IS 2062-E250BR", "EN 10029-HARDOX400"):
+        if not frappe.db.exists("Material Grade", grade):
+            frappe.get_doc({
+                "doctype": "Material Grade",
+                "grade_name": grade,
+            }).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+def prepare_material_spec_link():
+    """Convert the existing Item spec field without discarding stored values.
+
+    Frappe blocks Data -> Link on a Custom Field save even though both use the
+    same database column type. Update only this field's metadata before the
+    normal create_custom_fields pass, and make every existing value a valid
+    Material Spec first. New installations have no field to convert.
+    """
+    field_name = "Item-custom_material_spec"
+    fieldtype = frappe.db.get_value("Custom Field", field_name, "fieldtype")
+    if not fieldtype or fieldtype == "Link":
+        return
+    if fieldtype != "Data":
+        frappe.throw("Cannot convert Item Material Spec from {0} to Link".format(fieldtype))
+
+    values = frappe.db.sql(
+        """SELECT DISTINCT custom_material_spec FROM `tabItem`
+           WHERE custom_material_spec IS NOT NULL AND custom_material_spec != ''""",
+        as_list=True,
+    )
+    for (spec,) in values:
+        if not frappe.db.exists("Material Spec", spec):
+            frappe.get_doc({"doctype": "Material Spec", "spec_name": spec}).insert(
+                ignore_permissions=True
+            )
+
+    frappe.db.set_value(
+        "Custom Field", field_name,
+        {"fieldtype": "Link", "options": "Material Spec"},
+        update_modified=False,
+    )
+    frappe.clear_cache(doctype="Item")
+
+
 def create_item_client_script():
     if frappe.db.exists("Client Script", CLIENT_SCRIPT_NAME):
         frappe.db.set_value("Client Script", CLIENT_SCRIPT_NAME, "script", CLIENT_SCRIPT)
@@ -1740,19 +1863,36 @@ def create_item_client_script():
 def create_item_custom_fields():
     custom_fields = {
         "Item": [
+            # Material Spec and Material Grade are the two answers to "what steel is
+            # this?", and they are masters rather than free text because the free-text
+            # version was never filled in: 0 of 85 items carried a spec. They are
+            # editable HERE and read-only everywhere else -- every document down the
+            # chain mirrors them through fetch_from, for reference only.
             {
                 "fieldname": "custom_material_spec",
                 "label": "Material Spec",
-                "fieldtype": "Data",
+                "fieldtype": "Link",
+                "options": "Material Spec",
                 "insert_after": "item_name",
                 "description": "Material specification for the item",
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Link",
+                "options": "Material Grade",
+                "insert_after": "custom_material_spec",
+                "description": "Steel grade for the item, e.g. IS2062",
             },
             {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
                 "fieldtype": "Link",
                 "options": "Item Group",
-                "insert_after": "custom_material_spec",
+                # Moved down one so the anchor chain stays linear now that Material
+                # Grade sits between them; two fields anchored on the same one leaves
+                # their order to chance.
+                "insert_after": "custom_material_grade",
                 "reqd": 1,
                 "default": "All Item Groups",
                 "description": "Primary category determining calculation method",
@@ -1825,6 +1965,24 @@ def create_item_custom_fields():
 def create_purchase_order_custom_fields():
     custom_fields = {
         "Purchase Order Item": [
+            {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
             {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
@@ -1961,6 +2119,24 @@ def create_purchase_order_client_script():
 def create_purchase_receipt_custom_fields():
     custom_fields = {
         "Purchase Receipt Item": [
+            {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
             {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
@@ -2316,6 +2492,24 @@ def create_batch_custom_fields():
     custom_fields = {
         "Batch": [
             {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
+            {
                 "fieldname": "custom_thickness",
                 "label": "Thickness",
                 "fieldtype": "Float",
@@ -2519,6 +2713,24 @@ def create_material_request_custom_fields():
         ],
         "Material Request Item": [
             {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
+            {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
                 "fieldtype": "Data",
@@ -2644,6 +2856,24 @@ def create_rfq_custom_fields():
     custom_fields = {
         "Request for Quotation Item": [
             {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
+            {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
                 "fieldtype": "Data",
@@ -2735,6 +2965,24 @@ def create_rfq_client_script():
 def create_sq_custom_fields():
     custom_fields = {
         "Supplier Quotation Item": [
+            {
+                "fieldname": "custom_material_spec",
+                "label": "Material Spec",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_spec",
+                "read_only": 1,
+                "insert_after": "item_name",
+                "in_list_view": 0,
+            },
+            {
+                "fieldname": "custom_material_grade",
+                "label": "Material Grade",
+                "fieldtype": "Data",
+                "fetch_from": "item_code.custom_material_grade",
+                "read_only": 1,
+                "insert_after": "custom_material_spec",
+                "in_list_view": 0,
+            },
             {
                 "fieldname": "custom_parent_item_group",
                 "label": "Parent Item Group",
@@ -2920,8 +3168,21 @@ def create_bom_custom_fields():
                     "fieldname": "custom_material_spec",
                     "fieldtype": "Data",
                     "label": "Material Spec",
+                    # Mirrors the Item's own spec from here on, rather than relying on
+                    # create_bom_from_drawing to carry it: a BOM built any other way
+                    # used to arrive blank.
+                    "fetch_from": "item_code.custom_material_spec",
                     "insert_after": "description",
                     "read_only": 1,
+                },
+                {
+                    "fieldname": "custom_material_grade",
+                    "label": "Material Grade",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_grade",
+                    "read_only": 1,
+                    "insert_after": "custom_material_spec",
+                    "in_list_view": 0,
                 },
                 {
                     "fieldname": "custom_unit_weight",
@@ -3147,7 +3408,49 @@ def create_bom_client_script():
 def create_production_plan_custom_fields():
     create_custom_fields(
         {
+            # Material Request Plan Item's other custom fields predate setup.py and
+            # live only in its customization export. These two are declared here so
+            # they cannot drift: the export is re-synced on every migrate, but
+            # setup.py is what runs last and settles any disagreement.
+            "Material Request Plan Item": [
+                {
+                    "fieldname": "custom_material_spec",
+                    "label": "Material Spec",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_spec",
+                    "read_only": 1,
+                    "insert_after": "item_name",
+                    "in_list_view": 0,
+                },
+                {
+                    "fieldname": "custom_material_grade",
+                    "label": "Material Grade",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_grade",
+                    "read_only": 1,
+                    "insert_after": "custom_material_spec",
+                    "in_list_view": 0,
+                },
+            ],
             "Production Plan Item": [
+                {
+                    "fieldname": "custom_material_spec",
+                    "label": "Material Spec",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_spec",
+                    "read_only": 1,
+                    "insert_after": "item_code",
+                    "in_list_view": 0,
+                },
+                {
+                    "fieldname": "custom_material_grade",
+                    "label": "Material Grade",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_grade",
+                    "read_only": 1,
+                    "insert_after": "custom_material_spec",
+                    "in_list_view": 0,
+                },
                 {
                     "fieldname": "custom_customer_weight_kg",
                     "fieldtype": "Float",
@@ -3697,6 +4000,24 @@ def create_stock_entry_custom_fields():
     create_custom_fields(
         {
             "Stock Entry Detail": [
+                {
+                    "fieldname": "custom_material_spec",
+                    "label": "Material Spec",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_spec",
+                    "read_only": 1,
+                    "insert_after": "item_name",
+                    "in_list_view": 0,
+                },
+                {
+                    "fieldname": "custom_material_grade",
+                    "label": "Material Grade",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_grade",
+                    "read_only": 1,
+                    "insert_after": "custom_material_spec",
+                    "in_list_view": 0,
+                },
                 {
                     "fieldname": "custom_parent_item_group",
                     "fieldtype": "Data",
@@ -4293,6 +4614,24 @@ def create_sco_custom_fields():
             # (sep14 FG plan, A3 item 6).
             "Subcontracting Order Item": [
                 {
+                    "fieldname": "custom_material_spec",
+                    "label": "Material Spec",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_spec",
+                    "read_only": 1,
+                    "insert_after": "item_name",
+                    "in_list_view": 0,
+                },
+                {
+                    "fieldname": "custom_material_grade",
+                    "label": "Material Grade",
+                    "fieldtype": "Data",
+                    "fetch_from": "item_code.custom_material_grade",
+                    "read_only": 1,
+                    "insert_after": "custom_material_spec",
+                    "in_list_view": 0,
+                },
+                {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
                     "label": "Qty (Nos)",
@@ -4539,35 +4878,42 @@ frappe.ui.form.on("SOE Consumption Log", {
 
 frappe.ui.form.on("Supplier Operation Entry", {
 \tstatus: function(frm) {
-\t\t// Completed is the last thing that happens to an operation: submitting is
-\t\t// gated on it, and submitting is what hands this quantity to the next
-\t\t// operation. So ask once, here, and carry it through -- rather than leaving
-\t\t// a Completed-but-draft entry sitting there looking finished while the next
-\t\t// operation still shows nothing available.
-\t\t//
-\t\t// The server refuses Completed while any drawing is short or an inspection
-\t\t// round is still open (see _validate_completed_status), so a save that fails
-\t\t// puts the status back and never reaches the submit.
-\t\tif (frm.doc.status !== "Completed" || frm.doc.docstatus !== 0 || frm.is_new()) return;
+\t\tif (frm.doc.status !== "Completed") {
+\t\t\tfrm.__mfx_prev_status = frm.doc.status;
+\t\t\treturn;
+\t\t}
+\t\tif (frm.doc.docstatus !== 0 || frm.is_new()) return;
 \t\tif (frm._mfx_completing) return;
 
-\t\tfrappe.confirm(
-\t\t\t__("Mark this operation Completed and submit it?<br><br>Submitting passes its finished quantity to the next operation. It cannot be cancelled on its own afterwards — only by cancelling the whole Job Work Order."),
-\t\t\tfunction() {
-\t\t\t\t// save("Submit") rather than savesubmit(): savesubmit() raises its own
-\t\t\t\t// "Permanently Submit?" confirmation, and asking twice for one decision
-\t\t\t\t// trains people to click through both.
-\t\t\t\tfrm._mfx_completing = true;
-\t\t\t\tfrm.save("Submit").always(function() { frm._mfx_completing = false; });
+\t\tvar previous = frm.__mfx_prev_status ||
+\t\t\t((frm.doc.consumption_log || []).length ? "In Progress" : "Open");
+\t\tfunction restore_status() {
+\t\t\tfrm._mfx_completing = false;
+\t\t\tfrm.set_value("status", previous);
+\t\t}
+\t\tfrm._mfx_completing = true;
+\t\tfrappe.call({
+\t\t\tmethod: "manufyxinvenzaerp.subcontracting_management.subcontracting.check_soe_completion_before_confirm",
+\t\t\targs: { doc: frm.doc },
+\t\t\tfreeze: true,
+\t\t\tfreeze_message: __("Validating operation…"),
+\t\t\tcallback: function(r) {
+\t\t\t\tif (!r.message || !r.message.ready) { restore_status(); return; }
+\t\t\t\tfrappe.confirm(
+\t\t\t\t\t__("Mark as complete and submit the Operation Entry?<br><br>Submitting passes its finished quantity to the next operation. It cannot be cancelled on its own afterwards — only by cancelling the whole Job Work Order."),
+\t\t\t\t\tfunction() {
+\t\t\t\t\t\t// Submit directly: savesubmit() would ask for a second confirmation.
+\t\t\t\t\t\tfrm.save("Submit", function() { frm._mfx_completing = false; }, null, restore_status);
+\t\t\t\t\t},
+\t\t\t\t\trestore_status
+\t\t\t\t);
 \t\t\t},
-\t\t\tfunction() {
-\t\t\t\t// Declined -- put the status back so the form matches what was saved.
-\t\t\t\tfrm.set_value("status", (frm.doc.consumption_log || []).length ? "In Progress" : "Open");
-\t\t\t}
-\t\t);
+\t\t\terror: restore_status,
+\t\t});
 \t},
 
 \trefresh: function(frm) {
+\t\tif (frm.doc.status !== "Completed") frm.__mfx_prev_status = frm.doc.status;
 \t\t_sync_drawing_nos(frm);
 \t\t// Filter drawing link in log to only drawings present in this SOE
 \t\tvar valid_drawings = (frm.doc.drawing_details || []).map(function(r) {
