@@ -1791,17 +1791,32 @@ def setup_storage_location():
 
 
 def seed_material_grades():
-    """Create the grades already in use, so converting Sales Order Drawing Raw
-    Material.grade from free text to a Link does not orphan a single existing row.
+    """Every grade already stored on a drawing row becomes a master record, so
+    converting Sales Order Drawing Raw Material.grade from free text to a Link does
+    not orphan a single existing row.
 
-    These three are every distinct value on site across 1,197 rows -- IS2062 (1001),
-    IS 2062-E250BR (154) and EN 10029-HARDOX400 (42) -- seeded verbatim, spacing and
-    all. Tidying "IS2062" and "IS 2062-E250BR" into one grade is a judgement about the
-    steel, not something a migration should decide: renaming a master record here would
-    silently repoint a thousand drawing rows.
+    Swept from the data, never from a list. This site's three grades are not the live
+    site's, and a hard-coded list leaves anything it has not heard of pointing at a
+    master that does not exist -- which does not fail at migrate time. It fails the
+    next time somebody saves that Sales Order, with a link error naming a grade they
+    never typed.
 
-    Only ever inserts. A grade someone has since renamed or disabled is left alone."""
-    for grade in ("IS2062", "IS 2062-E250BR", "EN 10029-HARDOX400"):
+    Values are seeded verbatim, spacing and all. Tidying near-duplicates into one
+    grade is a judgement about the steel, not something a migration should make:
+    renaming a master here would silently repoint every row quoting it.
+
+    Only ever inserts, so a grade since renamed or disabled is left alone. Runs on
+    every migrate rather than once, so a grade that arrives later -- restored from a
+    backup, imported by a sheet staged before the conversion -- is picked up too."""
+    if not frappe.db.table_exists("Sales Order Drawing Raw Material"):
+        return
+    if not frappe.db.has_column("Sales Order Drawing Raw Material", "grade"):
+        return
+
+    for (grade,) in frappe.db.sql(
+        """SELECT DISTINCT grade FROM `tabSales Order Drawing Raw Material`
+           WHERE grade IS NOT NULL AND grade != ''"""
+    ):
         if not frappe.db.exists("Material Grade", grade):
             frappe.get_doc({
                 "doctype": "Material Grade",
@@ -1882,7 +1897,7 @@ def create_item_custom_fields():
                 "fieldtype": "Link",
                 "options": "Material Grade",
                 "insert_after": "custom_material_spec",
-                "description": "Steel grade for the item, e.g. IS2062",
+                "description": "Steel grade for the item, from the Material Grade master",
             },
             {
                 "fieldname": "custom_parent_item_group",

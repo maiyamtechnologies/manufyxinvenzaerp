@@ -171,6 +171,7 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			{ name: "Calculated weight", note: "The last check: the row's Kg is recalculated from its current dimensions and the Item master's Unit Weight. Zero is refused, and a figure that no longer agrees with what was staged means the Item master changed after the upload — load the sheet again." },
 			{ name: "Nature of Work", note: "Must already exist in the Nature of Work master. Checked by name exactly as typed." },
 			{ name: "Rate Schedule", note: "Must already exist in the Rate Schedule master — e.g. RS- O/S-001 A. Checked by name; there is no format rule, so your numbering can change freely." },
+			{ name: "Grade", note: "Must already exist in the <b>Material Grade</b> master — e.g. IS2062. Checked by name exactly as typed, so watch the spacing: IS2062 and IS 2062 are two different grades. A blank Grade is allowed. Create a missing one from the Material Masters card on the Manufyx workspace, or correct the sheet and load it again." },
 			{ name: "FG Item", note: "Every drawing needs one, and it must exist in the Item master." },
 			{ name: "DUNO/Mark No", note: "Must be filled in on each drawing." },
 			{ name: "Total Qty", note: "Must be more than zero. A blank is otherwise read as one piece, and every total on the drawing would be calculated for a single unit." },
@@ -528,15 +529,32 @@ const ERP_MANUAL_ITEM_CHILDREN = [
 		title: "Custom Fields",
 		kicker: "What was added and why",
 		purpose:
-			"Six custom fields added to the Item master. Together they classify the item, " +
+			"Seven custom fields added to the Item master. Together they say what the material " +
+			"is, classify the item, " +
 			"configure its UOM pair, set the weight constant the Kg formula needs, control " +
 			"how batches are named at receipt, and flag whether an incoming batch must pass " +
 			"inspection before it can be reserved in Material Planning.",
 		fields: [
 			{
 				name: "Material Spec",
-				note: "Free-text specification for the item — grade, standard, or any note that " +
-					"identifies the material beyond its name. Optional; does not drive any calculation.",
+				note: "The specification this material is bought and made to, picked from the " +
+					"<b>Material Spec</b> master. Optional, and drives no calculation — it is there " +
+					"so anyone can answer \"what steel is this?\" from whatever document is open. " +
+					"A master rather than free text since Sep 2026: as free text it was filled in " +
+					"on no item at all, which made it useless to read. " +
+					"Add a new specification from the Material Masters card on the Manufyx workspace.",
+			},
+			{
+				name: "Material Grade",
+				note: "The grade this material is bought and made to, picked from the " +
+					"<b>Material Grade</b> master (e.g. IS2062). Optional, and drives no calculation. " +
+					"Set it here once and it appears, read-only, on every document the material " +
+					"reaches — Drawing, BOM, Material Planning, Production Plan, Job Work Order, " +
+					"Material Issue Plan, Material Request, Purchase Order, Purchase Receipt, " +
+					"Stock Entry and the Batch. " +
+					"<b>You cannot type either field anywhere except here.</b> Everywhere else it is a " +
+					"read-only copy taken from the Item when the row is created, so a document " +
+					"keeps the grade it was raised with even if the Item is corrected later.",
 			},
 			{
 				name: "Parent Item Group",
@@ -1701,10 +1719,11 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			"Open <b>Transfer → Select Materials to Transfer</b>. A readiness check runs first and tells you about anything that would silently reduce what moves — stock mapped but not reserved, CNC rows with no CNC warehouse, or material already sitting at the supplier.",
 			"Tick the rows to send. Rows short of stock are left unticked for you.",
 			"Adjust <b>Sec Nos</b> where you must hand over whole pieces. The system re-checks free stock for the higher figure and refuses it outright if the batch cannot cover it.",
-			"Switch to <b>Consolidate item for excess return plan</b> and measure the off-cut, one line per item — for the items that have one. A line whose Excess Kg (system) is zero has its boxes closed: nothing was left over, so there is nothing to measure. Optional — leave it blank and only a rounding surplus is booked, as before.",
+			"Switch to <b>Consolidate item for excess return plan</b> and measure the off-cut, one line per item — for the items that have one. A line whose Excess Kg (system) is zero has its boxes closed: nothing was left over, so there is nothing to measure. Optional — leave it blank and only a rounding surplus is booked, as before. <b>Excess Kg (system) compares like with like</b>: a requirement filled from two batches of different sizes is counted once, a drawing needing the same item in two cut sizes keeps both, and the CNC leg is measured against its own share rather than the whole item's. Before that was true this tab reported six-figure shortfalls on plans whose mapping covered the requirement exactly.",
 			"Submit. The Stock Entry is created, Transferred goes up, and the excess is written to the Excess Material table.",
 			"Come back later for the rest. Partial transfers are expected, and the popup shows exactly how much has gone and how much is left.",
-			"<b>Save and Close</b> at any point parks everything — the ticks, the Sec Nos, and the measured off-cuts — without transferring or validating anything. Reopen the popup and it is all still there.",
+			"<b>Save and Close</b> at any point parks everything — the ticks, the Sec Nos, and the measured off-cuts — without transferring or validating anything. Reopen the popup and it is all still there. <b>A parked draft belongs to the popup it was typed in</b>, so what you save on <i>Raw material to transfer</i> does not reappear on <i>To CNC Warehouse</i> or <i>CNC to Supplier</i>. It used to: a whole plate parked against the stock in stores came back on the CNC popup, which is looking at the much smaller amount that has reached CNC, and the popup opened refusing to transfer for want of stock on a plan nobody had touched.",
+			"<b>Every Stock Entry the plan has issued is on its Connections tab</b> — the transfer, the CNC leg and its forward, the excess-return Repack, the process-loss write-off and the final Manufacture entry — so you no longer have to filter the Stock Entry list by hand to find them.",
 		],
 		calcs: [
 			{

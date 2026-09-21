@@ -1177,18 +1177,24 @@ def download_bom_template():
     # placeholders they have to guess the shape of.
     sample_now = frappe.db.get_value("Nature of Work", {}, "name") or "Auto Welding"
     sample_rs = frappe.db.get_value("Rate Schedule", {}, "name") or "RS-001"
+    # Grade became a Link in Sep 2026 and Verify Raw Materials now refuses one that
+    # is not in the master, so the sample cannot be a made-up code: the template
+    # shipped "A36", which no site has, and the file a client downloaded would fail
+    # its own verification unchanged. Falls back to blank, which is always legal,
+    # rather than to an invented grade.
+    sample_grade = frappe.db.get_value("Material Grade", {"disabled": 0}, "name") or ""
 
     # Sample row 1 — drawing CDN-001, item 1
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "1", "MAT-STRUCT-001", "A36", 0, 0, 3000, 2,
+        "1", "MAT-STRUCT-001", sample_grade, 0, 0, 3000, 2,
     ])
     # Sample row 2 — same drawing CDN-001, item 2 (same header columns repeated)
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "2", "MAT-PLATE-001", "IS2062", 10, 200, 1500, 1,
+        "2", "MAT-PLATE-001", sample_grade, 10, 200, 1500, 1,
     ])
 
     output = io.BytesIO()

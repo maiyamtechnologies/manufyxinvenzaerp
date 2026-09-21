@@ -1,6 +1,11 @@
 import frappe
 from frappe.utils import today, add_days
 
+# The specs the sample items below quote. Stated once here so the master records
+# and the items that link to them cannot drift apart.
+_SAMPLE_MATERIAL_SPECS = ("IS 2062 E250", "Grade 8.8")
+
+
 def run():
     frappe.set_user("Administrator")
 
@@ -9,6 +14,17 @@ def run():
     for wt in ["Stores", "Work In Progress", "Finished Goods", "Transit"]:
         if not frappe.db.exists("Warehouse Type", wt):
             frappe.get_doc({"doctype": "Warehouse Type", "name": wt}).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+    # ── 0b. MATERIAL SPECS USED BELOW ────────────────────────────
+    # Material Spec became a Link in Sep 2026, so the specs these sample items
+    # quote have to exist as master records first -- without this every Item
+    # insert below dies on "Could not find Material Spec".
+    print("Ensuring material specs...")
+    for spec in _SAMPLE_MATERIAL_SPECS:
+        if not frappe.db.exists("Material Spec", spec):
+            frappe.get_doc({"doctype": "Material Spec", "spec_name": spec}).insert(
+                ignore_permissions=True)
     frappe.db.commit()
 
     # ── 1. COMPANY ───────────────────────────────────────────────

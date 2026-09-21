@@ -156,3 +156,36 @@ def _exercise(mip_name, mip, row, key, save_transfer_draft, get_transfer_draft, 
     mip.save(ignore_permissions=True)
     frappe.db.commit()
     check("still gone", key in get_transfer_draft(mip_name), False)
+
+    print()
+    print("=== a draft belongs to the popup it was typed in ===")
+    # All three popups park against these same rows, and the CNC-to-supplier popup
+    # keys its lines exactly as the RM-to-supplier one does (cnc_process is 0 in
+    # both). So a "1 whole plate" parked against the stock sitting in stores was
+    # restored into the CNC popup, which is looking at the far smaller amount that
+    # has actually reached the CNC warehouse -- and it opened refusing to transfer,
+    # "Not Enough Stock", on a plan nobody had touched.
+    one_row = [{"item_code": row.item_code, "batch_no": row.batch_no,
+                "cnc_process": 1 if row.cnc_process else 0, "custom_sec_qty": 7}]
+    save_transfer_draft(mip_name, json.dumps(one_row), None, "cnc_forward")
+    frappe.db.commit()
+    check("the popup that saved it gets it back",
+          flt((get_transfer_draft(mip_name, "cnc_forward").get(key) or {}).get("draft_sec_qty")), 7.0)
+    check("the RM-to-supplier popup does not see it",
+          key in get_transfer_draft(mip_name, "primary"), False)
+    check("nor does the to-CNC popup", key in get_transfer_draft(mip_name, "cnc"), False)
+    check("and asking without a type means the RM-to-supplier popup",
+          key in get_transfer_draft(mip_name), False)
+
+    print()
+    print("=== and one popup's transfer does not clear another's draft ===")
+    cleared = [{"item_code": row.item_code, "batch_no": row.batch_no,
+                "cnc_process": 1 if row.cnc_process else 0}]
+    _clear_transfer_draft(mip_name, cleared, "primary")
+    frappe.db.commit()
+    check("the cnc_forward draft survives a primary transfer",
+          flt((get_transfer_draft(mip_name, "cnc_forward").get(key) or {}).get("draft_sec_qty")), 7.0)
+    _clear_transfer_draft(mip_name, cleared, "cnc_forward")
+    frappe.db.commit()
+    check("its own transfer does clear it",
+          key in get_transfer_draft(mip_name, "cnc_forward"), False)

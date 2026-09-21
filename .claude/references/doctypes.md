@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-20 04:58:23_
+_Generated: 2026-09-21 21:29:50_
 
 ## drawing
 
@@ -222,6 +222,28 @@ _Generated: 2026-09-20 04:58:23_
 | Module | manufyxinvenzaerp |
 | Path | `manufyxinvenzaerp/doctype/manufyxinvenza_settings` |
 | Controller | `manufyxinvenzaerp/doctype/manufyxinvenza_settings/manufyxinvenza_settings.py` |
+| Client script | none |
+
+---
+
+## material_grade
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/material_grade` |
+| Controller | `manufyxinvenzaerp/doctype/material_grade/material_grade.py` |
+| Client script | none |
+
+---
+
+## material_spec
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/material_spec` |
+| Controller | `manufyxinvenzaerp/doctype/material_spec/material_spec.py` |
 | Client script | none |
 
 ---
@@ -651,6 +673,9 @@ _Generated: 2026-09-20 04:58:23_
 | ` _cut_sheet_reference` | no |
 | ` _lookup_drawing_planned_weight` | no |
 | ` _drawing_planned_weights` | no |
+| ` _apply_requirement_excess` | no |
+| ` requirement_key` | no |
+| ` requirement_weight_shares` | no |
 | ` _throw_claimed_excess_locked` | no |
 | ` _assert_claimed_excess_unchanged` | no |
 | ` unlink_excess_claim` | no |
