@@ -36,6 +36,12 @@ function _fg_is_produced(frm, row) {
 function _fg_kg_locked(frm, row) {
 	if (!_fg_is_row(row)) return false;
 	if (_fg_takes_out(frm)) return true;
+	// A Final Stock Entry's weight is decided in the "Make Final Stock Entry" popup and
+	// nowhere else: that is the only screen showing the steel the entry consumes for
+	// each drawing, which is the figure the weight has to be judged against. Editing it
+	// here would change the Kg while the Loss recorded beside it stayed as the popup
+	// worked it out, so the row would state a difference it no longer has.
+	if (_fg_is_produced(frm, row) && frm.doc.subcontracting_order) return true;
 	return _fg_is_produced(frm, row) && frm._fg_settings && !frm._fg_settings.edit_fg_stock_kg;
 }
 

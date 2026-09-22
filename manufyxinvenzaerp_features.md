@@ -916,3 +916,135 @@ The per-drawing cap in `_consumption_for_completed` could not help: that plan's 
   nothing changes when nothing is booked.
 - Entries already made are not corrected: their material is consumed. Write the difference
   off as Process Loss, or cancel and re-make the entry.
+
+## 26. Cross-item batch reassignment, and the finished-goods loss (2026-09-22)
+
+A day's worth of defects found by walking MIP-2026-00059 and MIP-2026-00060 end to end.
+They are separate faults, grouped here because they were found on one job and share a
+theme: a figure keyed on the *requirement's* item when it should have been keyed on the
+*batch's*.
+
+### 26.1 The transfer line's DUNO
+
+`get_mip_pending_items` stamped each line's DUNO / drawing / customer drawing number from
+a dict keyed `(item, batch)` — no CNC leg, and the last row seen won. MAT-STE-00354 moved
+1B1's material carrying 1B3 and 1B5. `create_mip_cnc_partial_forward` reads those values
+straight back off the transfer's rows, so the wrong drawing was copied onward.
+
+The key now carries the leg, and where the contributing rows disagree the line is stamped
+**blank**: a merged line covers several drawings and belongs to none. Test
+`verify_transfer_line_duno`.
+
+### 26.2 The CNC forward released the reservation twice
+
+Material bound for a CNC drawing travels Stores → CNC → supplier. The reservation is given
+up on the *first* hop. `_release_material_planning_reservations` charged both, and because
+a release walks a batch's still-reserved rows in order, the second charge ate into the next
+drawings in the plan. MP-2026-00260 lost 81.056 Kg of ISA100 and 24.003 Kg of PLATE10 off
+1B6–1B10, none of which had shipped.
+
+`_cnc_sourced_rows` excludes rows leaving the plan's own CNC warehouse from
+`_consumed_qty_by_batch`, per row rather than per entry so a mixed entry still releases its
+stores half. Cancel mirrors it. Test `verify_cnc_forward_double_release`.
+
+### 26.3 The transfer draft outlived every transfer
+
+`_clear_transfer_draft` was only called from `create_mip_transfer_entry`. The popup's
+**Verify and Transfer** runs `create_mip_partial_transfer`, so no transfer made from the
+dialog ever cleared its draft. It now clears the **whole popup's** draft, not only the rows
+sent: the off-cut is stated once per item and parked on every batch row of that item, so
+sending one batch of a two-batch item left an off-cut already booked into
+`excess_return_items` sitting there to be booked again. Test `verify_transfer_draft`.
+
+### 26.4 A settled Material Planning row stays settled
+
+Transferring is what *releases* a reservation, so after one a shipped row and a row nobody
+ever reserved looked identical — and the row lock let go of batch, waiver, Sec Nos and CNC
+Process on rows whose steel had left the building. Check Mapping had the same blind spot
+and reported 32 issues on MP-2026-00260, every one settled work.
+
+- `transferred_qty` and `fully_transferred` on both batch tables, kept by
+  `_release_rows_by_qty` and unwound by `_restore_rows_by_qty`.
+- A row is settled when reserved **or** shipped anything; partial counts.
+- `_row_has_shipped` excludes them from `_collect_batch_mapping_issues`.
+- The plan-wide *Check stock without dimensions* locks once anything is settled.
+
+Test `verify_transferred_row_locked`.
+
+### 26.5 The requirement shared across two batches
+
+`drawing_planned_weight` is the whole requirement's weight, carried on every row that fills
+it. `_consumption_for_completed` measured each row against the whole, so a requirement fed
+from two batches held nothing back: 128.456 Kg of PLATE8 was consumed into the job when it
+was off-cut standing at the supplier. It now uses `requirement_weight_shares`, the same
+split the transfer popup and the per-row Excess Qty already use. Consumption lands exactly
+on the plan's own planned weight. Test `verify_fg_consumption_requirement_share`.
+
+### 26.6 Finished goods: the loss, and the weight
+
+The Manufacture entry consumed steel and produced finished goods, and nothing recorded the
+difference — it disappeared into the finished item's valuation rate. It **cannot** be a
+stock movement: the same entry has already consumed the material.
+
+- `custom_loss_kg` on the finished-goods row, **signed**: positive is weight that went in
+  and did not come out; negative means more was booked than consumed, which says the Sales
+  Order weight is understated.
+- `loss_weight_kg` on the Material Issue Plan, recomputed by summing submitted entries so a
+  cancel needs no unwinding. Deliberately separate from `process_loss_weight_kg`, which is
+  off-cut written off at the supplier.
+- The popup gained **Cust Wt per Nos** (read-only), **FG Wt per Nos** (editable),
+  **Consumed RM Wt**, **FG Total wt** and **Loss**, recomputed live, with a confirm when a
+  row books more than it consumes. Themed in blue beside the green transfer popup.
+- `_consumed_kg_by_drawing` splits the consumption per drawing from the plan — the
+  consumption rows are merged across drawings and carry no DUNO — then prorates onto what
+  the entry actually consumes.
+- The consumption rows carry Sec Nos now, scaled whenever the Kg are narrowed.
+- The finished-goods Kg is read-only on the draft: the popup is the only screen that shows
+  the consumed steel beside it, and re-opening it rebuilds the existing draft.
+
+Tests `verify_fg_loss_and_edit`, `verify_fg_consumption_sec_nos`.
+
+### 26.7 The Subcontracting Order's FG line said Nos
+
+`Subcontracting Order Item` has no `uom` field, only `stock_uom`, and the builder passed
+`"uom"` — a key Frappe drops in silence. With `ignore_validate` the fetch never ran either,
+so SC-ORD-2026-00025 read *4,740.12 Nos* of a Kg-stocked item. Test `verify_sco_fg_uom`.
+
+### 26.8 A batch of any item, before the transfer
+
+The real reason to open Update Batch is the planner deciding to send one ISMB800 in place
+of four ISMB200. The picker offered the line's own item only, and the preview refused
+anything else outright.
+
+- `Material Planning Available Raw Material` gained **`planned_item`**, which Material
+  Mapping has always had: 65 places read `planned_item or item_code` as *the item the batch
+  holds*. Without it a PLATE20 batch on an ISMB450 row would ship as ISMB450.
+- `consolidate_batch_query` is a searchable Link query — batch name or item code, showing
+  item, **free** Kg and size, the line's own item first.
+- The item is a warning, not a blocker. Availability is the only test; size never needed
+  one, because Reserve Without Dimensions makes Kg the only number that reconciles.
+
+Tests `verify_cross_item_batch_reassign`, `verify_consolidate_batch_picker`.
+
+### 26.9 The substituted piece was weighed as the item it replaced
+
+Found the first time a line actually moved across items — ISMB450 onto a PLATE40 sheet.
+`_sec_nos_for_weight_arm` took the unit weight and group from the row's own item while the
+dimensions were the batch's, so one piece weighed 12 m × 72.4 = 868.8 Kg — a bar — against
+a sheet's row. Worse, the three fields agreed with each other and with the stored Sec Nos,
+so `_line_kg_per_piece` trusted them. Typing 1 to send a whole sheet then read as *less*
+than the plan and was capped: 868.8 Kg against a 1,592.412 Kg requirement.
+
+The batch's item now decides in all three places — `_sec_nos_for_weight_arm`,
+`_apply_rwd_fractional_nos` and `refresh_mip_raw_materials`, which carries the batch's
+group and unit weight onto the plan rows for both tables. Test
+`verify_cross_item_sec_nos_and_partial`.
+
+### 26.10 Two dialogs that misreported
+
+- **The shortfall warning** named the whole plan. Reserving for three rows reported
+  MP-2026-00260's three already-shipped ISMB400 rows as 8,870.400 Kg short. Partial rows
+  now carry `name` and `_apply_to_one_plan` reports only what it touched.
+- **The "Row" column** in the reassignment dialog was the Material Issue Plan's index shown
+  beside the plan's name — MIP rows 1/7/11 are MP rows 16/22/26. Both are shown now, with
+  the customer drawing. Test `verify_consolidate_row_identity`.

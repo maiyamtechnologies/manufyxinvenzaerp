@@ -156,7 +156,12 @@ def run():
         check("a plan_hash is issued", len(res["plan_hash"]), 16)
 
         print()
-        print("=== 7. Preview refuses a batch holding a different item ===")
+        print("=== 7. A batch holding a different item is allowed, and says so ===")
+        # This used to be refused outright, which made the commonest reason to open the
+        # dialog impossible: before a transfer the planner may decide to send one
+        # ISMB800 in place of four ISMB200. The requirement does not move; the steel
+        # does. planned_item on the rows is what records it -- see
+        # verify_cross_item_batch_reassign.
         other = frappe.db.sql("""
             SELECT b.name FROM `tabBatch` b
             WHERE b.item != %s AND b.disabled = 0 LIMIT 1
@@ -166,9 +171,11 @@ def run():
                 line.mip, line.crow,
                 frappe.as_json([{"batch_no": other[0].name, "pieces": 1}]),
             )
-            check("refused", res2["ok"], False)
-            check("and names the item mismatch",
-                  any("but this line moves" in b for b in res2["blockers"]), True)
+            check("not refused for the item alone",
+                  any("but this line moves" in b for b in res2["blockers"]), False)
+            check("it is stated as a warning instead",
+                  any("is what will be sent" in frappe.utils.strip_html(str(w))
+                      for w in (res2["warnings"] or [])), True)
 
     print()
     print("=== 8. A transferred line is refused whole ===")

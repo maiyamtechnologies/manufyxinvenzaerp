@@ -85,10 +85,16 @@ def run():
     print()
     print("=== 2. The final entry consumes what the drawing needed ===")
     sub = _src("subcontracting_management", "subcontracting.py")
+    # The cap is the requirement, not the transfer -- whole bars go to the supplier and
+    # the off-cut has to stay behind. It is now the row's SHARE of the requirement
+    # rather than the whole of it: one requirement filled from two batches carries its
+    # full weight on both rows, so measuring each against the whole held nothing back.
     check("consumption is capped at the requirement, not the transfer",
-          bool(re.search(r"wanted = flt\(r\.drawing_planned_weight\) or flt\(r\.reqd_kg\)", sub))
-          and "min(contribution, wanted * fraction)".replace("*", "*") in sub,
+          bool(re.search(r"wanted = flt\(wanted_share\) or flt\(r\.reqd_kg\)", sub))
+          and "min(contribution, wanted * fraction)" in sub,
           True)
+    check("  and the requirement is shared between the rows that fill it",
+          "row_share = requirement_weight_shares(rows)" in sub, True)
 
     print()
     print("=== 3. The plan states where every kilo went ===")

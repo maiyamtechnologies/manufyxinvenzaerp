@@ -32,7 +32,8 @@
    "in_list_view": 1,
    "label": "Drawing",
    "options": "Drawing",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "item_code",
@@ -40,7 +41,8 @@
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fetch_from": "item_code.item_name",
@@ -54,7 +56,8 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Qty to Manufacture (Nos)",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "description": "Kg of finished goods for these Nos: the drawing's Cust Weight (Total) x Nos / the drawing's Nos. Blank for a drawing made before Kg and Nos were tracked separately.",
@@ -63,7 +66,8 @@
    "in_list_view": 1,
    "label": "Qty to Manufacture (Kg)",
    "precision": "3",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "col_break",
@@ -73,20 +77,26 @@
    "fieldname": "duno_mark_no",
    "fieldtype": "Data",
    "label": "DUNO / Mark No",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "customer_drawing_number",
    "fieldtype": "Data",
    "label": "Customer Drawing No",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "sales_order",
    "fieldtype": "Link",
    "label": "Sales Order",
    "options": "Sales Order",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "material_planning",
@@ -100,14 +110,17 @@
    "fieldtype": "Float",
    "label": "Cust Weight (per Nos)",
    "precision": "3",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "customer_weight_kg",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Cust Weight (Total)",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "description": "The drawing's Rate Schedule rate per Kg, when this row was built.",
@@ -126,7 +139,6 @@
   {
    "fieldname": "total_weight_kg",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Planned RM Weight (Kg)",
    "read_only": 1
   },
@@ -134,7 +146,6 @@
    "description": "Actual reserved batch weight from Material Planning (exact-match reserved + cross-mapped) that is transferred to the supplier.",
    "fieldname": "mapped_weight_kg",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Mapped Weight (Kg)",
    "read_only": 1
   },
@@ -142,7 +153,6 @@
    "description": "Over-mapped weight (mapped − planned) for this drawing that the supplier must return.",
    "fieldname": "excess_weight_kg",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Excess (Kg)",
    "read_only": 1
   },
@@ -150,14 +160,12 @@
    "description": "Actual weight transferred so far for this drawing (proportional share of the parent's transferred total).",
    "fieldname": "transferred_weight_kg",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Transferred (Kg)",
    "read_only": 1
   },
   {
    "fieldname": "completed_qty_nos",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Completed (Nos)",
    "read_only": 1
   }

@@ -122,6 +122,21 @@ def expand_consolidate_row(mip, consolidate_row_name):
 
     key = consolidate_group_key(target)
 
+    # The row number in the PLANNING document, looked up once per table rather than
+    # per member. The dialog shows the Material Issue Plan's own idx beside the plan's
+    # name, which reads as the plan's row and is not: MIP-2026-00060's rows 1, 7 and 11
+    # are MP-2026-00260's rows 16, 22 and 26. Both numbers are shown now so the user can
+    # check the reassignment against the plan itself.
+    wanted = {}
+    for row in (mip.raw_materials or []):
+        if row.batch_no and row.source_table and row.source_row:
+            wanted.setdefault(row.source_table, set()).add(row.source_row)
+    mp_idx_by_row = {}
+    for child_dt, names in wanted.items():
+        for r in frappe.get_all(child_dt, filters={"name": ["in", list(names)]},
+                                fields=["name", "idx"]):
+            mp_idx_by_row[r.name] = r.idx
+
     members = []
     for row in (mip.raw_materials or []):
         if not row.batch_no:
@@ -144,6 +159,7 @@ def expand_consolidate_row(mip, consolidate_row_name):
             "is_reserved": 1 if row.is_reserved else 0,
             "parent_item_group": row.parent_item_group or "",
             "unit_weight": flt(row.unit_weight),
+            "mp_idx": mp_idx_by_row.get(row.source_row),
             "duno_mark_no": row.duno_mark_no or "",
             "customer_drawing_number": row.customer_drawing_number or "",
             "sales_order": row.sales_order or "",
@@ -601,10 +617,15 @@ def _build_plan(mip_name, consolidate_row_name, targets_json=None):
             blockers.append(
                 _("Batch {0} is the one this line already uses.").format(priced["batch_no"])
             )
-        # The batch must hold the item the line actually moves.
+        # A batch of another item is allowed -- that is the point of the screen. It is
+        # not silent, though: the line goes on asking for its own item and the batch
+        # records what is really going, so the substitution is stated rather than
+        # assumed. Availability is what decides whether it can happen, and that is
+        # checked just below.
         if priced["item_code"] != key[0]:
-            blockers.append(
-                _("Batch {0} holds {1}, but this line moves {2}.")
+            warnings.append(
+                _("Batch {0} holds {1}, not {2}. The requirement stays {2}; {1} is what "
+                  "will be sent, and the rows will record it as the planned item.")
                 .format(priced["batch_no"], priced["item_code"], key[0])
             )
         # 0.9b — a batch with no free stock does NOT get caught downstream:
@@ -875,37 +896,98 @@ def get_consolidate_line_context(mip_name, consolidate_row_name):
 
 
 @frappe.whitelist()
-def get_candidate_batches(item_code, warehouse, limit=50):
-    """Batches of this item that actually have free stock in this warehouse.
+@frappe.validate_and_sanitize_search_inputs
+def consolidate_batch_query(doctype, txt, searchfield, start, page_len, filters):
+    """The searchable batch picker for a Consolidate Items line.
 
-    Offered instead of a plain Batch link so the dialog cannot suggest a batch with
-    nothing in it. A zero-stock batch is the one failure the downstream validation does
-    NOT catch -- _validate_batch_calc_qty skips its coverage check when batch_stock is
-    zero, so the save succeeds and the reservation quietly comes back as nothing. Best
-    not to offer it in the first place.
+    Same shape as material_mapping_batch_query, deliberately: that is the picker this
+    one sits beside, and a planner should not have to learn two. Type part of a batch
+    name or an item code and it narrows; the columns are item, free Kg and size.
 
-    Sorted by free stock descending: the batch most likely to cover a line first.
+    What differs is which quantity is shown. The mapping picker shows what the batch
+    holds; this one shows what is FREE -- the batch's stock less every plan's
+    reservations -- because a line can only move onto steel nobody else is counting on.
+
+    Not filtered by item, and not by size. Before a transfer the planner may decide to
+    send one ISMB800 in place of four ISMB200; the requirement does not change, the
+    steel does. Reserve Without Dimensions makes the size question go away, so Kg is
+    the only number that has to reconcile, and availability is the only test.
+
+    The line's own item sorts first so the ordinary choice stays at the top.
     """
-    if not (item_code and warehouse):
+    warehouse = (filters or {}).get("warehouse")
+    if not warehouse:
+        # Nothing to measure free stock against. Offering the whole site here would
+        # put batches from another shed in front of the planner.
+        return []
+    own_item = (filters or {}).get("item_code") or ""
+
+    needle = (txt or "").lower()
+    rows = []
+    for b in frappe.get_all("Batch", filters={"disabled": 0}, fields=["name", "item"]):
+        if needle and needle not in b.name.lower() and needle not in (b.item or "").lower():
+            continue
+        free = _batch_free_kg(b.name, warehouse)
+        if free <= EPS:
+            continue
+        rows.append((b.name, b.item or "", free))
+
+    rows.sort(key=lambda r: (0 if r[1] == own_item else 1, -r[2], r[0]))
+
+    out = []
+    for name, item, free in rows:
+        length, width, thickness = _get_batch_dims(name)
+        dims = " x ".join(str(flt(d, 2)) for d in (length, width, thickness) if flt(d))
+        out.append((name, item, "%s Kg free" % flt(free, 3), dims))
+
+    start, page_len = int(start or 0), int(page_len or 20)
+    return out[start:start + page_len]
+
+
+@frappe.whitelist()
+def get_candidate_batches(item_code, warehouse, limit=400):
+    """Every batch with free stock in this warehouse -- any item, any size.
+
+    Deliberately NOT filtered to the line's own item. Before a transfer the planner may
+    decide to send something else entirely: one ISMB800 instead of four ISMB200, a plate
+    in place of a section. The requirement does not change, the steel that goes does, and
+    that decision is made on this screen. Offering only the requirement's own item made
+    the commonest reason for opening the dialog impossible.
+
+    Size is not filtered either, and does not need to be: Reserve Without Dimensions
+    reserves a row's required Kg and expresses the piece count as a fraction, so a line
+    can move to a batch of any size. Only one number has to reconcile, and that is Kg.
+
+    Zero-stock batches are still left out, because that is the one failure downstream
+    validation does NOT catch -- _validate_batch_calc_qty skips its coverage check when
+    batch_stock is zero, so the save succeeds and the reservation quietly comes back as
+    nothing.
+
+    Sorted with the line's own item first and by free stock within each group: the
+    ordinary choice stays at the top, the substitutions sit below it.
+    """
+    if not warehouse:
         return []
 
     out = []
-    for batch_no in frappe.get_all(
-        "Batch", filters={"item": item_code, "disabled": 0}, pluck="name"
+    for b in frappe.get_all(
+        "Batch", filters={"disabled": 0}, fields=["name", "item"]
     ):
-        free = _batch_free_kg(batch_no, warehouse)
+        free = _batch_free_kg(b.name, warehouse)
         if free <= EPS:
             continue
-        length, width, thickness = _get_batch_dims(batch_no)
+        length, width, thickness = _get_batch_dims(b.name)
         out.append({
-            "batch_no": batch_no,
+            "batch_no": b.name,
+            "item_code": b.item,
+            "same_item": 1 if (item_code and b.item == item_code) else 0,
             "free_kg": free,
             "length": flt(length),
             "width": flt(width),
             "thickness": flt(thickness),
         })
 
-    out.sort(key=lambda b: -b["free_kg"])
+    out.sort(key=lambda b: (-b["same_item"], -b["free_kg"]))
     return out[: int(limit)]
 # ─────────────────────────────────────────────────────────────────────────────
 # Apply — the only code in this module that writes
@@ -985,10 +1067,10 @@ def _apply_to_one_plan(mp_name, plan_writes, mip_name, progress=None):
             # refreshes them from the new batch. required_qty is never touched.
             _apply_batch_to_arm_row(
                 row, w.batch_no, {}, w.sec_qty, w.reserve_without_dimensions,
-                old_batch=old_batch,
+                old_batch=old_batch, new_item=w.batch_item,
             )
             new_sec, new_qty = flt(row.sec_qty), flt(row.required_qty)
-            planned_item = ""
+            planned_item = row.planned_item if row.get("planned_item") else ""
 
         first_row_for_batch.setdefault(w.batch_no, member.source_row)
         if old_batch and old_batch != w.batch_no:
@@ -1025,11 +1107,22 @@ def _apply_to_one_plan(mp_name, plan_writes, mip_name, progress=None):
     # 7/8 — re-reserve. Guarded exactly as reassign_batch guards it, including the
     # substring re-raise: a batch still awaiting inspection is a warning to carry
     # back, not a reason to abandon a reassignment that has already been saved.
+    #
+    # reserve_batches and reserve_exact_match_batches reserve the WHOLE plan and
+    # report every row they could not fill. Most of those have nothing to do with
+    # this reassignment: on MP-2026-00260 three ISMB400 rows sit 8,870.400 Kg short
+    # because that steel has already shipped, and reporting them here said the three
+    # rows just moved were only partly reserved when every one of them was full.
+    # Only the rows this call touched are ours to report on.
+    touched = {w.member.source_row for w in plan_writes}
     partial, inspection = [], []
     mp = frappe.get_doc("Material Planning", mp_name)
     if any(not r.is_reserved and r.batch for r in mp.material_mapping):
         try:
-            partial.extend((reserve_batches(mp_name) or {}).get("partial") or [])
+            partial.extend(
+                p for p in ((reserve_batches(mp_name) or {}).get("partial") or [])
+                if p.get("name") in touched
+            )
         except frappe.ValidationError as e:
             if "blocked pending inspection completion" not in str(e):
                 raise
@@ -1037,7 +1130,10 @@ def _apply_to_one_plan(mp_name, plan_writes, mip_name, progress=None):
         mp = frappe.get_doc("Material Planning", mp_name)
     if any(not r.is_reserved and r.batch_no for r in mp.available_raw_materials):
         try:
-            partial.extend((reserve_exact_match_batches(mp_name) or {}).get("partial") or [])
+            partial.extend(
+                p for p in ((reserve_exact_match_batches(mp_name) or {}).get("partial") or [])
+                if p.get("name") in touched
+            )
         except frappe.ValidationError as e:
             if "blocked pending inspection completion" not in str(e):
                 raise

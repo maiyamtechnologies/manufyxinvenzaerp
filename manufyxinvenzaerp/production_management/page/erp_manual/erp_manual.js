@@ -171,6 +171,7 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			{ name: "Calculated weight", note: "The last check: the row's Kg is recalculated from its current dimensions and the Item master's Unit Weight. Zero is refused, and a figure that no longer agrees with what was staged means the Item master changed after the upload — load the sheet again." },
 			{ name: "Nature of Work", note: "Must already exist in the Nature of Work master. Checked by name exactly as typed." },
 			{ name: "Rate Schedule", note: "Must already exist in the Rate Schedule master — e.g. RS- O/S-001 A. Checked by name; there is no format rule, so your numbering can change freely." },
+			{ name: "Grade", note: "Must already exist in the <b>Material Grade</b> master — e.g. IS2062. Checked by name exactly as typed, so watch the spacing: IS2062 and IS 2062 are two different grades. A blank Grade is allowed. Create a missing one from the Material Masters card on the Manufyx workspace, or correct the sheet and load it again." },
 			{ name: "FG Item", note: "Every drawing needs one, and it must exist in the Item master." },
 			{ name: "DUNO/Mark No", note: "Must be filled in on each drawing." },
 			{ name: "Total Qty", note: "Must be more than zero. A blank is otherwise read as one piece, and every total on the drawing would be calculated for a single unit." },
@@ -528,15 +529,32 @@ const ERP_MANUAL_ITEM_CHILDREN = [
 		title: "Custom Fields",
 		kicker: "What was added and why",
 		purpose:
-			"Six custom fields added to the Item master. Together they classify the item, " +
+			"Seven custom fields added to the Item master. Together they say what the material " +
+			"is, classify the item, " +
 			"configure its UOM pair, set the weight constant the Kg formula needs, control " +
 			"how batches are named at receipt, and flag whether an incoming batch must pass " +
 			"inspection before it can be reserved in Material Planning.",
 		fields: [
 			{
 				name: "Material Spec",
-				note: "Free-text specification for the item — grade, standard, or any note that " +
-					"identifies the material beyond its name. Optional; does not drive any calculation.",
+				note: "The specification this material is bought and made to, picked from the " +
+					"<b>Material Spec</b> master. Optional, and drives no calculation — it is there " +
+					"so anyone can answer \"what steel is this?\" from whatever document is open. " +
+					"A master rather than free text since Sep 2026: as free text it was filled in " +
+					"on no item at all, which made it useless to read. " +
+					"Add a new specification from the Material Masters card on the Manufyx workspace.",
+			},
+			{
+				name: "Material Grade",
+				note: "The grade this material is bought and made to, picked from the " +
+					"<b>Material Grade</b> master (e.g. IS2062). Optional, and drives no calculation. " +
+					"Set it here once and it appears, read-only, on every document the material " +
+					"reaches — Drawing, BOM, Material Planning, Production Plan, Job Work Order, " +
+					"Material Issue Plan, Material Request, Purchase Order, Purchase Receipt, " +
+					"Stock Entry and the Batch. " +
+					"<b>You cannot type either field anywhere except here.</b> Everywhere else it is a " +
+					"read-only copy taken from the Item when the row is created, so a document " +
+					"keeps the grade it was raised with even if the Item is corrected later.",
 			},
 			{
 				name: "Parent Item Group",
@@ -979,6 +997,8 @@ const ERP_MANUAL_MATERIAL_PLANNING_CHILDREN = [
 			{ name: "Planned Item (from Batch)", note: "The item the assigned batch actually is — will differ from Item Code if you've substituted an alternate item." },
 			{ name: "Batch Length / Width / Thickness / Unit Weight", note: "The ASSIGNED BATCH's own dimensions — this is what the Kg formula actually uses, not the required dimensions." },
 			{ name: "Sec Qty (NOS) / Calc Qty (Kg)", note: "How many pieces you're taking from the batch, and the Kg that works out to." },
+			{ name: "Fully Transferred / Transferred Qty", note: "Filled in as each transfer goes out, and unwound if that entry is cancelled. They exist because transferring is what RELEASES a reservation, so afterwards a shipped row and a row nobody ever reserved look the same. A row that is reserved <b>or</b> has shipped anything is settled: its batch, its dimension waiver, its Sec Nos and its CNC Process are read-only, and Check Mapping stops calling it unreserved. Partial counts — the batch is decided from the first kilo that moves." },
+			{ name: "Planned Item", note: "The item the assigned batch actually holds, when that is not the item the row asks for. Set when a batch is reassigned across items from the Material Issue Plan; blank in the ordinary case. The requirement keeps its own item; this is what the transfer issues and what the finished-goods entry charges." },
 			{ name: "Reserve stock without dimensions", note: "Explained with a worked example below — one batch shared across several rows, and how it works on a Cut Sheet row." },
 			{ name: "CNC Process", note: "Same meaning as on Available Raw Materials — see that section for the full example." },
 			{ name: "Reserved / Reserved Qty / Shortfall Qty / Reserved On", note: "Same reservation bookkeeping as Exact Match — and the same rule: only the quantity ON THIS ROW gets reserved, never the whole batch." },
@@ -1701,10 +1721,11 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			"Open <b>Transfer → Select Materials to Transfer</b>. A readiness check runs first and tells you about anything that would silently reduce what moves — stock mapped but not reserved, CNC rows with no CNC warehouse, or material already sitting at the supplier.",
 			"Tick the rows to send. Rows short of stock are left unticked for you.",
 			"Adjust <b>Sec Nos</b> where you must hand over whole pieces. The system re-checks free stock for the higher figure and refuses it outright if the batch cannot cover it.",
-			"Switch to <b>Consolidate item for excess return plan</b> and measure the off-cut, one line per item — for the items that have one. A line whose Excess Kg (system) is zero has its boxes closed: nothing was left over, so there is nothing to measure. Optional — leave it blank and only a rounding surplus is booked, as before.",
+			"Switch to <b>Consolidate item for excess return plan</b> and measure the off-cut, one line per item — for the items that have one. A line whose Excess Kg (system) is zero has its boxes closed: nothing was left over, so there is nothing to measure. Optional — leave it blank and only a rounding surplus is booked, as before. <b>Excess Kg (system) compares like with like</b>: a requirement filled from two batches of different sizes is counted once, a drawing needing the same item in two cut sizes keeps both, and the CNC leg is measured against its own share rather than the whole item's. Before that was true this tab reported six-figure shortfalls on plans whose mapping covered the requirement exactly.",
 			"Submit. The Stock Entry is created, Transferred goes up, and the excess is written to the Excess Material table.",
 			"Come back later for the rest. Partial transfers are expected, and the popup shows exactly how much has gone and how much is left.",
-			"<b>Save and Close</b> at any point parks everything — the ticks, the Sec Nos, and the measured off-cuts — without transferring or validating anything. Reopen the popup and it is all still there.",
+			"<b>Save and Close</b> at any point parks everything — the ticks, the Sec Nos, and the measured off-cuts — without transferring or validating anything. Reopen the popup and it is all still there. <b>A parked draft belongs to the popup it was typed in</b>, so what you save on <i>Raw material to transfer</i> does not reappear on <i>To CNC Warehouse</i> or <i>CNC to Supplier</i>. It used to: a whole plate parked against the stock in stores came back on the CNC popup, which is looking at the much smaller amount that has reached CNC, and the popup opened refusing to transfer for want of stock on a plan nobody had touched.",
+			"<b>Every Stock Entry the plan has issued is on its Connections tab</b> — the transfer, the CNC leg and its forward, the excess-return Repack, the process-loss write-off and the final Manufacture entry — so you no longer have to filter the Stock Entry list by hand to find them.",
 		],
 		calcs: [
 			{
@@ -1956,6 +1977,9 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			"received and the plan closes itself.",
 		steps: [
 			"<b>Make Final Stock Entry</b> appears as soon as the <b>last operation exists</b>, and books whatever that operation has finished — you do not wait for the whole job. It first shows you what it is about to book: one line per drawing, with how many pieces are planned, how many the last operation has completed, how many are already in finished goods, and how many this entry would book. Agree with it and it creates a draft Manufacture Stock Entry to review and submit.",
+		"Beside the piece counts it shows the weights: <b>Cust Wt per Nos</b> as the customer gave it (read-only), <b>FG Wt per Nos</b> which is the figure actually being booked, <b>Consumed RM Wt</b> — the steel this entry takes for that drawing — then <b>FG Total wt</b> and <b>Loss</b>, all recomputed as you type. Loss is consumed less booked: weight that went into the product and did not come out as weight. It is recorded as a figure, never as a second stock movement, because the same entry has already consumed the material — issuing it again would take it twice. A row that books MORE than it consumes is not a loss at all; it is shown in red and confirms before creating, because it says the Sales Order weight is understated and should be corrected for billing.",
+		"<b>FG Wt per Nos is edited here and nowhere else.</b> On the draft Stock Entry the finished-goods Kg is read-only, because this popup is the only screen that shows the consumed steel beside it. Re-opening the popup rebuilds the existing draft with your new figures rather than handing back the old one. The column is editable only while <b>Edit FG Stock Kg</b> is on in Manufyxinvenza Settings; with it off the figure is the drawing's and the Loss is still shown.",
+		"The loss totals onto the Material Issue Plan as <b>Loss — Consumed Not Booked (Kg)</b>. That is a different figure from <b>Process Loss — Not Returned (Kg)</b>, which is off-cut still standing at the supplier and written off with a reason. Reports add the two.",
 			"<b>What is booked to come back is not consumed.</b> An Excess Material Items row is a promise that steel is waiting at the supplier to be returned (or claimed by another job), so the Final Stock Entry leaves those kilos where they are and consumes the rest. Without it the same steel was booked into finished goods AND still expected back, and Return Excess Entry then refused with \"not enough of this material left to return\". A row that has already become a Stock Entry, or been claimed by another plan, holds nothing back.",
 			"<b>Four drawings of ten books four drawings.</b> Only the raw material belonging to those four is consumed — the rest stays at the supplier for the next entry — and only those four appear as finished goods. Finish the other six later and press it again; pieces already booked are never booked twice.",
 			"The plan moves to <b>Completed</b> by itself once finished goods have been received AND every Excess Material Items row is resolved: returned, or claimed by another job — and nothing of the job is still sitting at the supplier. Anything that did not come back must have been written off as Process Loss first.",
@@ -1980,7 +2004,7 @@ const ERP_MANUAL_MATERIAL_ISSUE_PLAN_CHILDREN = [
 			{ name: "Make Final Stock Entry", note: "Draft Manufacture entry for the finished goods. Appears once the final operation exists, and needs at least one completed piece on it. Books only the drawings that operation has finished, and consumes only their share of the raw material." },
 			{ name: "Download → Batch wise PDF", note: "A shareable batch plan — DUNO/Mark No, Customer Drawing No, planned Kg, batch details and Sec Qty — for the production or supplier team. One line per drawing requirement, so a plate cut for fourteen drawings appears fourteen times." },
 			{ name: "Download → Consolidate item wise PDF", note: "The same transfer seen from the store's side: one line per item + batch, with the DUNOs it covers named on the line. Item, batch, L×W×T, Sec Nos, Reqd Kg, Issued Kg, Pending Kg, merged row count, and a totals row. CNC rows are flagged, because that material goes to the CNC warehouse first. This is the sheet to pick against — nobody pulls stock fourteen times for one plate." },
-			{ name: "Update Batch (Consolidate Items)", note: "The only place a batch is reassigned on this form — the Raw Materials buttons are hidden. Use the button on a Consolidate Items row, or the one above the grid to pick a line. It moves every raw-material row merged into that line, across every Material Planning behind it. Enter Pieces for each new batch; Length and Width are the batch's own size and cannot be changed. Preview first; the confirmation then lists every current reservation, and on Yes those are unreserved, each row is assigned to the new batch without matching dimensions, and reserved again. Once any transfer or other stock entry (even a draft) exists on the plan, no batch on it can be reassigned — the popup lists those entries and explains that Raw Materials cannot be refreshed. If other rows have the new batch assigned but not reserved, the preview warns and names them: moving onto it can leave their Material Planning unable to save until those rows get another batch." },
+			{ name: "Update Batch (Consolidate Items)", note: "The only place a batch is reassigned on this form — the Raw Materials buttons are hidden. Use the button on a Consolidate Items row, or the one above the grid to pick a line. It moves every raw-material row merged into that line, across every Material Planning behind it. <b>Any batch with free stock is offered, whatever item or size it holds</b> — before a transfer the planner may decide to send one ISMB800 in place of four ISMB200, and that decision is made here. Search by batch name or item code; each hit shows its item, free Kg and size, with the line's own item first. The requirement does not change: it stays ISMB450 (or whatever it was), and the rows record the batch's item as the <b>Planned Item</b>, which is what the transfer and the finished-goods entry then read. A different item is a warning, not a refusal — availability is the only test, and size never needs one because the rows reserve their required Kg and state the pieces as a fraction. Enter Pieces for each new batch; Length and Width are the batch's own size and cannot be changed. The tables name both row numbers — <b>MIP Row</b> and <b>Plan Row</b> — with the customer drawing, because the two documents number their rows differently and only the Plan Row can be looked up in Material Planning. Preview first; the confirmation then lists every current reservation, and on Yes those are unreserved, each row is assigned to the new batch without matching dimensions, and reserved again. Once any transfer or other stock entry (even a draft) exists on the plan, no batch on it can be reassigned — the popup lists those entries and explains that Raw Materials cannot be refreshed. If other rows have the new batch assigned but not reserved, the preview warns and names them: moving onto it can leave their Material Planning unable to save until those rows get another batch." },
 			{ name: "View All", note: "Every row and every column in one popup, filterable by DUNO and Item Code. In the Raw Materials top toolbar — the table can run past a hundred rows, and Frappe hides the bottom toolbar entirely when they all fit on one page." },
 		],
 		notes: [

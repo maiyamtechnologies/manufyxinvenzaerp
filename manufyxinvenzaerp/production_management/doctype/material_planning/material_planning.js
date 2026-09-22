@@ -266,6 +266,12 @@ frappe.ui.form.on("Material Planning", {
 		// material-planning-manual and material-planning-case-studies -- have
 		// since been deleted outright; ERP Manual is the only manual now.
 
+		// Lock every settled row in both batch tables, not only the one that happens to
+		// be expanded. form_render fires per row as it opens; the collapsed grid edits
+		// inline and would otherwise still take a new batch on a row holding stock -- or
+		// on one whose material has already left the building.
+		_mp_lock_settled_rows(frm);
+
 		// Always keep the Stock Analysis tab visible regardless of table data
 		frm.set_df_property("tab_stock_analysis", "hidden", 0); // fieldname stays, label changed to "Stock Details"
 		frm.set_df_property("section_raw_materials", "hidden", 0);
@@ -2113,9 +2119,74 @@ frappe.ui.form.on("Material Planning Consolidate Item", {
 	},
 });
 
-// Recalculate Calc Qty (Kg) from assigned batch dimensions × sec qty
+// Batch, "Reserve stock without dimensions", Sec Nos and CNC Process are settled once a
+// row holds stock or has shipped any: changing one would describe a reservation nobody is
+// holding, or re-route material that has already gone. Sec Nos drives Calc Qty, which is
+// the weight that was reserved; CNC Process decides which warehouse the row travels
+// through, which is not a question any more once it has travelled.
+//
+// Reserved is not enough on its own. A transfer RELEASES the reservation -- that is what
+// releasing means -- so after one, a shipped row and a row nobody ever reserved look
+// identical. transferred_qty and fully_transferred are what tell them apart, and they are
+// kept by _release_rows_by_qty on the server as each transfer is made.
+//
+// Unreserve the row first -- that is what the per-row Unreserve button is for. A row that
+// has shipped cannot be unlocked at all, which is the point.
+const _MP_LOCKED_MAPPING_FIELDS = [
+	"batch", "reserve_without_dimensions", "batch_sec_qty", "cnc_process",
+];
+// Exact Match has no batch picker or Sec Nos of its own -- both are already read-only
+// there -- so its settled row locks the two things it can still change, plus the
+// auto-suggest skip, which only means anything while a batch is still to be chosen.
+const _MP_LOCKED_EXACT_FIELDS = [
+	"reserve_without_dimensions", "cnc_process", "skip_auto_suggest_batch",
+];
+
+function _mp_row_settled(row) {
+	return !!(row.is_reserved || row.fully_transferred || flt(row.transferred_qty) > 0);
+}
+
+function _mp_lock_settled_rows(frm) {
+	let any_settled = false;
+
+	[
+		["material_mapping", "Material Planning Material Mapping", _MP_LOCKED_MAPPING_FIELDS],
+		["available_raw_materials", "Material Planning Available Raw Material", _MP_LOCKED_EXACT_FIELDS],
+	].forEach(function (spec) {
+		let [table, child_dt, fieldnames] = spec;
+		let grid = frm.fields_dict[table] && frm.fields_dict[table].grid;
+		if (!grid) return;
+		(frm.doc[table] || []).forEach(function (row) {
+			let settled = _mp_row_settled(row);
+			if (settled) any_settled = true;
+			fieldnames.forEach(function (fieldname) {
+				let df = frappe.meta.get_docfield(child_dt, fieldname, row.name);
+				if (df) df.read_only = settled ? 1 : 0;
+			});
+		});
+		grid.refresh();
+	});
+
+	// The plan-wide waiver decides how every row is matched to stock. Once any row is
+	// holding or has shipped material, the rows already settled cannot follow a change
+	// to it, so the plan would be running two rules at once.
+	frm.set_df_property("check_stock_without_dimensions", "read_only", any_settled ? 1 : 0);
+}
+
 function _recalc_batch_qty(frm, cdt, cdn) {
 	let row = locals[cdt][cdn];
+
+	// On a "Reserve stock without dimensions" row the arithmetic runs the other way:
+	// the Required Qty is fixed and Sec Nos is derived from it, so recalculating from
+	// the Sec Nos already on the row would keep whatever the PREVIOUS batch produced.
+	// Selecting a second batch left the first batch's Sec Nos sitting there, and the
+	// only way to correct it was to untick the waiver and tick it again. Every path
+	// that recalculates a row comes through here, so deriving it here fixes all of them.
+	if (row.reserve_without_dimensions && row.batch) {
+		_calc_rwd_preview(frm, cdt, cdn);
+		return;
+	}
+
 	let group = row.batch_parent_item_group || "";
 	let L  = flt(row.batch_length);
 	let W  = flt(row.batch_width);
@@ -2181,6 +2252,23 @@ function _check_cross_table_batch_conflict(frm, batch_no, calling_table, cdt, cd
 
 			if (!conflict_rows || !conflict_rows.length) { on_clean && on_clean(); return; }
 
+			// Sharing a batch across the two tables is allowed -- what is not allowed is
+			// promising more of it than it holds. A requirement for ISMB400 filled from an
+			// ISA100 bar is the case Material Mapping exists for, and it was being refused
+			// on batches with tonnes to spare simply because an exact-match row also used
+			// them. Only an exhausted batch is refused now; a shared one says so and lets
+			// the assignment through. The server backstops this in
+			// _validate_batch_not_over_allocated, and reserving caps what it takes.
+			if (flt(d.available_qty, 3) > 0) {
+				frappe.show_alert({
+					message: __("Batch {0} is shared with the {1} table — {2} Kg still free.",
+						[batch_no, conflict_label, flt(d.available_qty, 3)]),
+					indicator: "blue",
+				}, 7);
+				on_clean && on_clean();
+				return;
+			}
+
 			// Build row-by-row detail
 			let row_lines = conflict_rows.map(r =>
 				__("Row {0} ({1}) — {2} Kg {3}", [
@@ -2200,10 +2288,10 @@ function _check_cross_table_batch_conflict(frm, batch_no, calling_table, cdt, cd
 				+ "<br>"
 				+ __("Available after above allocations: <b>{0} Kg</b>", [flt(d.available_qty, 3)])
 				+ "<br><br><b>"
-				+ __("The same batch cannot be used in both tables. Remove it from one table first.")
+				+ __("Nothing is left of this batch. Free some of it in the {0} table, or assign a different batch.", [conflict_label])
 				+ "</b>";
 
-			frappe.msgprint({ title: __("Batch Already Used"), message: msg, indicator: "red" });
+			frappe.msgprint({ title: __("Batch Fully Allocated"), message: msg, indicator: "red" });
 
 			// Clear the batch field in the current row
 			if (calling_table === "material_mapping") {
@@ -2244,6 +2332,18 @@ frappe.ui.form.on("Material Planning Material Mapping", {
 		if (row.batch) {
 			_fetch_batch_stock_summary(frm, cdt, cdn);
 		}
+
+		// A settled row -- reserved, or already transferred -- holds its batch, its
+		// dimension waiver, the Sec Nos that weight was reserved against and its CNC
+		// routing. The batch handler already refuses a change and puts the old value
+		// back, but only after the user has picked a new one and watched it disappear.
+		// Read-only says so before they start. See _mp_lock_settled_rows.
+		_MP_LOCKED_MAPPING_FIELDS.forEach(function (fieldname) {
+			let df = frappe.meta.get_docfield(
+				"Material Planning Material Mapping", fieldname, cdn);
+			if (df) df.read_only = _mp_row_settled(row) ? 1 : 0;
+		});
+		frm.fields_dict["material_mapping"].grid.refresh_row(cdn);
 	},
 
 	batch(frm, cdt, cdn) {
@@ -3258,13 +3358,15 @@ function _show_table_popup(frm, fieldname) {
 frappe.ui.form.on("Material Planning Available Raw Material", {
 	form_render(frm, cdt, cdn) {
 		let row = locals[cdt][cdn];
-		// Make skip checkbox read-only for reserved rows in the expanded row view
-		let df = frappe.meta.get_docfield("Material Planning Available Raw Material", "skip_auto_suggest_batch", cdn);
-		if (df) df.read_only = row.is_reserved ? 1 : 0;
-		// Same for the dimension waiver: _apply_rwd_fractional_nos skips reserved
-		// rows, so a tick on one would appear to take and then do nothing.
-		let rwd_df = frappe.meta.get_docfield("Material Planning Available Raw Material", "reserve_without_dimensions", cdn);
-		if (rwd_df) rwd_df.read_only = row.is_reserved ? 1 : 0;
+		// The dimension waiver, the CNC routing and the auto-suggest skip are settled on
+		// a row that is reserved or has shipped: _apply_rwd_fractional_nos skips reserved
+		// rows, so a tick on one would appear to take and then do nothing, and nothing at
+		// all can be re-routed once it has moved. See _mp_lock_settled_rows.
+		_MP_LOCKED_EXACT_FIELDS.forEach(function (fieldname) {
+			let df = frappe.meta.get_docfield(
+				"Material Planning Available Raw Material", fieldname, cdn);
+			if (df) df.read_only = _mp_row_settled(row) ? 1 : 0;
+		});
 		frm.fields_dict["available_raw_materials"].grid.refresh_row(cdn);
 	},
 

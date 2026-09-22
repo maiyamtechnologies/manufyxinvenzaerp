@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-20 04:58:23_
+_Generated: 2026-09-22 10:04:43_
 
 ## drawing
 
@@ -226,6 +226,28 @@ _Generated: 2026-09-20 04:58:23_
 
 ---
 
+## material_grade
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/material_grade` |
+| Controller | `manufyxinvenzaerp/doctype/material_grade/material_grade.py` |
+| Client script | none |
+
+---
+
+## material_spec
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/material_spec` |
+| Controller | `manufyxinvenzaerp/doctype/material_spec/material_spec.py` |
+| Client script | none |
+
+---
+
 ## cut_sheet_allocation
 
 | Key | Value |
@@ -438,7 +460,7 @@ _Generated: 2026-09-20 04:58:23_
 | ` _consolidate_unavailable_items` | no |
 | ` _recalculate_consolidate_items` | no |
 | ` _auto_update_planning_status` | no |
-| ` _validate_no_cross_table_batch_duplicate` | no |
+| ` _validate_batch_not_over_allocated` | no |
 | ` _set_row_excess` | no |
 | ` _update_weight_summary` | no |
 | ` _apply_rwd_fractional_nos` | no |
@@ -490,6 +512,7 @@ _Generated: 2026-09-20 04:58:23_
 | ` _add` | no |
 | ` _sec_nos_for_weight` | no |
 | ` _item_unit_weights` | no |
+| ` _item_groups` | no |
 | ` _sec_nos_for_weight_arm` | no |
 | ` _refresh_touched_cut_sheets` | no |
 | ` _require_write` | no |
@@ -522,6 +545,7 @@ _Generated: 2026-09-20 04:58:23_
 | ` unlink_material_request_on_cancel` | no |
 | ` auto_suggest_consolidate_dimensions` | no |
 | ` auto_purchase_from_mp` | no |
+| ` _row_has_shipped` | no |
 | ` _collect_batch_mapping_issues` | no |
 | ` complete_batch_mapping` | no |
 
@@ -651,6 +675,9 @@ _Generated: 2026-09-20 04:58:23_
 | ` _cut_sheet_reference` | no |
 | ` _lookup_drawing_planned_weight` | no |
 | ` _drawing_planned_weights` | no |
+| ` _apply_requirement_excess` | no |
+| ` requirement_key` | no |
+| ` requirement_weight_shares` | no |
 | ` _throw_claimed_excess_locked` | no |
 | ` _assert_claimed_excess_unchanged` | no |
 | ` unlink_excess_claim` | no |

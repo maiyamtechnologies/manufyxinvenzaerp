@@ -659,10 +659,32 @@ def get_mip_pending_items(mip_name):
     # Sales Order and Customer Drawing Number blank in the transfer popup and
     # unreachable by its filters.
     def _by_key(fieldname):
-        return {
-            ((r.planned_item or r.item_code), r.batch_no or ""): r.get(fieldname) or ""
-            for r in (mip.raw_materials or [])
-        }
+        """The drawing identity to stamp on a transfer line, or nothing when the line
+        does not have one.
+
+        Keyed by the CNC leg as well as item+batch, exactly as the pending lines
+        themselves are: one batch feeding a CNC drawing and a direct one makes TWO
+        lines, and a leg-blind key hands both of them the same answer.
+
+        Two rules, and the second is the one that was wrong. A dict comprehension let
+        the LAST row win, so a batch serving several drawings stamped whichever DUNO
+        happened to be read last: MAT-STE-00354 moved 1B1's CNC material to the CNC
+        warehouse carrying 1B3 and 1B5, because ISA100-L12000-SR001 also feeds 1B2..1B5
+        on the direct leg. Where the rows genuinely disagree the honest answer is
+        BLANK -- a merged line covers several drawings and belongs to none of them.
+        Guessing matters beyond display: create_mip_cnc_partial_forward reads these
+        values straight back off the transfer's rows to build the CNC-to-supplier leg,
+        so a wrong DUNO is copied onward rather than corrected."""
+        out = {}
+        for r in (mip.raw_materials or []):
+            key = ((r.planned_item or r.item_code), r.batch_no or "",
+                   1 if (r.cnc_process and cnc_warehouse) else 0)
+            value = r.get(fieldname) or ""
+            if key not in out:
+                out[key] = value
+            elif out[key] != value:
+                out[key] = ""
+        return out
 
     duno_by_key = _by_key("duno_mark_no")
     # What the drawings actually call for, as opposed to what the reserved batches
@@ -741,7 +763,7 @@ def get_mip_pending_items(mip_name):
             continue
         total_qty = flt(item["qty"])
         ratio = pending_qty / total_qty if total_qty else 0
-        duno = duno_by_key.get((item_code, batch_no), "")
+        duno = duno_by_key.get((item_code, batch_no, 1 if is_cnc else 0), "")
         result.append({
             "item_code": item_code,
             "item_name": frappe.db.get_value("Item", item_code, "item_name") or item_code,
@@ -774,8 +796,8 @@ def get_mip_pending_items(mip_name):
             "custom_parent_item_group": item.get("custom_parent_item_group") or "",
             "duno_mark_no": duno,
             "drawing": drawing_by_duno.get(duno, ""),
-            "sales_order": so_by_key.get((item_code, batch_no), ""),
-            "customer_drawing_number": cdn_by_key.get((item_code, batch_no), ""),
+            "sales_order": so_by_key.get((item_code, batch_no, 1 if is_cnc else 0), ""),
+            "customer_drawing_number": cdn_by_key.get((item_code, batch_no, 1 if is_cnc else 0), ""),
             # Scaled by the same ratio as qty and Sec Qty: on a partial transfer
             # the tab must compare what is being sent against the share of the
             # requirement it covers, not against the whole of it.
@@ -1769,7 +1791,7 @@ def create_mip_transfer_entry(mip_name):
     # The parked popup state described what was about to happen; it just did. Only the
     # RM-to-supplier popup's own: this sends primary rows, and the CNC popups' drafts
     # sit on the same consolidate rows.
-    _clear_transfer_draft(mip.name, primary_rows, "primary")
+    _clear_transfer_draft(mip.name, None, "primary")
     return {"primary_se": se.name}
 
 
@@ -1848,6 +1870,11 @@ def create_mip_partial_transfer(mip_name, selected_items_json, transfer_type, ex
     se.insert(ignore_permissions=True)
     _log_round_up_excess(mip, selected, excess_plan=excess_plan)
     _log_consolidated_excess(mip, selected, excess_plan)
+    # This is the path every popup actually takes -- "Verify and Transfer" calls here,
+    # not create_mip_transfer_entry -- so without this the parked state outlived every
+    # transfer ever made from the dialog. The whole popup's draft goes, not just the
+    # rows sent: see _clear_transfer_draft.
+    _clear_transfer_draft(mip.name, None, transfer_type or "primary")
     return se.name
 
 
@@ -1987,7 +2014,7 @@ def create_mip_cnc_partial_forward(mip_name, selected_items_json):
     }, mip_name, ctx))
     frappe.db.commit()
     se.insert(ignore_permissions=True)
-    _clear_transfer_draft(mip.name, selected, "cnc_forward")
+    _clear_transfer_draft(mip.name, None, "cnc_forward")
     return se.name
 
 

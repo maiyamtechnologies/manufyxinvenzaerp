@@ -135,11 +135,18 @@ def run():
     # carries 324.224 on both. Reading one row understated a batch covering many
     # requirements (PLATE10 read 10 Kg where the plan needed 254); adding the rows
     # up counted the split requirement twice (ISA100 read 818 where it needed 494).
+    #
+    # The share rule itself now lives in requirement_weight_shares, beside the lookup
+    # that stamps the figure, because the per-row Excess Qty has to divide it the same
+    # way -- see verify_mip_drawing_weight_share for the rule's own checks. Identifying
+    # the requirement by DIMENSIONS was itself a defect: a plan row carries the batch's
+    # size, so one requirement filled from a 12000 mm bar and a 5136 mm off-cut looked
+    # like two and claimed its weight twice.
     src = inspect.getsource(get_mip_pending_items)
-    check("the requirement is identified by drawing and dimensions",
-          "r.customer_drawing_number or \"\"," in src, True)
-    check("each row takes a proportional share",
-          'flt(agg["weight"]) * (flt(r.qty) / flt(agg["qty"]))' in src, True)
+    check("the share rule is the shared one, not a local copy",
+          "requirement_weight_shares(raw_material_rows)" in src, True)
+    check("the requirement is no longer identified by dimensions",
+          "flt(r.length), flt(r.width), flt(r.thickness))" in src, False)
     check("it is not the last-row-wins helper",
           '_by_key("drawing_planned_weight")' in src, False)
 

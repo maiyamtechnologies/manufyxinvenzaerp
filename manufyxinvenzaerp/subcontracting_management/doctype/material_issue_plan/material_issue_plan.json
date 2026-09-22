@@ -33,6 +33,7 @@
   "returned_weight_kg",
   "process_loss_weight_kg",
   "process_loss_reason",
+  "loss_weight_kg",
   "tab_drawings",
   "drawing_items",
   "tab_raw_materials",
@@ -239,6 +240,14 @@
    "label": "Process Loss Reason",
    "read_only": 1,
    "depends_on": "eval:doc.process_loss_weight_kg"
+  },
+  {
+   "fieldname": "loss_weight_kg",
+   "fieldtype": "Float",
+   "label": "Loss \u2014 Consumed Not Booked (Kg)",
+   "read_only": 1,
+   "description": "Raw material the Final Stock Entries consumed, less the finished goods they booked. A different loss from the one above: this steel went into the product and did not come out as weight, and no stock movement can record it because the same entry already consumed it. A negative figure means more was booked than consumed \u2014 the Sales Order weight is understated.",
+   "precision": "3"
   },
   {
    "fieldname": "tab_drawings",

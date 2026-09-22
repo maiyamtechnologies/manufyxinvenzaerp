@@ -51,6 +51,8 @@
   "unreserve_btn",
   "reserved_qty",
   "shortfall_qty",
+  "transferred_qty",
+  "fully_transferred",
   "reserved_on",
   "store_location",
   "purchase_receipt",
@@ -386,6 +388,22 @@
    "fieldname": "shortfall_qty",
    "fieldtype": "Float",
    "label": "Shortfall Qty",
+   "read_only": 1
+  },
+  {
+   "description": "How much of this row's allocation has physically left the warehouse. Accumulated as each transfer releases the reservation it was holding, and unwound again if that entry is cancelled.",
+   "fieldname": "transferred_qty",
+   "fieldtype": "Float",
+   "label": "Transferred Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Ticked once the whole of this row has been transferred. A transfer gives up the reservation, so is_reserved alone can no longer say whether the row is settled -- this is what keeps the batch and its figures locked afterwards.",
+   "fieldname": "fully_transferred",
+   "fieldtype": "Check",
+   "label": "Fully Transferred",
    "read_only": 1
   },
   {

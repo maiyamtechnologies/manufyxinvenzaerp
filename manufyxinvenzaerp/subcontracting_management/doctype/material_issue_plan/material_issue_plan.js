@@ -173,6 +173,13 @@ function _add_final_stock_entry_button(frm) {
 
 // What is about to be booked, before anything is created. "Four of ten" is a fact
 // somebody should see and agree with, not discover in a draft.
+//
+// The finished weight is decided HERE and nowhere else: on the draft Stock Entry the
+// Kg is read-only, so this table is the one place a weighed figure can be entered.
+// Beside it sits the steel the entry will consume for that drawing, and the difference
+// between the two -- which is the whole point of the screen. Weight that goes in and
+// does not come out is loss; weight that comes out above what went in is not a loss at
+// all but a sign the Sales Order was written for too little.
 function _show_final_stock_entry_preview(frm) {
 	frappe.call({
 		method: "manufyxinvenzaerp.subcontracting_management.subcontracting.get_final_stock_entry_preview",
@@ -190,63 +197,213 @@ function _show_final_stock_entry_preview(frm) {
 				return;
 			}
 
-			let body = (p.drawings || []).map(function(d) {
-				let ready = flt(d.ready_to_book);
-				return `<tr style="${ready > 0 ? "" : "color:#999"}">
-					<td style="padding:3px 6px">${frappe.utils.escape_html(String(d.duno_mark_no || ""))}</td>
-					<td style="padding:3px 6px">${frappe.utils.escape_html(String(d.customer_drawing_number || d.drawing || ""))}</td>
-					<td style="padding:3px 6px;text-align:right">${flt(d.qty_to_manufacture, 3)}</td>
-					<td style="padding:3px 6px;text-align:right">${flt(d.completed_qty_nos, 3)}</td>
-					<td style="padding:3px 6px;text-align:right">${flt(d.already_booked, 3)}</td>
-					<td style="padding:3px 6px;text-align:right;font-weight:600">${ready > 0 ? flt(ready, 3) : "—"}</td>
-				</tr>`;
-			}).join("");
-
-			let table = `<table class="table table-bordered table-condensed" style="font-size:11px;margin:8px 0">
-				<thead><tr>
-					<th>${__("DUNO")}</th><th>${__("Drawing")}</th>
-					<th style="text-align:right">${__("To Make")}</th>
-					<th style="text-align:right">${__("Completed")}</th>
-					<th style="text-align:right">${__("Already Booked")}</th>
-					<th style="text-align:right">${__("Booking Now")}</th>
-				</tr></thead><tbody>${body}</tbody></table>`;
-
 			let lead = __("Last operation: <b>{0}</b> — {1} of {2} pieces completed across {3} drawing(s).", [
 				p.final_operation.operation, flt(p.total_completed, 3),
 				flt(p.total_planned, 3), (p.drawings || []).length]);
 
-			if (!p.can_create) {
+			let rows = (p.drawings || []).filter((d) => flt(d.ready_to_book) > 0);
+			let editable = !!p.edit_fg_stock_kg;
+
+			if (!p.can_create || !rows.length) {
 				frappe.msgprint({
 					title: __("Nothing to Book"),
 					indicator: "orange",
-					message: `<p>${lead}</p>` + table + `<p style="color:#555">${p.reason || ""}</p>`,
+					message: `<p>${lead}</p><p style="color:#555">${p.reason || ""}</p>`,
 				});
 				return;
 			}
 
 			let d = new frappe.ui.Dialog({
 				title: __("Make Final Stock Entry"),
-				size: "large",
+				size: "extra-large",
 				fields: [{ fieldtype: "HTML", fieldname: "body" }],
 				primary_action_label: __("Create Stock Entry"),
 				primary_action() {
-					d.hide();
-					_create_final_stock_entry(frm);
+					let weights = _fse_collect_weights(d, rows);
+					let over = _fse_overbooked(d, rows, weights);
+					if (!over.length) {
+						d.hide();
+						_create_final_stock_entry(frm, weights);
+						return;
+					}
+					// Booking more than was consumed is not refused -- it is usually right,
+					// and it means the order is written for too little. It is confirmed,
+					// because it also puts more finished goods in stock than the Sales
+					// Order can deliver against.
+					frappe.confirm(
+						__("These drawings book more weight than the entry consumes:") +
+							"<br><br>" + over.map((o) =>
+								`<b>${frappe.utils.escape_html(o.duno)}</b> — +${format_number(o.kg, null, 3)} Kg`
+							).join("<br>") +
+							"<br><br>" +
+							__("Update the weight in the Sales Order for correct billing. Create the stock entry anyway?"),
+						() => { d.hide(); _create_final_stock_entry(frm, weights); }
+					);
 				},
 			});
+
+			_mfx_inject_fg_theme();
+			d.$wrapper.addClass("mfx-fg-theme");
 			d.fields_dict.body.$wrapper.html(
-				`<p>${lead}</p>` + table +
-				`<p style="color:#555">${__("<b>{0} piece(s)</b> will be booked into finished goods, and only the raw material belonging to those drawings will be consumed. The rest stays at the supplier for a later entry.", [flt(p.total_ready, 3)])}</p>`
+				`<div class="mfx-fg-pane">
+					<div class="mfx-fg-head">${__("Finished Goods")}</div>
+					<p style="margin-bottom:8px">${lead}</p>`
+				+ _fse_table(rows, editable) + _fse_footnote(p, editable) +
+				`</div>`
 			);
+			_fse_bind(d, rows);
 			d.show();
 		},
 	});
 }
 
-function _create_final_stock_entry(frm) {
+// One row per drawing ready to book. The FG item is named once in the footnote rather
+// than repeated down a column -- it is the same item on every row of a job.
+function _fse_table(rows, editable) {
+	let body = rows.map(function (dw, i) {
+		let per_nos = flt(dw.cust_weight_per_nos);
+		let nos = flt(dw.ready_to_book);
+		let consumed = dw.consumed_rm_kg === null || dw.consumed_rm_kg === undefined
+			? null : flt(dw.consumed_rm_kg);
+		// Two rates side by side: what the customer says a piece weighs, which never
+		// changes here, and what is actually being booked, which is the same figure
+		// until somebody weighs it and types a different one.
+		let cell = editable
+			? `<input type="number" step="0.001" min="0" class="form-control input-xs fse-per-nos"
+			          data-idx="${i}" value="${per_nos}"
+			          style="text-align:right;height:24px;padding:2px 6px;font-size:11px;width:92px">`
+			: `<span>${format_number(per_nos, null, 2)}</span>`;
+		return `<tr data-idx="${i}">
+			<td style="padding:3px 6px">
+				<b>${frappe.utils.escape_html(String(dw.duno_mark_no || ""))}</b><br>
+				<span style="color:#888">${frappe.utils.escape_html(String(dw.customer_drawing_number || dw.drawing || ""))}</span>
+			</td>
+			<td style="padding:3px 6px;text-align:right">${flt(dw.qty_to_manufacture, 3)}</td>
+			<td style="padding:3px 6px;text-align:right">${flt(dw.completed_qty_nos, 3)}</td>
+			<td style="padding:3px 6px;text-align:right">${flt(dw.already_booked, 3)}</td>
+			<td style="padding:3px 6px;text-align:right;font-weight:600">${nos}</td>
+			<td style="padding:3px 6px;text-align:right;color:#555">${format_number(per_nos, null, 2)}</td>
+			<td style="padding:3px 6px;text-align:right">${cell}</td>
+			<td style="padding:3px 6px;text-align:right" class="fse-consumed">${
+				consumed === null ? "—" : format_number(consumed, null, 3)}</td>
+			<td style="padding:3px 6px;text-align:right;font-weight:600" class="fse-fgtotal"></td>
+			<td style="padding:3px 6px;text-align:right" class="fse-loss"></td>
+		</tr>`;
+	}).join("");
+
+	return `<table class="table table-bordered table-condensed" style="font-size:11px;margin:8px 0">
+		<thead><tr>
+			<th>${__("DUNO / Drawing")}</th>
+			<th style="text-align:right">${__("To Make")}</th>
+			<th style="text-align:right">${__("Completed")}</th>
+			<th style="text-align:right">${__("Already Booked")}</th>
+			<th style="text-align:right">${__("Booking Now")}</th>
+			<th style="text-align:right">${__("Cust Wt per Nos")}</th>
+			<th style="text-align:right">${__("FG Wt per Nos")}</th>
+			<th style="text-align:right">${__("Consumed RM Wt")}</th>
+			<th style="text-align:right">${__("FG Total wt")}</th>
+			<th style="text-align:right">${__("Loss")}</th>
+		</tr></thead>
+		<tbody>${body}</tbody>
+		<tfoot><tr style="font-weight:600">
+			<td style="padding:3px 6px">${__("Total")}</td>
+			<td colspan="3"></td>
+			<td style="padding:3px 6px;text-align:right" class="fse-t-nos"></td>
+			<td colspan="2"></td>
+			<td style="padding:3px 6px;text-align:right" class="fse-t-consumed"></td>
+			<td style="padding:3px 6px;text-align:right" class="fse-t-fgtotal"></td>
+			<td style="padding:3px 6px;text-align:right" class="fse-t-loss"></td>
+		</tr></tfoot>
+	</table>`;
+}
+
+function _fse_footnote(p, editable) {
+	let note = __("On submission the raw material is consumed from the supplier warehouse and converted into finished goods. Where the finished weight is lower, the difference is recorded as process loss and shown in the report.");
+	let edit = editable
+		? __("Cust Wt per Nos is editable here — enter the weighed figure. This is the only place it can be set; on the stock entry itself it is read-only.")
+		: __("Cust Wt per Nos is read-only: switch on <b>Edit FG Stock Kg</b> in Manufyxinvenza Settings to enter a weighed figure.");
+	return `<p class="mfx-fg-note">${__("<b>{0} piece(s)</b> will be booked into finished goods, and only the raw material belonging to those drawings will be consumed. The rest stays at the supplier for a later entry.", [flt(p.total_ready, 3)])}</p>
+		<p class="mfx-fg-note">${note}</p>
+		<p class="mfx-fg-note-dim">${edit}</p>`;
+}
+
+// Recalculated on every keystroke: FG Total = Cust Wt per Nos x Booking Now, and the
+// Loss beside it is the consumed steel less that figure.
+function _fse_bind(d, rows) {
+	let $w = d.fields_dict.body.$wrapper;
+	let paint = function () {
+		let t_nos = 0, t_consumed = 0, t_fg = 0, t_loss = 0, any_consumed = false;
+		rows.forEach(function (dw, i) {
+			let $tr = $w.find(`tr[data-idx="${i}"]`);
+			let per_nos = flt($tr.find(".fse-per-nos").val() || dw.cust_weight_per_nos);
+			let nos = flt(dw.ready_to_book);
+			let fg = flt(per_nos * nos, 3);
+			let consumed = dw.consumed_rm_kg === null || dw.consumed_rm_kg === undefined
+				? null : flt(dw.consumed_rm_kg);
+
+			$tr.find(".fse-fgtotal").text(format_number(fg, null, 3));
+			t_nos += nos;
+			t_fg += fg;
+
+			if (consumed === null) {
+				$tr.find(".fse-loss").text("—").css("color", "#999");
+				return;
+			}
+			any_consumed = true;
+			t_consumed += consumed;
+			let loss = flt(consumed - fg, 3);
+			t_loss += loss;
+			if (loss > 0.0005) {
+				$tr.find(".fse-loss").text(format_number(loss, null, 3)).css("color", "#a06000");
+			} else if (loss < -0.0005) {
+				$tr.find(".fse-loss")
+					.html(`+${format_number(-loss, null, 3)}<br><span style="font-size:10px">${__("update Sales Order")}</span>`)
+					.css("color", "#c0392b");
+			} else {
+				$tr.find(".fse-loss").text("—").css("color", "#999");
+			}
+		});
+		$w.find(".fse-t-nos").text(flt(t_nos, 3));
+		$w.find(".fse-t-consumed").text(any_consumed ? format_number(t_consumed, null, 3) : "—");
+		$w.find(".fse-t-fgtotal").text(format_number(t_fg, null, 3));
+		$w.find(".fse-t-loss")
+			.text(any_consumed ? format_number(t_loss, null, 3) : "—")
+			.css("color", t_loss < -0.0005 ? "#c0392b" : (t_loss > 0.0005 ? "#a06000" : "#999"));
+	};
+	$w.on("input change", ".fse-per-nos", paint);
+	paint();
+}
+
+function _fse_collect_weights(d, rows) {
+	let $w = d.fields_dict.body.$wrapper;
+	let out = {};
+	rows.forEach(function (dw, i) {
+		let v = flt($w.find(`tr[data-idx="${i}"] .fse-per-nos`).val() || dw.cust_weight_per_nos);
+		if (v > 0) out[dw.drawing] = v;
+	});
+	return out;
+}
+
+// Drawings booking more weight than the entry consumes for them.
+function _fse_overbooked(d, rows, weights) {
+	let out = [];
+	rows.forEach(function (dw) {
+		let consumed = dw.consumed_rm_kg;
+		if (consumed === null || consumed === undefined) return;
+		let fg = flt(flt(weights[dw.drawing] || dw.cust_weight_per_nos) * flt(dw.ready_to_book), 3);
+		let diff = flt(flt(consumed) - fg, 3);
+		if (diff < -0.0005) out.push({ duno: dw.duno_mark_no || dw.drawing, kg: -diff });
+	});
+	return out;
+}
+
+function _create_final_stock_entry(frm, weights) {
 	frappe.call({
 		method: "manufyxinvenzaerp.subcontracting_management.subcontracting.create_finished_goods_entry",
-		args: { sco_name: frm.doc.subcontracting_order },
+		args: {
+			sco_name: frm.doc.subcontracting_order,
+			fg_weights_json: JSON.stringify(weights || {}),
+		},
 		freeze: true,
 		freeze_message: __("Creating Final Stock Entry…"),
 		callback: function (r) {
@@ -254,9 +411,9 @@ function _create_final_stock_entry(frm) {
 			let se_name = r.message.name;
 			let already = r.message.already_existed;
 			frappe.msgprint({
-				title: already ? __("Final Stock Entry Already Exists") : __("Final Stock Entry Created"),
+				title: already ? __("Final Stock Entry Updated") : __("Final Stock Entry Created"),
 				message: (already
-						? __("A draft Final Stock Entry already exists for this Job Work Order. ")
+						? __("A draft Final Stock Entry already existed for this Job Work Order and has been rebuilt with these figures. ")
 						: "")
 					+ __("Review and submit the stock entry: ") +
 					'<a href="/app/stock-entry/' + encodeURIComponent(se_name) + '">' + se_name + "</a>",
@@ -976,6 +1133,39 @@ body.mip-transfer-alerts-front #alert-container { z-index: 1060; }
 function _mip_inject_theme() {
 	if (document.getElementById("mip-transfer-theme-css")) return;
 	$("<style id='mip-transfer-theme-css'>").text(MIP_THEME_CSS).appendTo(document.head);
+}
+
+// The Final Stock Entry popup, themed the same way the transfer one is but in blue --
+// a different colour for a different step, so the two are never mistaken for each other
+// at a glance. Same lightness ladder as MIP_THEME_CSS, sky in place of lime.
+var MFX_FG_THEME_CSS = `
+.mfx-fg-theme .mfx-fg-pane {
+	background:#e0f2fe; border:1px solid #bae6fd; border-radius:10px; padding:14px;
+}
+.mfx-fg-theme .mfx-fg-head {
+	display:inline-block; padding:7px 18px; margin-bottom:10px;
+	font-size:12px; font-weight:600; border-radius:8px;
+	background:#0284c7; color:#f0f9ff; border:1px solid #0284c7;
+}
+.mfx-fg-theme .mfx-fg-pane table { margin-bottom:10px; }
+.mfx-fg-theme .mfx-fg-pane table tbody td { background:#ffffff; }
+.mfx-fg-theme .mfx-fg-pane table thead th {
+	background:#f0f9ff; color:#075985; border-bottom:2px solid #bae6fd;
+}
+.mfx-fg-theme .mfx-fg-pane table tfoot td { background:#bae6fd; color:#075985; }
+.mfx-fg-theme .mfx-fg-note { color:#075985; font-size:11px; margin-bottom:4px; }
+.mfx-fg-theme .mfx-fg-note-dim { color:#0369a1; font-size:11px; opacity:.85; }
+.mfx-fg-theme input.fse-per-nos {
+	border:1px solid #7dd3fc; background:#f0f9ff; border-radius:4px;
+}
+.mfx-fg-theme input.fse-per-nos:focus {
+	border-color:#0284c7; background:#ffffff; box-shadow:0 0 0 2px rgba(2,132,199,.15);
+}
+`;
+
+function _mfx_inject_fg_theme() {
+	if (document.getElementById("mfx-fg-theme-css")) return;
+	$("<style id='mfx-fg-theme-css'>").text(MFX_FG_THEME_CSS).appendTo(document.head);
 }
 
 function _show_mip_transfer_entry_created(frm, stock_entry_name) {
@@ -2721,6 +2911,9 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 	// Only batches with free stock in this plan's source warehouse are offered. A
 	// zero-stock batch is precisely the case downstream validation does not catch.
 	let candidates = [];
+	// Candidates arrive one call after the line is picked. Without this the row renders
+	// "nothing to reassign to" for the moment in between, which is a lie on every line.
+	let candidatesLoaded = false;
 
 	let d = new frappe.ui.Dialog({
 		title: __("Update Batch — Consolidate Items"),
@@ -2794,7 +2987,14 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 			_armPreview();
 			_render_lines();
 			d.fields_dict.result_html.$wrapper.empty();
-			targets.forEach((t) => { delete t._info; });
+			// A fresh row, not the last line's. The batches offered are this item's, so
+			// carrying the previous selection over left a plate's 12,000 x 2,500 and its
+			// free weight sitting on an ISMB line -- and the picker, which matches what
+			// is typed, then had nothing to show against a batch from another item.
+			targets = [{}];
+			candidates = [];
+			candidatesLoaded = false;
+			_render_targets();
 			frappe.call({
 				method: _MIP_CB + "get_consolidate_line_context",
 				args: { mip_name: frm.doc.name, consolidate_row_name: selected.name },
@@ -2803,6 +3003,7 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 					lineWarehouse = c.warehouse || "";
 					if (!lineWarehouse) {
 						candidates = [];
+						candidatesLoaded = true;
 						_render_targets();
 						frappe.show_alert({
 							message: (c.warehouses || []).length > 1
@@ -2816,7 +3017,11 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 					frappe.call({
 						method: _MIP_CB + "get_candidate_batches",
 						args: { item_code: c.item_code, warehouse: lineWarehouse },
-						callback(r) { candidates = r.message || []; _render_targets(); },
+						callback(r) {
+							candidates = r.message || [];
+							candidatesLoaded = true;
+							_render_targets();
+						},
 					});
 				},
 			});
@@ -2833,9 +3038,7 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 		let th = "padding:6px 8px;background:#f4f5f7;border-bottom:2px solid #d1d8dd;font-weight:600;font-size:11px;white-space:nowrap;";
 		let rows = targets.map(function (t, i) {
 			return `<tr data-i="${i}">
-				<td style="padding:4px 6px"><input class="form-control input-xs _cb_batch" style="width:230px"
-					list="_cb_batch_options" autocomplete="off"
-					value="${frappe.utils.escape_html(t.batch_no || "")}" placeholder="${__("Batch")}"></td>
+				<td style="padding:4px 6px"><div class="_cb_batch_mount" data-i="${i}" style="width:260px"></div></td>
 				<td style="padding:4px 6px"><input type="text" class="form-control input-xs text-right _cb_len" readonly tabindex="-1"
 					style="width:95px;background:#f4f5f7;color:#495057;cursor:default" value="${t.length ? format_number(t.length, null, 3) : ""}"></td>
 				<td style="padding:4px 6px"><input type="text" class="form-control input-xs text-right _cb_wid" readonly tabindex="-1"
@@ -2850,27 +3053,63 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 
 		d.fields_dict.targets_html.$wrapper.html(
 			`<div style="font-size:12px;color:#6c757d;margin-bottom:6px">`
-			+ __("Length and Width are the batch's own size and cannot be changed. Enter Pieces — Pieces × the batch's piece weight is how much of the batch this line may take.")
+			+ __("Any batch with free stock is listed, whatever item or size it holds — send one ISMB800 in place of four ISMB200 if that is the plan. Length and Width are the batch's own and cannot be changed. Enter Pieces — Pieces × the batch's piece weight is how much of the batch this line may take.")
 			+ `</div>
 			<table style="border-collapse:collapse;font-size:12px"><thead><tr>
 				<th style="${th}">${__("Batch")}</th><th style="${th}">${__("Length (mm)")}</th>
 				<th style="${th}">${__("Width (mm)")}</th><th style="${th}">${__("Pieces")}</th>
 				<th style="${th}">${__("Weight")}</th><th style="${th}"></th>
 			</tr></thead><tbody>${rows}</tbody></table>
-			<button class="btn btn-xs btn-default _cb_add" style="margin-top:8px">+ ${__("Add batch")}</button>
-			<datalist id="_cb_batch_options">${(candidates || []).map((c) =>
-				`<option value="${frappe.utils.escape_html(c.batch_no)}">`
-				+ __("{0} Kg free · {1}×{2}", [format_number(c.free_kg, null, 3), c.length, c.width])
-				+ `</option>`).join("")}</datalist>`
+			<button class="btn btn-xs btn-default _cb_add" style="margin-top:8px">+ ${__("Add batch")}</button>`
+			+ ((candidates || []).length || !candidatesLoaded ? "" :
+				`<div style="color:#c0392b;font-size:11px;margin-top:8px">`
+				+ __("No batch of any item has free stock in {0}. There is nothing to reassign this line to.",
+					[frappe.utils.escape_html(lineWarehouse || "")])
+				+ `</div>`)
+			+ ((candidates || []).length === 1 && candidates[0].batch_no === selected.batch_no ?
+				`<div style="color:#a06000;font-size:11px;margin-top:8px">`
+				+ __("{0} is the only batch with free stock in {1}, and this line is already on it.",
+					[frappe.utils.escape_html(candidates[0].batch_no),
+					 frappe.utils.escape_html(lineWarehouse || "")])
+				+ `</div>` : "")
 		);
 
 		let $w = d.fields_dict.targets_html.$wrapper;
-		$w.find("._cb_batch").on("change", function () {
-			let i = $(this).closest("tr").data("i");
-			targets[i].batch_no = $(this).val();
-			targets[i].length = targets[i].width = 0;
-			_armPreview();
-			_price(i);
+
+		// A real Link control, not a <select>: the same searchable picker used
+		// everywhere else in the desk, because 48 batches is a list you type into
+		// rather than scroll. Its query is consolidate_batch_query, which narrows on
+		// batch name or item code and shows item, free Kg and size beside each hit.
+		$w.find("._cb_batch_mount").each(function () {
+			let $mount = $(this);
+			let i = $mount.data("i");
+			let ctrl = frappe.ui.form.make_control({
+				parent: $mount,
+				render_input: true,
+				df: {
+					fieldtype: "Link",
+					options: "Batch",
+					fieldname: "_cb_batch_" + i,
+					placeholder: __("Search batch or item…"),
+					get_query() {
+						return {
+							query: _MIP_CB + "consolidate_batch_query",
+							filters: { warehouse: lineWarehouse, item_code: selected.item_code },
+						};
+					},
+					onchange() {
+						let v = ctrl.get_value() || "";
+						if (v === (targets[i].batch_no || "")) return;
+						targets[i].batch_no = v;
+						targets[i].length = targets[i].width = 0;
+						_armPreview();
+						_price(i);
+					},
+				},
+			});
+			ctrl.$wrapper.find(".control-label, .help-box").remove();
+			ctrl.set_value(targets[i].batch_no || "");
+			targets[i]._ctrl = ctrl;
 		});
 		$w.find("._cb_pcs").on("change", function () {
 			let $tr = $(this).closest("tr"), i = $tr.data("i");
@@ -2968,7 +3207,9 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 			return `<tr>
 				<td style="${td}text-align:right;color:#6c757d">${m.idx}</td>
 				<td style="${td}">${esc(m.duno_mark_no || "")}</td>
+				<td style="${td}color:#6c757d">${esc(m.customer_drawing_number || "")}</td>
 				<td style="${td}color:#6c757d">${esc(m.material_planning || "")}</td>
+				<td style="${td}text-align:right;color:#6c757d">${m.mp_idx === null || m.mp_idx === undefined ? "—" : m.mp_idx}</td>
 				<td style="${td}">${esc(m.batch_no || "")}</td>
 				<td style="${td}">${m.is_reserved
 					? `<span style="color:#1a7f4b;font-weight:600">${__("Reserved")}</span>`
@@ -3011,9 +3252,11 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 			<div style="max-height:40vh;overflow:auto;border:1px solid #e9ecef;border-radius:4px">
 			<table style="width:100%;border-collapse:collapse;font-size:12px">
 			<thead style="position:sticky;top:0;z-index:1"><tr>
-				<th style="${th};text-align:right">${__("Row")}</th>
+				<th style="${th};text-align:right">${__("MIP Row")}</th>
 				<th style="${th}">${__("DUNO/Mark")}</th>
+				<th style="${th}">${__("Customer Drawing")}</th>
 				<th style="${th}">${__("Material Planning")}</th>
+				<th style="${th};text-align:right">${__("Plan Row")}</th>
 				<th style="${th}">${__("Current Batch")}</th>
 				<th style="${th}">${__("Status")}</th>
 				<th style="${th};text-align:right">${__("Reserved Kg")}</th>
@@ -3130,9 +3373,11 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 				+ __("Rows on this line") + `</div>
 				<div style="max-height:24vh;overflow:auto;border:1px solid #e9ecef;border-radius:4px;margin-top:4px">
 				<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;z-index:1"><tr>
-				<th style="${th};text-align:right">${__("Row")}</th>
+				<th style="${th};text-align:right">${__("MIP Row")}</th>
 				<th style="${th}">${__("DUNO/Mark")}</th>
+				<th style="${th}">${__("Customer Drawing")}</th>
 				<th style="${th}">${__("Material Planning")}</th>
+				<th style="${th};text-align:right">${__("Plan Row")}</th>
 				<th style="${th};text-align:right">${__("Kg")}</th>
 				<th style="${th}">${__("Goes to")}</th></tr></thead><tbody>`
 				+ (res.members).map(function (m) {
@@ -3143,7 +3388,9 @@ function _show_consolidate_update_batch_dialog(frm, preselect_row_name) {
 					return `<tr style="${unplaced ? "background:#fef2f2" : ""}">
 						<td style="padding:4px 8px;text-align:right;color:#6c757d">${m.idx}</td>
 						<td style="padding:4px 8px">${frappe.utils.escape_html(m.duno_mark_no || "")}</td>
+						<td style="padding:4px 8px;color:#6c757d">${frappe.utils.escape_html(m.customer_drawing_number || "")}</td>
 						<td style="padding:4px 8px;color:#6c757d">${frappe.utils.escape_html(m.material_planning || "")}</td>
+						<td style="padding:4px 8px;text-align:right;color:#6c757d">${m.mp_idx === null || m.mp_idx === undefined ? "—" : m.mp_idx}</td>
 						<td style="padding:4px 8px;text-align:right">${format_number(flt(m.target_kg), null, 3)}</td>
 						<td style="padding:4px 8px">${multi || unplaced ? dest : `<span style="color:#6c757d">${dest}</span>`}</td>
 					</tr>`;

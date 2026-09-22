@@ -14,13 +14,16 @@ This test writes real rows and commits, so it must leave the row it borrows exac
 as it found it. It used to take the first consolidate row on the site and finish by
 clearing its draft -- which, on live data, destroyed a genuine "Save and Close" a user
 had parked (MIP-2026-00005 / PLATE10 lost one on 11 Sep 2026 and again on 14 Sep). It
-now prefers a row with no draft, snapshots the draft fields first, and puts them back
-at the end whatever happens.
+now prefers a row with no draft, snapshots the draft fields of EVERY consolidated row on
+that plan, and puts them all back at the end whatever happens -- the whole-popup clear
+exercised below reaches the borrowed row's siblings too.
 
 Run: bench --site manufact execute manufyxinvenzaerp.tests.verify_transfer_draft.run
 """
 
+import inspect
 import json
+
 import frappe
 from frappe.utils import flt
 
@@ -62,11 +65,11 @@ def run():
     key = "%s|%s|%s" % (row.item_code, row.batch_no or "", 1 if row.cnc_process else 0)
     print("plan %s, row %s / %s" % (mip_name, row.item_code, row.batch_no))
 
-    original = {f: row.get(f) for f in _CONSOLIDATE_DRAFT_FIELDS}
+    snapshot = _snapshot_drafts(mip_name, _CONSOLIDATE_DRAFT_FIELDS)
     try:
         _exercise(mip_name, mip, row, key, save_transfer_draft, get_transfer_draft, _clear_transfer_draft)
     finally:
-        _restore_draft(mip_name, row, original)
+        _restore_drafts(mip_name, snapshot)
 
     print()
     print("=== SUMMARY ===")
@@ -76,24 +79,46 @@ def run():
         print("%d of %d CHECKS FAILED" % (checks.count(False), len(checks)))
 
 
-def _restore_draft(mip_name, row, original):
-    """Put the borrowed row's draft back exactly -- including its original save time.
+def _snapshot_drafts(mip_name, draft_fields):
+    """Every consolidated row's draft on this plan, keyed by item+batch+leg.
 
-    The plan's saves above rebuild the consolidate table and rename every row, so the
-    row is found again by its key rather than by name.
+    The whole plan, not just the row being borrowed: clearing a popup's draft now
+    reaches every row of that popup, so a genuine "Save and Close" parked on a
+    neighbouring row is within this test's reach and has to be put back too.
     """
-    current = frappe.get_all(
-        "Material Issue Plan Consolidate Item",
-        filters={"parent": mip_name, "item_code": row.item_code,
-                 "batch_no": row.batch_no, "cnc_process": 1 if row.cnc_process else 0},
-        pluck="name",
+    rows = frappe.get_all(
+        "Material Issue Plan Consolidate Item", filters={"parent": mip_name},
+        fields=["item_code", "batch_no", "cnc_process"] + list(draft_fields),
     )
-    for name in current:
-        frappe.db.set_value("Material Issue Plan Consolidate Item", name, original,
-                            update_modified=False)
+    return {
+        (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0):
+            {f: r.get(f) for f in draft_fields}
+        for r in rows
+    }
+
+
+def _restore_drafts(mip_name, snapshot):
+    """Put every draft back exactly -- including its original save time.
+
+    The plan's saves above rebuild the consolidate table and rename every row, so rows
+    are found again by their key rather than by name.
+    """
+    held = 0
+    for (item_code, batch_no, cnc), original in snapshot.items():
+        for name in frappe.get_all(
+            "Material Issue Plan Consolidate Item",
+            filters={"parent": mip_name, "item_code": item_code,
+                     "batch_no": batch_no, "cnc_process": cnc},
+            pluck="name",
+        ):
+            frappe.db.set_value("Material Issue Plan Consolidate Item", name, original,
+                                update_modified=False)
+        if original.get("draft_saved_on"):
+            held += 1
     frappe.db.commit()
     print()
-    print("  (restored the borrowed row's draft: saved_on=%s)" % (original.get("draft_saved_on") or "none"))
+    print("  (restored %d row(s) on %s, %d of which held a real draft)"
+          % (len(snapshot), mip_name, held))
 
 
 def _exercise(mip_name, mip, row, key, save_transfer_draft, get_transfer_draft, _clear_transfer_draft):
@@ -156,3 +181,96 @@ def _exercise(mip_name, mip, row, key, save_transfer_draft, get_transfer_draft, 
     mip.save(ignore_permissions=True)
     frappe.db.commit()
     check("still gone", key in get_transfer_draft(mip_name), False)
+
+    print()
+    print("=== a draft belongs to the popup it was typed in ===")
+    # All three popups park against these same rows, and the CNC-to-supplier popup
+    # keys its lines exactly as the RM-to-supplier one does (cnc_process is 0 in
+    # both). So a "1 whole plate" parked against the stock sitting in stores was
+    # restored into the CNC popup, which is looking at the far smaller amount that
+    # has actually reached the CNC warehouse -- and it opened refusing to transfer,
+    # "Not Enough Stock", on a plan nobody had touched.
+    one_row = [{"item_code": row.item_code, "batch_no": row.batch_no,
+                "cnc_process": 1 if row.cnc_process else 0, "custom_sec_qty": 7}]
+    save_transfer_draft(mip_name, json.dumps(one_row), None, "cnc_forward")
+    frappe.db.commit()
+    check("the popup that saved it gets it back",
+          flt((get_transfer_draft(mip_name, "cnc_forward").get(key) or {}).get("draft_sec_qty")), 7.0)
+    check("the RM-to-supplier popup does not see it",
+          key in get_transfer_draft(mip_name, "primary"), False)
+    check("nor does the to-CNC popup", key in get_transfer_draft(mip_name, "cnc"), False)
+    check("and asking without a type means the RM-to-supplier popup",
+          key in get_transfer_draft(mip_name), False)
+
+    print()
+    print("=== and one popup's transfer does not clear another's draft ===")
+    cleared = [{"item_code": row.item_code, "batch_no": row.batch_no,
+                "cnc_process": 1 if row.cnc_process else 0}]
+    _clear_transfer_draft(mip_name, cleared, "primary")
+    frappe.db.commit()
+    check("the cnc_forward draft survives a primary transfer",
+          flt((get_transfer_draft(mip_name, "cnc_forward").get(key) or {}).get("draft_sec_qty")), 7.0)
+    _clear_transfer_draft(mip_name, cleared, "cnc_forward")
+    frappe.db.commit()
+    check("its own transfer does clear it",
+          key in get_transfer_draft(mip_name, "cnc_forward"), False)
+
+    print()
+    print("=== a transfer clears the WHOLE popup, not only the rows it sent ===")
+    # Every transfer route passes items=None. Clearing only the rows actually sent left
+    # two wrong things behind. The off-cut is stated once per ITEM and parked on every
+    # batch row of that item, so sending one batch of a two-batch item left the other
+    # row still holding an off-cut already booked into excess_return_items -- pressing
+    # Transfer again would book it a second time. And a Sec Nos parked against a row
+    # that was deselected describes a transfer nobody made, yet came back on the next
+    # open looking current. After a transfer the popup opens empty.
+    siblings = [
+        r for r in frappe.get_all(
+            "Material Issue Plan Consolidate Item",
+            filters={"parent": mip_name, "batch_no": ["!=", ""]},
+            fields=["item_code", "batch_no", "cnc_process"])
+        if "%s|%s|%s" % (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0) != key
+    ]
+    if not siblings:
+        print("  SKIP this plan has only one consolidated row with a batch")
+    else:
+        sib = siblings[0]
+        skey = "%s|%s|%s" % (sib.item_code, sib.batch_no or "", 1 if sib.cnc_process else 0)
+        both = [{"item_code": row.item_code, "batch_no": row.batch_no,
+                 "cnc_process": 1 if row.cnc_process else 0, "custom_sec_qty": 3},
+                {"item_code": sib.item_code, "batch_no": sib.batch_no,
+                 "cnc_process": 1 if sib.cnc_process else 0, "custom_sec_qty": 4}]
+        check("both rows parked", save_transfer_draft(mip_name, json.dumps(both), None, "cnc").get("saved"), 2)
+        frappe.db.commit()
+        # A transfer that sent ONLY the borrowed row.
+        _clear_transfer_draft(mip_name, None, "cnc")
+        frappe.db.commit()
+        after = get_transfer_draft(mip_name, "cnc")
+        check("the row that was sent is clear", key in after, False)
+        check("and so is the row that was not", skey in after, False)
+
+        print()
+        print("=== ...but still only its own popup ===")
+        save_transfer_draft(mip_name, json.dumps(both[:1]), None, "cnc")
+        save_transfer_draft(mip_name, json.dumps(both[1:]), None, "cnc_forward")
+        frappe.db.commit()
+        _clear_transfer_draft(mip_name, None, "cnc")
+        frappe.db.commit()
+        check("the to-CNC draft went", key in get_transfer_draft(mip_name, "cnc"), False)
+        check("the CNC-to-supplier draft stayed",
+              flt((get_transfer_draft(mip_name, "cnc_forward").get(skey) or {}).get("draft_sec_qty")), 4.0)
+        _clear_transfer_draft(mip_name, None, "cnc_forward")
+        frappe.db.commit()
+
+    print()
+    print("=== every transfer route actually calls it ===")
+    # The popup's "Verify and Transfer" runs create_mip_partial_transfer, NOT
+    # create_mip_transfer_entry -- which is why the parked state outlived every
+    # transfer ever made from the dialog until this call was added.
+    from manufyxinvenzaerp.subcontracting_management import material_issue_plan_transfer as mipt
+    for fn, ttype in ((mipt.create_mip_partial_transfer, 'transfer_type or "primary"'),
+                      (mipt.create_mip_transfer_entry, '"primary"'),
+                      (mipt.create_mip_cnc_partial_forward, '"cnc_forward"')):
+        src = inspect.getsource(fn)
+        check("%s clears its popup" % fn.__name__,
+              "_clear_transfer_draft(mip.name, None, %s)" % ttype in src, True)

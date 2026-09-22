@@ -74,7 +74,8 @@
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 2
   },
   {
    "fetch_from": "item_code.custom_material_spec",
@@ -121,7 +122,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "DUNO/Mark No",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "customer_drawing_number",
@@ -159,7 +161,8 @@
    "in_list_view": 1,
    "label": "Reqd Kg",
    "read_only": 1,
-   "description": "The original required weight for this raw material, straight from Material Planning's own required qty \u2014 fixed regardless of which batch is currently mapped/reassigned against it (unlike Reqd Qty, which reflects whatever batch is currently reserved and changes on every reassignment)."
+   "description": "The original required weight for this raw material, straight from Material Planning's own required qty \u2014 fixed regardless of which batch is currently mapped/reassigned against it (unlike Reqd Qty, which reflects whatever batch is currently reserved and changes on every reassignment).",
+   "columns": 1
   },
   {
    "fieldname": "section_batch_details",
@@ -173,7 +176,8 @@
    "in_list_view": 1,
    "label": "Planned Item (Alternate)",
    "options": "Item",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 1
   },
   {
    "fieldname": "batch_no",
@@ -181,7 +185,8 @@
    "in_list_view": 1,
    "label": "Batch",
    "options": "Batch",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 2
   },
   {
    "description": "Synced from the batch's own Batch Remarks on every save (client change request Phase 6.3).",
@@ -205,7 +210,6 @@
   {
    "fieldname": "length",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Length (mm)",
    "read_only": 1
   },
@@ -235,7 +239,6 @@
   {
    "fieldname": "sec_qty",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Sec Qty",
    "read_only": 1
   },
@@ -252,7 +255,8 @@
    "in_list_view": 1,
    "label": "Reqd Qty",
    "read_only": 1,
-   "description": "Weight of the batch actually mapped/reserved against this requirement \u2014 required to transfer."
+   "description": "Weight of the batch actually mapped/reserved against this requirement \u2014 required to transfer.",
+   "columns": 1
   },
   {
    "fetch_from": "item_code.stock_uom",
@@ -284,7 +288,6 @@
   {
    "fieldname": "material_planning",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Material Planning",
    "options": "Material Planning",
    "read_only": 1
@@ -297,7 +300,6 @@
   {
    "fieldname": "transferred_qty",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Issued Qty",
    "read_only": 1,
    "description": "Cumulative qty transferred so far across all Stock Entries issued from this plan."
@@ -312,12 +314,12 @@
    "in_list_view": 1,
    "label": "Excess Qty",
    "read_only": 1,
-   "description": "Reqd Qty minus the drawing's planned raw material weight \u2014 the surplus this mapped batch carries beyond what the drawing actually needs."
+   "description": "Reqd Qty minus the drawing's planned raw material weight \u2014 the surplus this mapped batch carries beyond what the drawing actually needs.",
+   "columns": 1
   },
   {
    "fieldname": "transfer_excess_kg",
    "fieldtype": "Float",
-   "in_list_view": 1,
    "label": "Transfer Excess Kg",
    "read_only": 1,
    "description": "Surplus created by rounding this row's Sec Nos up to whole pieces at transfer time \u2014 the difference between the whole pieces actually issued and the fractional Sec Nos planned. Accumulates across partial transfers, and is booked into the Excess Material Items table to be returned. Separate from Excess Qty, which measures the mapped batch against the drawing instead."
@@ -338,7 +340,6 @@
   {
    "fieldname": "is_reserved",
    "fieldtype": "Check",
-   "in_list_view": 1,
    "label": "Reserved",
    "read_only": 1
   },
@@ -349,7 +350,6 @@
   {
    "fieldname": "is_unavailable",
    "fieldtype": "Check",
-   "in_list_view": 1,
    "label": "Unavailable / Pending Purchase",
    "read_only": 1
   },
@@ -361,7 +361,9 @@
    "fieldname": "cnc_process",
    "fieldtype": "Check",
    "label": "CNC Process",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "section_cut_sheet",

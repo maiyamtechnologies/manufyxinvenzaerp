@@ -282,6 +282,43 @@ manufyxinvenzaerp/
   `add_custom_button` (the lookup is by label), and paint the **group** rather than the
   button when one was added into a group — `frm.custom_buttons` holds the hidden
   dropdown item, not the visible toggle.
+- **Material Spec and Material Grade are typed on the Item and NOWHERE else.** Two Link
+  masters (`Material Spec`, `Material Grade`, both in `manufyxinvenzaerp/doctype/`), editable
+  on the Item, and mirrored onto **25 child tables** as `Data + fetch_from + read_only`.
+  No row builder sets them and none should: `_validate_links` (frappe
+  `base_document.py`) fills every `fetch_from` field on parent AND child rows on insert
+  and on save, which is why `refresh_mip_raw_materials`, `get_raw_materials`,
+  `_build_mapping_row` and the transfer builders needed no change at all. Three places
+  do NOT get the fetch and must carry the value by hand: `so_drawing_import`'s raw-SQL
+  staging insert (its `t2_fields`/`t2_values` are **positional** — add to both at the
+  same index), anything using `frappe.db.set_value`, and rows already on a SUBMITTED
+  document, which keep whatever they were raised with. Do NOT add these fieldnames to
+  `CUSTOM_FIELDS` in rfq/sq or to `_copy_from_po_item`'s list: those default their
+  blank-check to the same list, the fetch has already populated them by then, and the
+  dimension copy-forward would silently stop.
+- **`Sales Order Drawing Raw Material.grade` is the sheet's, not the Item's.** It is the
+  one grade field with no `fetch_from` — the customer's sheet fills it, and
+  `_check_raw_material_grades` refuses a value that is not in the master (blank is legal),
+  because the staging insert bypasses Link validation. `setup.seed_material_grades` sweeps
+  `SELECT DISTINCT grade` into the master on every migrate; never hard-code a grade list,
+  or a site with a grade you have not heard of gets an orphan that fails on the next save
+  of that Sales Order rather than at migrate time.
+- **A transfer-popup draft belongs to the popup that typed it.** All three popups park on
+  the same Consolidate Items rows, and CNC-to-supplier keys its lines exactly as
+  RM-to-supplier does (`cnc_process` is 0 in both), so drafts crossed over: a whole plate
+  parked against stores came back on the CNC popup and opened it refusing to transfer.
+  `draft_transfer_type` ("primary"/"cnc"/"cnc_forward") scopes both the restore and the
+  clear. A new popup must pass its own type to `save_transfer_draft`, `get_transfer_draft`
+  and `_clear_transfer_draft`.
+- **One requirement is identified by Item No, never by dimensions.** A plan row carries the
+  BATCH's size, not the cut size, so a dimensional key splits one requirement filled from
+  two batches into two — each then claiming the whole requirement's weight. `requirement_key`
+  keys on `(sales_order, customer_drawing_number, item_number, item_code)` and
+  `requirement_weight_shares` divides the weight in proportion to what each row carries.
+  Note `item_code`, not `planned_item`: an alternate item issued against a requirement is
+  still that one requirement. With no Item No the stamped weight itself is the tie-breaker.
+  `drawing_planned_weight` on a row stays the WHOLE requirement's weight — `_consumption_for_completed`
+  reads it as a consumption cap, so changing that meaning moves the ledger.
 - **No scheduler_events** are registered (all commented out in hooks.py).
 
 ## This bench does not hot-reload
