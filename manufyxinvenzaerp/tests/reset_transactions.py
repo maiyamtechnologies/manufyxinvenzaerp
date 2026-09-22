@@ -105,12 +105,16 @@ def run(confirm=None):
 		_delete_empty_batches(keep)
 		_rebuild_bins()
 		_delete_test_companies()
+		# The companies are only part of the set -- see _delete_test_fixtures for why
+		# removing them alone leaves `bench run-tests` unable to rebuild.
+		_delete_test_fixtures()
 		frappe.db.commit()
 		print("\nDone. Masters and %s are all that is left." % KEEP_STOCK_ENTRY)
 	else:
 		_report_orphans(keep)
 		companies = _test_companies()
 		print("  %-26s %4d  %s" % ("_Test companies", len(companies), companies))
+		print("  %-26s %4d" % ("test fixtures", len(_test_fixtures())))
 
 
 def _things_to_keep():
@@ -253,6 +257,47 @@ def _rebuild_bins():
 			}, update_modified=False)
 			fixed += 1
 	print("  %-26s %4d corrected, %d removed" % ("Bin", fixed, removed))
+
+
+def _test_fixtures():
+	"""Every india_compliance test record still on the site, named from its own
+	test_records.json rather than guessed by pattern."""
+	try:
+		recs = frappe.get_file_json(
+			frappe.get_app_path("india_compliance", "tests", "test_records.json"))
+	except Exception:
+		return []
+	out = []
+	for doctype, rows in recs.items():
+		for r in rows:
+			name = (r.get("name") or r.get("%s_name" % frappe.scrub(doctype))
+					or r.get("company_name"))
+			if name and frappe.db.exists(doctype, name):
+				out.append((doctype, name))
+	return out
+
+
+def _delete_test_fixtures():
+	"""Clear the WHOLE india_compliance fixture set, not just its companies.
+
+	frappe's make_test_objects calls frappe.db.rollback() the moment it meets a fixture
+	that already exists, which throws away the companies it created earlier in the same
+	run. So a half-present set can never rebuild: `bench run-tests` fails on every
+	attempt with "Could not find Warehouse: Stores - _TIRC" and rolls back again.
+	Present in full, or absent in full, both work -- it is the mixture that does not, and
+	deleting the companies alone is what creates it.
+
+	Addresses first: they link to the customers and suppliers."""
+	order = {"Address": 0, "POS Profile": 1, "Customer": 2, "Supplier": 3, "Item": 4, "Company": 5}
+	rows = sorted(_test_fixtures(), key=lambda x: order.get(x[0], 9))
+	for doctype, name in rows:
+		try:
+			frappe.delete_doc(doctype, name, force=True, ignore_permissions=True,
+							  delete_permanently=True, ignore_missing=True)
+		except Exception as e:
+			print("  %-26s %s kept -- %s" % (doctype, name, str(e)[:70]))
+	if rows:
+		print("  %-26s %4d removed" % ("test fixtures", len(rows)))
 
 
 def _test_companies():

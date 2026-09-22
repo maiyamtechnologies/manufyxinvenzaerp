@@ -14,6 +14,7 @@
   "duno_mark_no",
   "customer_drawing_number",
   "batch_no",
+  "planned_item",
   "reserve_without_dimensions",
   "batch_remarks",
   "parent_item_group",
@@ -33,6 +34,8 @@
   "unreserve_btn",
   "reserved_qty",
   "shortfall_qty",
+  "transferred_qty",
+  "fully_transferred",
   "reserved_on",
   "cnc_process",
   "skip_auto_suggest_batch",
@@ -126,6 +129,14 @@
    "options": "Batch",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "description": "The item the assigned batch actually holds, when that is not the item this row asks for. A planner may decide at transfer time to send one ISMB800 in place of four ISMB200; the requirement stays ISMB200 and this records what is really going. Blank means the batch holds the required item, which is the ordinary case. Material Mapping has carried the same field for the same reason; without it here an exact-match row reassigned across items would keep claiming the requirement's item to every reader downstream.",
+   "fieldname": "planned_item",
+   "fieldtype": "Link",
+   "label": "Planned Item",
+   "options": "Item",
+   "read_only": 1
   },
   {
    "default": "0",
@@ -262,6 +273,22 @@
    "fieldname": "shortfall_qty",
    "fieldtype": "Float",
    "label": "Shortfall Qty",
+   "read_only": 1
+  },
+  {
+   "description": "How much of this row's allocation has physically left the warehouse. Accumulated as each transfer releases the reservation it was holding, and unwound again if that entry is cancelled.",
+   "fieldname": "transferred_qty",
+   "fieldtype": "Float",
+   "label": "Transferred Qty",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Ticked once the whole of this row has been transferred. A transfer gives up the reservation, so is_reserved alone can no longer say whether the row is settled -- this is what keeps the batch and its figures locked afterwards.",
+   "fieldname": "fully_transferred",
+   "fieldtype": "Check",
+   "label": "Fully Transferred",
    "read_only": 1
   },
   {

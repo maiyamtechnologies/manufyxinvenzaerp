@@ -1645,6 +1645,7 @@ def after_install():
     # and its Production Plan Item fields on custom_material_planning, so on a fresh
     # install those anchors have to exist first or the new fields land at the bottom.
     create_rate_schedule_sync_fields()
+    layout_production_plan_item_grid()
     create_production_plan_client_script()
     # Work Order and Job Card are deliberately left standard -- every customization
     # this app once added to them was removed under the client's Phase 0.4 change
@@ -1709,6 +1710,7 @@ def after_migrate():
     # and its Production Plan Item fields on custom_material_planning, so on a fresh
     # install those anchors have to exist first or the new fields land at the bottom.
     create_rate_schedule_sync_fields()
+    layout_production_plan_item_grid()
     create_production_plan_client_script()
     # Work Order and Job Card are deliberately left standard -- every customization
     # this app once added to them was removed under the client's Phase 0.4 change
@@ -3738,6 +3740,68 @@ function _pp_delete_sco_and_mip(frm) {
 """.strip()
 
 
+def layout_production_plan_item_grid():
+    """Spend the Production Plan Item grid's column budget deliberately.
+
+    Same budget as everywhere else: grid.js walks the fields in order adding up their
+    `columns`, and the first time the running total passes 11 it STOPS and drops that
+    column and every one after it, silently. The total starts at 1, so the widths may
+    add up to at most 10.
+
+    This grid declared twelve columns needing twenty units, so it was being cut off
+    mid-list -- Planned Qty, UOM, Finished Goods Warehouse and Planned Start Date never
+    rendered at all, which is the behaviour SKILL.md records as still outstanding here.
+
+    The layout below is the client's, and totals exactly 10:
+
+        item_code 2 + custom_duno_mark_no 1 + custom_sec_qty 1
+        + custom_material_planning 1 + custom_cust_weight_per_nos 1
+        + custom_customer_weight_kg 1 + custom_rate_schedule 1
+        + custom_rs_rate_per_kg 1 + sales_order 1
+
+    BOM No, Customer Drawing No and Planned RM Weight come out of the ROW VIEW to pay
+    for it, along with the four that were never visible anyway. Every one stays on the
+    doctype and stays readable by expanding the row; nothing about planning changes.
+    """
+    widths = {
+        "item_code": 2,
+        "custom_duno_mark_no": 1,
+        "custom_sec_qty": 1,
+        "custom_material_planning": 1,
+        "custom_cust_weight_per_nos": 1,
+        "custom_customer_weight_kg": 1,
+        "custom_rate_schedule": 1,
+        "custom_rs_rate_per_kg": 1,
+        "sales_order": 1,
+    }
+    for fieldname, columns in widths.items():
+        frappe.make_property_setter({
+            "doctype": "Production Plan Item",
+            "fieldname": fieldname,
+            "property": "in_list_view",
+            "value": 1,
+            "property_type": "Check",
+        })
+        frappe.make_property_setter({
+            "doctype": "Production Plan Item",
+            "fieldname": fieldname,
+            "property": "columns",
+            "value": columns,
+            "property_type": "Int",
+        })
+
+    for fieldname in ("bom_no", "custom_customer_drawing_number",
+                      "custom_planned_rm_weight_kg", "planned_qty", "stock_uom",
+                      "warehouse", "planned_start_date"):
+        frappe.make_property_setter({
+            "doctype": "Production Plan Item",
+            "fieldname": fieldname,
+            "property": "in_list_view",
+            "value": 0,
+            "property_type": "Check",
+        })
+
+
 def create_production_plan_client_script():
     if frappe.db.exists("Client Script", PRODUCTION_PLAN_CLIENT_SCRIPT_NAME):
         frappe.db.set_value(
@@ -4064,6 +4128,23 @@ def create_stock_entry_custom_fields():
                     "fetch_from": "item_code.custom_secondary_uom",
                     "read_only": 1,
                     "insert_after": "custom_sec_qty",
+                },
+                {
+                    # On a finished-goods row of a Final Stock Entry: the raw material this
+                    # entry consumed for that drawing, less the Kg booked as finished goods.
+                    # Positive is weight that went in and did not come out -- burn, kerf,
+                    # grinding. Negative means more was booked than was consumed, which is
+                    # not a loss but a sign the Sales Order weight is understated.
+                    #
+                    # It is a figure, not a movement. The Manufacture entry has already
+                    # consumed the steel; issuing it a second time would take it twice.
+                    "fieldname": "custom_loss_kg",
+                    "fieldtype": "Float",
+                    "label": "Loss (Kg)",
+                    "precision": "3",
+                    "read_only": 1,
+                    "in_list_view": 0,
+                    "insert_after": "custom_sec_uom",
                 },
                 {
                     "fieldname": "custom_thickness",

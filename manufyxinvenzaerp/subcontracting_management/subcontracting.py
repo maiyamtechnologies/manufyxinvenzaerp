@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 
 import frappe
@@ -92,6 +93,12 @@ def create_sco_from_production_plan(pp_name):
         or frappe.db.get_single_value("Global Defaults", "default_currency")
         or "INR"
     )
+    # Subcontracting Order Item has no "uom" field -- only "stock_uom", and that one is
+    # read_only, so nothing on the form would ever correct it. The insert below runs with
+    # ignore_validate and ignore_mandatory, which also skips the set_missing_values that
+    # would otherwise fetch it from the Item. Pass it explicitly or the row keeps a stale
+    # default: SC-ORD-2026-00025 read "4,740.12 Nos" for 4,740.12 Kg of a Kg-stocked item
+    # whose real piece count is 11, sitting correctly in Sec Qty.
     uom = frappe.db.get_value("Item", fg_item, "stock_uom") or "Nos"
 
     # Build drawing items + weight summary from Material Planning reservations.
@@ -175,7 +182,7 @@ def create_sco_from_production_plan(pp_name):
         "items": [{
             "item_code": fg_item,
             "qty": flt(fg_qty) or 1,
-            "uom": uom,
+            "stock_uom": uom,
             "warehouse": fg_warehouse or "",
             "bom": bom_no,
             "rate": item_rate,
@@ -545,8 +552,12 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
 
     rows = frappe.get_all(
         "Material Issue Plan Raw Material", filters={"parent": mip_name},
+        # sales_order / customer_drawing_number / item_number / qty are what
+        # requirement_weight_shares needs to tell one requirement from another and to
+        # divide it -- see the share comment below.
         fields=["item_code", "planned_item", "batch_no", "duno_mark_no", "transferred_qty",
-                "drawing_planned_weight", "reqd_kg"],
+                "drawing_planned_weight", "reqd_kg", "qty",
+                "sales_order", "customer_drawing_number", "item_number"],
     )
     if not rows or not any(r.duno_mark_no for r in rows):
         return available
@@ -561,8 +572,21 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
 
     # The batch's own item is what the transfer line carries, not the requirement's --
     # they differ wherever an alternate was issued against a requirement.
+    # drawing_planned_weight on a row is the WHOLE requirement's weight, not that row's
+    # part of it. Fill one requirement from two batches -- a 12 m bar and a plate cut to
+    # the same purpose -- and both rows carry the full figure, so measuring each against
+    # it says neither sent too much and nothing is held back as off-cut. On
+    # MIP-2026-00059 that put 128.456 Kg of PLATE8 into the job as material used, when it
+    # was off-cut still standing at the supplier. requirement_weight_shares divides the
+    # requirement between the rows in proportion to what each carries; it is the same
+    # rule the transfer popup and the per-row Excess Qty already use.
+    from manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan import (
+        requirement_weight_shares,
+    )
+    row_share = requirement_weight_shares(rows)
+
     share = {}
-    for r in rows:
+    for r, wanted_share in zip(rows, row_share):
         fraction = finished_fraction.get(r.duno_mark_no or "")
         if not fraction:
             continue
@@ -578,7 +602,9 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
         # job's real consumption is the drawing's own weight; whatever is over
         # stays at the supplier, to come back as an excess return or be written
         # off as process loss with a reason.
-        wanted = flt(r.drawing_planned_weight) or flt(r.reqd_kg)
+        # A share of None, or of nothing, means there is no requirement weight to judge
+        # this row against -- fall back to what it asked for, as before.
+        wanted = flt(wanted_share) or flt(r.reqd_kg)
         contribution = flt(r.transferred_qty) * fraction
         if wanted:
             contribution = min(contribution, wanted * fraction)
@@ -614,7 +640,106 @@ def _consumption_for_completed(sco, supplier_warehouse, preview, available):
             set_aside[row["item_code"]] = flt(keep - held_back, 3)
         if qty <= 0:
             continue
-        out.append(dict(row, qty=flt(qty, 3)))
+        out.append(dict(row, qty=flt(qty, 3), **_scaled_sec_qty(row, qty)))
+    return out
+
+
+def _scaled_sec_qty(row, qty):
+    """The Sec Nos that go with a narrowed consumption line.
+
+    The Kg on a line get cut twice over -- down to the finished drawings' share, and
+    again by whatever off-cut is booked to come back -- so the Nos have to travel in the
+    same proportion or the line would claim every piece while consuming part of the
+    weight. Pieces are fractional here by design: a 12 m bar cut across two drawings is
+    genuinely 0.7 of a bar to one of them.
+    """
+    whole = flt(row.get("qty"), 3)
+    sec = flt(row.get("custom_sec_qty"), 3)
+    if not sec or not whole:
+        return {}
+    return {"custom_sec_qty": flt(sec * (flt(qty, 3) / whole), 3)}
+
+
+def _consumed_kg_by_drawing(sco, supplier_warehouse, preview, available):
+    """The raw material a Final Stock Entry consumes, split by drawing.
+
+    The consumption rows themselves cannot answer this. They are merged by item and
+    batch, and deliberately carry no DUNO -- one line of a shared batch belongs to
+    several drawings at once, so stamping it with any single one would be a guess. The
+    split is worked out from the plan instead.
+
+    Each drawing's cumulative due is what the job should have consumed for everything
+    finished on it to date, by the same rule _consumption_for_completed applies: the
+    row's transfer, capped at its share of the requirement, scaled by how much of the
+    drawing is finished. The part belonging to THIS booking is then that figure times
+    booking_now / completed -- which needs no attribution of earlier entries, and so
+    works where reading them back would not.
+
+    Finally the whole set is prorated onto what the entry actually consumes. Where a
+    booked off-cut holds material back, the plan's figure is higher than the entry's,
+    and a per-drawing split that did not add up to the document it describes would be
+    worse than none at all.
+
+    Returns {drawing: Kg}. A drawing whose plan has no raw material is simply absent --
+    there is nothing to compare its finished goods against.
+    """
+    mip_name = frappe.db.get_value("Material Issue Plan", {"subcontracting_order": sco.name}, "name")
+    if not mip_name:
+        return {}
+
+    rows = frappe.get_all(
+        "Material Issue Plan Raw Material", filters={"parent": mip_name},
+        fields=["item_code", "planned_item", "batch_no", "duno_mark_no", "transferred_qty",
+                "drawing_planned_weight", "reqd_kg", "qty",
+                "sales_order", "customer_drawing_number", "item_number"],
+    )
+    if not rows:
+        return {}
+
+    from manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan import (
+        requirement_weight_shares,
+    )
+    row_share = requirement_weight_shares(rows)
+
+    # duno -> (fraction finished, share of that finished part belonging to this booking)
+    by_duno, drawing_of = {}, {}
+    for d in preview["drawings"]:
+        duno = d.get("duno_mark_no") or ""
+        planned = flt(d.get("qty_to_manufacture"))
+        done = flt(d.get("completed_qty_nos"))
+        booking = flt(d.get("ready_to_book"))
+        if not (planned and done > 0 and booking > 0):
+            continue
+        by_duno[duno] = {
+            "fraction": min(1.0, done / planned),
+            "now": booking / done,
+            "kg": 0.0,
+        }
+        drawing_of[duno] = d["drawing"]
+
+    for r, wanted_share in zip(rows, row_share):
+        agg = by_duno.get(r.duno_mark_no or "")
+        if not agg:
+            continue
+        wanted = flt(wanted_share) or flt(r.reqd_kg)
+        contribution = flt(r.transferred_qty) * agg["fraction"]
+        if wanted:
+            contribution = min(contribution, wanted * agg["fraction"])
+        agg["kg"] = flt(agg["kg"] + contribution, 3)
+
+    planned_total = flt(sum(a["kg"] * a["now"] for a in by_duno.values()), 3)
+    if planned_total <= 0:
+        return {}
+
+    consumed = _consumption_for_completed(sco, supplier_warehouse, preview, available)
+    actual_total = flt(sum(flt(r["qty"]) for r in consumed), 3)
+    scale = (actual_total / planned_total) if planned_total else 0.0
+
+    out = {}
+    for duno, agg in by_duno.items():
+        kg = flt(agg["kg"] * agg["now"] * scale, 3)
+        if kg > 0:
+            out[drawing_of[duno]] = kg
     return out
 
 
@@ -695,9 +820,37 @@ def get_final_stock_entry_preview(sco_name):
         })
 
     total_ready = flt(total_ready, 3)
+
+    # What the entry would consume for each drawing, so the popup can put the finished
+    # weight beside the steel that made it. Read-only and best-effort: a job whose
+    # supplier warehouse or Material Issue Plan cannot be resolved still previews its
+    # piece counts, it just has nothing to compare the weight against.
+    from manufyxinvenzaerp.production_management.fg_stock import edit_fg_stock_kg_enabled
+    consumed_by_drawing = {}
+    try:
+        sco_doc = frappe.get_doc("Subcontracting Order", sco_name)
+        wh = _get_sco_supplier_warehouse(sco_doc)
+        if wh and total_ready > 0:
+            available = _get_supplier_wh_consumption_items(sco_doc, wh)
+            if available:
+                consumed_by_drawing = _consumed_kg_by_drawing(
+                    sco_doc, wh, {"drawings": drawings}, available)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Final Stock Entry preview: consumed RM")
+
+    for d in drawings:
+        kg = consumed_by_drawing.get(d["drawing"])
+        d["consumed_rm_kg"] = flt(kg, 3) if kg is not None else None
+        # Positive is weight that went in and did not come out. Negative means more was
+        # booked than consumed -- not a loss, but the Sales Order weight is understated.
+        d["loss_kg"] = (flt(kg - flt(d["planned_kg"]), 3) if kg is not None else None)
+
     return {
         "final_operation": final,
         "drawings": drawings,
+        "edit_fg_stock_kg": 1 if edit_fg_stock_kg_enabled() else 0,
+        "total_consumed_rm_kg": flt(sum(
+            flt(d["consumed_rm_kg"]) for d in drawings if d["consumed_rm_kg"] is not None), 3),
         "total_ready": total_ready,
         "total_planned": flt(sum(d["qty_to_manufacture"] for d in drawings), 3),
         "total_completed": flt(sum(d["completed_qty_nos"] for d in drawings), 3),
@@ -711,9 +864,15 @@ def get_final_stock_entry_preview(sco_name):
 
 
 @frappe.whitelist()
-def create_finished_goods_entry(sco_name):
+def create_finished_goods_entry(sco_name, fg_weights_json=None):
     """Create a draft 'Manufacture' Stock Entry that consumes the raw materials currently
     in the supplier warehouse and produces the finished good into the FG warehouse.
+
+    fg_weights_json is {drawing: Cust Weight per Nos} as edited in the popup, where the
+    Edit FG Stock Kg setting allows it. The popup is the only place that figure is
+    decided -- on the draft itself the finished-goods Kg is read-only -- so a second
+    visit has to be able to change its mind, which is why an existing draft is rebuilt
+    below rather than handed back untouched.
 
     Exposed via the 'Make Final Stock Entry' button, which appears once raw materials
     have been transferred to the supplier. The user reviews and submits the draft; on
@@ -727,6 +886,9 @@ def create_finished_goods_entry(sco_name):
     as-is instead of piling up another. Returns {"name": ..., "already_existed": bool}
     so the caller can phrase its message correctly either way.
     """
+    overrides = json.loads(fg_weights_json) if isinstance(fg_weights_json, str) else (fg_weights_json or {})
+    overrides = {k: flt(v) for k, v in (overrides or {}).items() if flt(v) > 0}
+
     sco = frappe.get_doc("Subcontracting Order", sco_name)
     if sco.docstatus != 1:
         frappe.throw(_("Subcontracting Order must be submitted first."))
@@ -761,8 +923,6 @@ def create_finished_goods_entry(sco_name):
     existing_draft = frappe.db.get_value(
         "Stock Entry", {"subcontracting_order": sco_name, "stock_entry_type": "Manufacture", "docstatus": 0}, "name"
     )
-    if existing_draft:
-        return {"name": existing_draft, "already_existed": True}
 
     mip_status = frappe.db.get_value("Material Issue Plan", {"subcontracting_order": sco_name}, "status")
     if mip_status == "Completed":
@@ -801,10 +961,15 @@ def create_finished_goods_entry(sco_name):
         frappe.throw(_("No raw-material stock found in the supplier warehouse to consume. "
                        "Ensure the raw materials have been transferred to the supplier."))
 
+    available = consumed
     consumed = _consumption_for_completed(sco, supplier_warehouse, preview, consumed)
     if not consumed:
         frappe.throw(_("The drawings finished so far have no raw material left to consume "
                        "against them."), title=_("Nothing to Consume"))
+
+    # What each drawing's finished goods are made of, so the entry can record the
+    # difference between the steel it consumed and the weight it booked.
+    consumed_by_drawing = _consumed_kg_by_drawing(sco, supplier_warehouse, preview, available)
 
     # One finished-goods row per drawing, for the pieces the last operation has
     # finished and not yet booked -- not for the whole job. Four drawings out of ten
@@ -812,11 +977,21 @@ def create_finished_goods_entry(sco_name):
     #
     # Each row carries the drawing it was made for, which is what _fg_already_booked
     # reads on the next run so the same piece is never booked twice.
-    fg_rows = _final_fg_rows(sco, preview, fg_warehouse)
+    fg_rows = _final_fg_rows(sco, preview, fg_warehouse, overrides, consumed_by_drawing)
     if not fg_rows:
         frappe.throw(_("No finished-good item found for the drawings that are complete."))
 
     items = list(consumed) + fg_rows
+
+    if existing_draft:
+        # Rebuilt in place rather than replaced: the draft keeps its name and its link,
+        # and a figure changed on a second visit to the popup actually takes.
+        se = frappe.get_doc("Stock Entry", existing_draft)
+        se.items = []
+        for row in items:
+            se.append("items", row)
+        se.save(ignore_permissions=True)
+        return {"name": se.name, "already_existed": True}
 
     se = frappe.get_doc({
         "doctype": "Stock Entry",
@@ -829,7 +1004,7 @@ def create_finished_goods_entry(sco_name):
     return {"name": se.name, "already_existed": False}
 
 
-def _final_fg_rows(sco, preview, fg_warehouse):
+def _final_fg_rows(sco, preview, fg_warehouse, overrides=None, consumed_by_drawing=None):
     """The finished-goods rows of a Final Stock Entry, one per drawing ready to book.
 
     Finished goods are stocked in Kg and counted in Nos (sep14 FG plan): each row is
@@ -875,7 +1050,8 @@ def _final_fg_rows(sco, preview, fg_warehouse):
             ["sales_order", "customer", "weight_per_pcs", "duno_mark_no", "customer_drawing_number"],
             as_dict=True,
         ) or frappe._dict()
-        per_nos = flt(drg.weight_per_pcs) or flt(d.get("cust_weight_per_nos") if d else 0)
+        per_nos = flt((overrides or {}).get(row["drawing"])) or flt(drg.weight_per_pcs) or flt(
+            d.get("cust_weight_per_nos") if d else 0)
         if not per_nos:
             frappe.throw(
                 _("Drawing {0} has no Cust Weight (per Nos), so its finished goods cannot be "
@@ -907,6 +1083,15 @@ def _final_fg_rows(sco, preview, fg_warehouse):
             "custom_duno_mark_no": duno,
             "custom_customer_drawing_number": customer_drawing_number,
             "custom_sales_order": sales_order,
+            # The steel this drawing consumed, less the weight booked for it. A figure,
+            # not a movement: the same entry has already consumed the material, so
+            # issuing the difference again would take it twice. Positive is weight that
+            # went in and did not come out; negative means more was booked than
+            # consumed, which says the Sales Order weight is understated.
+            "custom_loss_kg": (
+                flt(flt((consumed_by_drawing or {}).get(row["drawing"])) - flt(nos * per_nos), 3)
+                if (consumed_by_drawing or {}).get(row["drawing"]) is not None else 0.0
+            ),
             "description": duno or customer_drawing_number or "",
         })
     return fg_rows
@@ -2225,7 +2410,15 @@ def _get_supplier_wh_consumption_items(sco, supplier_warehouse=None):
         SELECT sed.item_code, sed.batch_no,
                SUM(CASE WHEN sed.t_warehouse = %(wh)s THEN sed.qty
                         WHEN sed.s_warehouse = %(wh)s THEN -sed.qty
-                        ELSE 0 END) AS qty
+                        ELSE 0 END) AS qty,
+               -- Netted exactly as the Kg are. Every transfer into the supplier
+               -- warehouse carried its Sec Nos; without this the finished-goods entry
+               -- was the one document in the chain that dropped them, and the pieces
+               -- stopped being countable at the last step.
+               SUM(CASE WHEN sed.t_warehouse = %(wh)s THEN IFNULL(sed.custom_sec_qty, 0)
+                        WHEN sed.s_warehouse = %(wh)s THEN -IFNULL(sed.custom_sec_qty, 0)
+                        ELSE 0 END) AS sec_qty,
+               MAX(sed.custom_sec_uom) AS sec_uom
         FROM `tabStock Entry Detail` sed
         JOIN `tabStock Entry` se ON se.name = sed.parent
         WHERE (se.custom_sco_ref = %(sco)s OR se.subcontracting_order = %(sco)s)
@@ -2247,6 +2440,8 @@ def _get_supplier_wh_consumption_items(sco, supplier_warehouse=None):
             "use_serial_batch_fields": 1,
             "qty": flt(r.qty, 3),
             "uom": frappe.db.get_value("Item", r.item_code, "stock_uom") or "Kg",
+            "custom_sec_qty": flt(r.sec_qty, 3),
+            "custom_sec_uom": r.sec_uom or "",
             "s_warehouse": supplier_warehouse,
         }
         for r in rows

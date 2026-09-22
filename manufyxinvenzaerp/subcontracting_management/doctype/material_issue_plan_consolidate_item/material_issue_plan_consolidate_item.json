@@ -81,7 +81,7 @@
    "columns": 2
   },
   {
-   "columns": 2,
+   "columns": 1,
    "description": "Reassign every raw-material row merged into this line to a new batch. Drawn by material_issue_plan.js -- this grid is read-only, and Frappe only renders Button fields on rows it can edit.",
    "fieldname": "update_batch_btn",
    "fieldtype": "Button",
@@ -93,7 +93,9 @@
    "fieldname": "cnc_process",
    "fieldtype": "Check",
    "label": "CNC Process",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "column_break_dims",

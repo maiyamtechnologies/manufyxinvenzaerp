@@ -150,7 +150,7 @@ class MaterialPlanning(Document):
         self.unavailable_items = [r for r in (self.unavailable_items or []) if r.item_code]
         self._sync_cut_sheet_flag()
         self._apply_rwd_fractional_nos()
-        self._validate_no_cross_table_batch_duplicate()
+        self._validate_batch_not_over_allocated()
         if self.material_mapping and self.for_warehouse:
             self._validate_batch_calc_qty()
         if self.unavailable_items:
@@ -574,29 +574,57 @@ class MaterialPlanning(Document):
         else:
             self.planning_status = "Batch Mapping Completed"
 
-    def _validate_no_cross_table_batch_duplicate(self):
-        """Block saving when the same batch is assigned in both Material Mapping
-        and Exact Match (Available Raw Materials) — even if not yet reserved.
-        A batch can only serve one table at a time; assigning it in both
-        would cause double-counting at transfer time."""
-        mm_batches = {
-            r.batch: r.idx
-            for r in (self.material_mapping or [])
-            if r.batch
-        }
-        if not mm_batches:
-            return
-        conflicts = []
-        for r in (self.available_raw_materials or []):
-            if r.batch_no and r.batch_no in mm_batches:
-                conflicts.append(
-                    _("Batch <b>{0}</b> is assigned in both Material Mapping (Row {1}) "
-                      "and Exact Match (Row {2}). Remove it from one table before saving.").format(
-                        r.batch_no, mm_batches[r.batch_no], r.idx
-                    )
+    def _validate_batch_not_over_allocated(self):
+        """A batch may serve BOTH tables. What it may not do is promise more than it holds.
+
+        This used to refuse the two tables sharing a batch at all, on the grounds that it
+        "would cause double-counting at transfer time". It does not: _get_mp_reserved_batches
+        appends rows from both tables into one list, each carrying its own reserved_qty, and
+        get_mip_pending_items groups by (item, batch, leg) and sums them -- two sources
+        become one transfer line of the combined weight, counted once.
+
+        Worse, the ban blocked the case Material Mapping exists for. An ISMB400 requirement
+        filled from an ISA100 bar is the example in material_mapping_batch_query's own
+        docstring, and it was refused whenever that ISA100 batch was already serving an
+        exact-match row -- on a batch with 10,906 Kg in stock, 912 Kg allocated and 9,994 Kg
+        free.
+
+        The quantity rule it should have been is already enforced where it belongs:
+        _get_batch_reserved_by_others takes exclude_table, so reserving in either table
+        counts the OTHER table's reservations on that batch, including this plan's own,
+        and caps what it takes. This is the backstop for that.
+
+        Only RESERVED weight is measured. An unreserved row is a proposal, and one
+        routinely asks for more than is there -- that is what shortfall_qty records.
+        Counting proposals here would refuse every plan with a shortfall in it."""
+        held = {}
+        for row in (self.material_mapping or []):
+            if row.batch and row.is_reserved:
+                held.setdefault(row.batch, []).append(("Material Mapping", row.idx, flt(row.reserved_qty)))
+        for row in (self.available_raw_materials or []):
+            if row.batch_no and row.is_reserved:
+                held.setdefault(row.batch_no, []).append(("Exact Match", row.idx, flt(row.reserved_qty)))
+
+        problems = []
+        for batch_no, rows in held.items():
+            total = flt(sum(r[2] for r in rows), 3)
+            stock = flt(_get_batch_total_stock(batch_no, self.for_warehouse))
+            elsewhere = flt(_get_batch_reserved_by_others(batch_no, self.name))
+            free = flt(stock - elsewhere, 3)
+            if total <= free + 0.001:
+                continue
+            detail = "<br>".join(
+                _("{0} row {1} — {2} Kg").format(t, idx, flt(q, 3)) for t, idx, q in rows
+            )
+            problems.append(
+                _("Batch <b>{0}</b> is reserved for {1} Kg across this plan, but only "
+                  "{2} Kg is free ({3} Kg in stock, {4} Kg held by other plans):<br>{5}<br>"
+                  "Reduce one of these rows, or assign a different batch.").format(
+                    batch_no, total, free, flt(stock, 3), elsewhere, detail
                 )
-        if conflicts:
-            frappe.throw("<br><br>".join(conflicts), title=_("Duplicate Batch Across Tables"))
+            )
+        if problems:
+            frappe.throw("<br><br>".join(problems), title=_("Batch Over-Allocated"))
 
     def _set_row_excess(self):
         """Per-row excess: what this batch gives beyond what the row asks for.
@@ -685,10 +713,17 @@ class MaterialPlanning(Document):
             and (row.parent_item_group or "") in ("Structurals", "Plates")
         ]
         if arm_rwd:
-            unit_weights = _item_unit_weights(row.item_code for row in arm_rwd)
+            batch_items = {r.name: (r.get("planned_item") or r.item_code) for r in arm_rwd}
+            unit_weights = _item_unit_weights(batch_items.values())
+            groups = _item_groups(
+                code for r in arm_rwd
+                for code in [batch_items[r.name]] if code != r.item_code
+            )
             for row in arm_rwd:
+                batch_item = batch_items[row.name]
                 derived = _sec_nos_for_weight_arm(
-                    row, row.required_qty, unit_weights.get(row.item_code)
+                    row, row.required_qty, unit_weights.get(batch_item),
+                    groups.get(batch_item) or row.parent_item_group or "",
                 )
                 # A zero comes back only when the batch cannot yield a per-piece
                 # weight at all (a dimension or the unit weight is missing). Writing
@@ -1522,8 +1557,11 @@ def check_stock_availability(doc):
         for r in doc.get("material_mapping") or []:
             if r.get("is_reserved"):
                 covered_kg[_coverage_key(r)] += flt(r.get("qty"))
-    # A batch serves one table at a time (_validate_no_cross_table_batch_duplicate), so
-    # one held by a kept Material Mapping reservation is not offered to Exact Match.
+    # A batch held by a kept Material Mapping reservation is not offered to Exact Match
+    # here. The two tables MAY share a batch now (see _validate_batch_not_over_allocated),
+    # so this is no longer a rule -- it is this path being conservative: reserve-without-
+    # dimensions matches on item alone and would otherwise hand an exact-match row a batch
+    # the mapping table is already holding, for no gain.
     mm_held_batches = {
         r.get("batch") for r in (doc.get("material_mapping") or [])
         if without_dims and r.get("is_reserved") and r.get("batch")
@@ -3370,7 +3408,26 @@ def _item_unit_weights(item_codes):
     }
 
 
-def _sec_nos_for_weight_arm(row, weight_kg, unit_weight=None):
+def _item_groups(item_codes):
+    """custom_parent_item_group for a set of items, in one query.
+
+    Needed beside the unit weight because the two together decide how a piece is
+    weighed: a Structural is length x kg-per-metre, a Plate is length x width x
+    thickness x density. Read from the BATCH's item, which since cross-item
+    reassignment is not always the row's own.
+    """
+    codes = sorted({c for c in (item_codes or []) if c})
+    if not codes:
+        return {}
+    return {
+        r.name: r.custom_parent_item_group or ""
+        for r in frappe.get_all(
+            "Item", filters={"name": ["in", codes]}, fields=["name", "custom_parent_item_group"]
+        )
+    }
+
+
+def _sec_nos_for_weight_arm(row, weight_kg, unit_weight=None, group=None):
     """_sec_nos_for_weight for an Available Raw Material row.
 
     That helper reads five batch_* fields, and an exact-match row has none of
@@ -3384,10 +3441,21 @@ def _sec_nos_for_weight_arm(row, weight_kg, unit_weight=None):
     Pass `unit_weight` when looping rows, from _item_unit_weights, to avoid a
     query per row.
     """
+    # The BATCH's item, which is the row's own only when nothing was substituted.
+    # A line moved from an ISMB450 bar to a PLATE40 sheet is weighed as a plate --
+    # length x width x thickness x density -- and taking the unit weight or the group
+    # from the requirement instead gives a piece weight for a bar that is not there.
+    # It was 12 m x 72.4 kg/m = 868.8 Kg on MIP-2026-00060, where one sheet is 9,420.
+    batch_item = row.get("planned_item") or row.item_code
     if unit_weight is None:
-        unit_weight = frappe.db.get_value("Item", row.item_code, "custom_unit_weight")
+        unit_weight = frappe.db.get_value("Item", batch_item, "custom_unit_weight")
+    if group is None:
+        group = (
+            frappe.db.get_value("Item", batch_item, "custom_parent_item_group")
+            if batch_item != row.item_code else None
+        ) or row.parent_item_group or ""
     shim = frappe._dict({
-        "batch_parent_item_group": row.parent_item_group or "",
+        "batch_parent_item_group": group,
         "batch_length": flt(row.length),
         "batch_width": flt(row.width),
         "batch_thickness": flt(row.thickness),
@@ -3515,6 +3583,9 @@ def reserve_batches(material_planning_name):
 
         if shortfall_qty > 0:
             partial_rows.append({
+                # Named so a caller reserving on behalf of a few rows can tell its own
+                # shortfalls from the plan's -- these helpers reserve the WHOLE plan.
+                "name": row.name,
                 "item_code": row.item_code,
                 "item_name": row.item_name or "",
                 "batch": row.batch,
@@ -4147,6 +4218,8 @@ def reserve_exact_match_batches(material_planning_name):
 
             if shortfall_qty > 0:
                 partial_rows.append({
+                    # See the note on the other partial_rows.append.
+                    "name": row.name,
                     "item_code": row.item_code,
                     "item_name": row.item_name or "",
                     "batch": row.batch_no,
@@ -4179,6 +4252,8 @@ def reserve_exact_match_batches(material_planning_name):
 
             if shortfall_qty > 0:
                 partial_rows.append({
+                    # See the note on the other partial_rows.append.
+                    "name": row.name,
                     "item_code": row.item_code,
                     "item_name": row.item_name or "",
                     "batch": "",
@@ -4801,7 +4876,7 @@ def reassign_batch(material_planning_name, source_table, row_name, new_batch_no,
 
 
 def _apply_batch_to_arm_row(row, new_batch_no, dimensions, sec_qty,
-                            reserve_without_dimensions, old_batch=None):
+                            reserve_without_dimensions, old_batch=None, new_item=None):
     """Set an Available Raw Material row's batch, dimensions and Sec Nos.
 
     Extracted from reassign_batch so every caller writes an exact-match row the
@@ -4829,6 +4904,16 @@ def _apply_batch_to_arm_row(row, new_batch_no, dimensions, sec_qty,
     """
     row.batch_no = new_batch_no or ""
     row.reserve_without_dimensions = 1 if cint(reserve_without_dimensions) else 0
+
+    # What the batch actually holds, when that is not what the row asks for. A planner
+    # may send one ISMB800 in place of four ISMB200; the requirement stays ISMB200 and
+    # planned_item carries the truth to everything downstream -- the consolidate
+    # grouping, the transfer line, the DUNO key, the Cut Sheet caps and the
+    # finished-goods split all read `planned_item or item_code` as the batch's item.
+    # Cleared, not left stale, when the batch goes back to the required item.
+    if row.meta.has_field("planned_item"):
+        item = new_item or (get_batch_item(new_batch_no) if new_batch_no else None)
+        row.planned_item = item if (item and item != row.item_code) else ""
 
     batch_dims = {}
     if new_batch_no and new_batch_no != (old_batch or ""):
@@ -5455,6 +5540,17 @@ def auto_purchase_from_mp(material_planning_name):
 # Batch Mapping Completed validation
 # ---------------------------------------------------------------------------
 
+def _row_has_shipped(row):
+    """Has any of this planning row's material physically left the warehouse?
+
+    Kept by _release_rows_by_qty as each transfer goes out, and unwound on cancel.
+    It exists because is_reserved cannot answer the question: a transfer RELEASES the
+    reservation, so a shipped row and a row nobody ever reserved look the same without
+    it. Partly shipped counts -- the batch is settled from the first kilo that moves.
+    """
+    return bool(row.get("fully_transferred")) or flt(row.get("transferred_qty")) > 0.0005
+
+
 def _collect_batch_mapping_issues(mp):
     """Return a list of human-readable issue strings for the given MP doc.
     Empty list = everything is clean and the mapping can be marked complete."""
@@ -5488,17 +5584,23 @@ def _collect_batch_mapping_issues(mp):
                   "Remove it from one table.").format(r.batch_no, mm_batches[r.batch_no], r.idx)
             )
 
-    # 4. Material Mapping rows with batch but not reserved
+    # 4. Material Mapping rows with batch but not reserved.
+    #
+    # A transferred row is not one of these. Transferring is precisely what releases a
+    # reservation, so every row that has shipped reads as "batch selected but not
+    # reserved" -- and telling the user to go and reserve it again would have them
+    # holding stock that has already left the warehouse. MP-2026-00260 reported 32 such
+    # issues the moment its first transfer went out, every one of them settled work.
     for r in (mp.material_mapping or []):
-        if r.batch and not r.is_reserved:
+        if r.batch and not r.is_reserved and not _row_has_shipped(r):
             issues.append(
                 _("Material Mapping Row {0} — Batch <b>{1}</b> ({2}): Batch selected but not reserved. "
                   "Run <b>Reserve Batches</b> first.").format(r.idx, r.batch, r.item_code)
             )
 
-    # 5. Exact Match rows with batch but not reserved
+    # 5. Exact Match rows with batch but not reserved (same exclusion as 4).
     for r in (mp.available_raw_materials or []):
-        if r.batch_no and not r.is_reserved:
+        if r.batch_no and not r.is_reserved and not _row_has_shipped(r):
             issues.append(
                 _("Exact Match Row {0} — Batch <b>{1}</b> ({2}): Batch selected but not reserved. "
                   "Run <b>Reserve Exact Match Batches</b> first.").format(r.idx, r.batch_no, r.item_code)

@@ -325,13 +325,26 @@ def refresh_mip_raw_materials(mip_name):
     # own (unlike Material Mapping/Unavailable Item), so it has to be looked up from
     # the Item master directly -- missing this left every ARM-sourced raw_materials
     # row (and anything derived from it, e.g. Excess Calc Qty) stuck at a wrong 0.
+    # Keyed on the BATCH's item, not the requirement's. They are the same until a line
+    # is reassigned across items, and then they are not: an ISMB450 requirement filled
+    # from a PLATE40 sheet carries the sheet's dimensions, and pricing a piece of it at
+    # ISMB450's 72.4 kg/m gives 868.8 Kg for something that weighs 9,420. The group
+    # travels with it for the same reason -- the formula itself differs.
     unit_weight_by_item = {}
+    group_by_item = {}
     all_mps = [frappe.get_doc("Material Planning", n) for n in mp_names]
-    arm_item_codes = {r.item_code for mp in all_mps for r in (mp.available_raw_materials or []) if r.item_code}
+    arm_item_codes = {
+        (r.get("planned_item") or r.item_code)
+        for mp in all_mps for r in (mp.available_raw_materials or []) if r.item_code
+    }
     if arm_item_codes:
         unit_weight_by_item = dict(frappe.get_all(
             "Item", filters={"name": ["in", list(arm_item_codes)]},
             fields=["name", "custom_unit_weight"], as_list=True,
+        ))
+        group_by_item = dict(frappe.get_all(
+            "Item", filters={"name": ["in", list(arm_item_codes)]},
+            fields=["name", "custom_parent_item_group"], as_list=True,
         ))
 
     mip.set("raw_materials", [])
@@ -361,7 +374,9 @@ def refresh_mip_raw_materials(mip_name):
                 "sales_order": row.sales_order,
                 "batch_no": row.batch,
                 "purchase_receipt": row.purchase_receipt,
-                "parent_item_group": row.parent_item_group,
+                # Material Mapping keeps the batch's group in its own field; use it
+                # where an alternate item was issued, for the reason above.
+                "parent_item_group": row.get("batch_parent_item_group") or row.parent_item_group,
                 "length": row.length,
                 "width": row.width,
                 "thickness": row.thickness,
@@ -390,17 +405,31 @@ def refresh_mip_raw_materials(mip_name):
                 "source_row": row.name,
                 "item_code": row.item_code,
                 "item_name": row.item_name,
+                # Set when the assigned batch holds something other than the item the
+                # row asks for -- a planner sending one ISMB800 in place of four
+                # ISMB200. Everything downstream keys the BATCH's item off
+                # `planned_item or item_code`, so without carrying it here the transfer
+                # would issue the substitute under the requirement's name.
+                "planned_item": row.get("planned_item"),
                 "duno_mark_no": row.duno_mark_no,
                 "customer_drawing_number": row.customer_drawing_number,
                 "item_number": row.item_number,
                 "sales_order": row.sales_order,
                 "batch_no": row.batch_no,
                 "purchase_receipt": row.purchase_receipt,
-                "parent_item_group": row.parent_item_group,
+                # The batch's group and unit weight, which are the row's own until an
+                # item was substituted. The dimensions on this row are already the
+                # batch's, and all three have to describe the same thing or the
+                # transfer popup cannot price one piece of it.
+                "parent_item_group": (
+                    group_by_item.get(row.get("planned_item"))
+                    if row.get("planned_item") else None
+                ) or row.parent_item_group,
                 "length": row.length,
                 "width": row.width,
                 "thickness": row.thickness,
-                "unit_weight": unit_weight_by_item.get(row.item_code),
+                "unit_weight": unit_weight_by_item.get(
+                    row.get("planned_item") or row.item_code),
                 "sec_qty": row.sec_qty,
                 "sec_uom": row.sec_uom,
                 "reqd_kg": row.overall_required_qty or row.required_qty,
@@ -631,16 +660,30 @@ def get_transfer_draft(mip_name, transfer_type=None):
     }
 
 
-def _clear_transfer_draft(mip_name, items, transfer_type=None):
-    """Drop the parked state for rows that have just been transferred -- it described
-    what was about to happen, and it has now happened.
+def _clear_transfer_draft(mip_name, items=None, transfer_type=None):
+    """Drop the parked state once a transfer has been made -- it described what was
+    about to happen, and it has now happened.
 
     Only this popup's own drafts: the three popups share these rows, so clearing by
-    item+batch alone threw away a draft still waiting to be used somewhere else."""
-    keys = {(i.get("item_code"), i.get("batch_no") or "", 1 if i.get("cnc_process") else 0)
-            for i in (items or [])}
-    if not keys:
-        return
+    item+batch alone threw away a draft still waiting to be used somewhere else. The
+    transfer type is what separates them, and it is always honoured below.
+
+    items=None clears the WHOLE popup's draft, which is what a transfer does. Clearing
+    only the transferred rows looked tidier and was wrong twice over. The off-cut is
+    stated once per ITEM and parked on every batch row of that item, so transferring
+    one batch of a two-batch item left the other row still holding an off-cut already
+    booked into excess_return_items -- pressing Transfer again would book it twice. And
+    a Sec Nos left parked against a row that was deselected describes a transfer nobody
+    made; it would come back on the next open as though it were current. After any
+    transfer the popup starts clean, so the next "Save and Close" is the only thing in
+    there. Pass an explicit list only to clear named rows without touching the rest.
+    """
+    keys = None
+    if items is not None:
+        keys = {(i.get("item_code"), i.get("batch_no") or "", 1 if i.get("cnc_process") else 0)
+                for i in items}
+        if not keys:
+            return
     wanted = transfer_type or _DEFAULT_TRANSFER_TYPE
     for r in frappe.get_all(
         "Material Issue Plan Consolidate Item",
@@ -649,13 +692,14 @@ def _clear_transfer_draft(mip_name, items, transfer_type=None):
     ):
         if (r.draft_transfer_type or _DEFAULT_TRANSFER_TYPE) != wanted:
             continue
-        if (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0) in keys:
-            frappe.db.set_value(
-                "Material Issue Plan Consolidate Item", r.name,
-                {f: (None if f in _CONSOLIDATE_DRAFT_TEXT_FIELDS else 0)
-                 for f in _CONSOLIDATE_DRAFT_FIELDS},
-                update_modified=False,
-            )
+        if keys is not None and (r.item_code, r.batch_no or "", 1 if r.cnc_process else 0) not in keys:
+            continue
+        frappe.db.set_value(
+            "Material Issue Plan Consolidate Item", r.name,
+            {f: (None if f in _CONSOLIDATE_DRAFT_TEXT_FIELDS else 0)
+             for f in _CONSOLIDATE_DRAFT_FIELDS},
+            update_modified=False,
+        )
 
 
 # Held across a rebuild of the Consolidate Items table -- see _sync_consolidate_items.

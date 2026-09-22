@@ -530,6 +530,44 @@ def on_fg_stock_entry_change(doc, method=None):
 				update_modified=False,
 			)
 
+	_refresh_mip_loss(doc)
+
+
+def _refresh_mip_loss(doc):
+	"""Total the Loss (Kg) of every submitted Final Stock Entry onto the plan.
+
+	Recomputed from the entries rather than added to and taken away from, so a cancel
+	needs no separate unwinding and two partial bookings cannot drift apart from their
+	sum. Deliberately a different figure from process_loss_weight_kg, which is the
+	off-cut written off at the supplier: this one is steel that went into the product
+	and did not come out as weight, and no stock movement can record it because the
+	same entry already consumed it.
+	"""
+	if (doc.purpose or doc.stock_entry_type) != "Manufacture":
+		return
+	mip_name = doc.get("custom_mip_ref") or (
+		frappe.db.get_value("Material Issue Plan",
+		                    {"subcontracting_order": doc.get("subcontracting_order")}, "name")
+		if doc.get("subcontracting_order") else None
+	)
+	if not mip_name:
+		return
+
+	total = frappe.db.sql(
+		"""
+		SELECT COALESCE(SUM(sed.custom_loss_kg), 0)
+		FROM `tabStock Entry Detail` sed
+		JOIN `tabStock Entry` se ON se.name = sed.parent
+		WHERE se.docstatus = 1
+		  AND se.stock_entry_type = 'Manufacture'
+		  AND sed.is_finished_item = 1
+		  AND (se.custom_mip_ref = %(mip)s OR se.subcontracting_order = %(sco)s)
+		""",
+		{"mip": mip_name, "sco": doc.get("subcontracting_order")},
+	)[0][0]
+	frappe.db.set_value("Material Issue Plan", mip_name,
+	                    "loss_weight_kg", flt(total, 3), update_modified=False)
+
 
 # ── Form helpers (public/js/stock_entry_fg.js) ────────────────────────────────
 
