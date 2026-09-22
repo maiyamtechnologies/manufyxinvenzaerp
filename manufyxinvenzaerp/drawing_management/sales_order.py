@@ -13,9 +13,18 @@ def drawing_calculated_weight(rows, drawing_number):
     larger of the two because stock is cut down to the part. A drawing where it
     comes out SMALLER is the case worth looking at -- the material listed cannot
     produce the piece.
+
+    Sums total_weight, NOT qty. A raw material row carries both: qty is what one
+    piece takes, total_weight is that times the drawing's piece count. The figure
+    this is compared against -- Sales Order DUNO Item.total_weight -- is
+    weight_per_pcs times the same count, so summing qty here compared one piece's
+    steel against every piece's finished weight. A drawing for 4 pieces read 75%
+    short, and the "below customer weight" warning fired on it: on this site every
+    one of the 30 drawings it had ever flagged was a drawing for more than one
+    piece, and not one of them was genuinely short.
     """
     return flt(sum(
-        flt(r.get("qty")) for r in (rows or [])
+        flt(r.get("total_weight")) for r in (rows or [])
         if r.get("customer_drawing_number") == drawing_number
     ), 3)
 

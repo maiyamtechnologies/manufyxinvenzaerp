@@ -66,18 +66,24 @@ def get_data(filters):
 		GROUP BY pri.item_code, pri.sales_order
 	""", params, as_dict=True)
 
-	# "Issued" = material physically transferred out via this app's MIP
-	# transfer flow (Send to Subcontractor / Material Transfer entries
-	# tagged custom_mip_ref) -- explicitly excluding Material Receipt,
-	# since the excess-return flow (create_mip_excess_return_entry) also
-	# tags custom_mip_ref but moves stock the OPPOSITE direction (back in,
-	# not out) and would otherwise be double-counted as "issued".
+	# "Issued" = material physically transferred out via this app's MIP transfer
+	# flow: Send to Subcontractor and Material Transfer entries tagged
+	# custom_mip_ref, and only those.
+	#
+	# Named rather than excluded. This used to read `!= 'Material Receipt'`, which
+	# was right only while the excess return WAS a Material Receipt -- it became a
+	# Repack (a receipt with no source warehouse created stock while the same kilos
+	# still stood at the supplier), and process loss arrived as a Material Issue.
+	# Both carry custom_mip_ref, neither is a Material Receipt, so both were being
+	# counted as issued and the figure was overstated by the return plus the
+	# write-off. A blacklist has to be revisited every time the chain gains a step
+	# and silently reports wrong numbers when it is not; this cannot.
 	issued_rows = frappe.db.sql(f"""
 		SELECT sed.item_code, sed.custom_sales_order AS sales_order, SUM(sed.qty) AS qty
 		FROM `tabStock Entry Detail` sed
 		JOIN `tabStock Entry` se ON se.name = sed.parent
 		WHERE se.docstatus = 1 AND se.custom_mip_ref IS NOT NULL AND se.custom_mip_ref != ''
-		  AND se.stock_entry_type != 'Material Receipt'
+		  AND se.stock_entry_type IN ('Send to Subcontractor', 'Material Transfer')
 		  {_clause(filters, "sed", "se", "posting_date")}
 		GROUP BY sed.item_code, sed.custom_sales_order
 	""", params, as_dict=True)

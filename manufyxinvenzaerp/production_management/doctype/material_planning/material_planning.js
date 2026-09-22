@@ -286,6 +286,28 @@ frappe.ui.form.on("Material Planning", {
 			};
 		});
 
+		// Raw Materials Warehouse: this plan's own company, and a warehouse that can
+		// actually hold stock.
+		//
+		// The field had no query at all, so it offered every warehouse on the site --
+		// 23 of them here, of which only 7 belong to the operating company. Naming
+		// another company's warehouse points every stock read this plan makes
+		// (check_stock_availability, the batch picker, reserve_batches) at a place its
+		// material is not, and the shortfall it then reports has nothing to do with
+		// what is on the floor.
+		//
+		// is_group = 0 as well: a group warehouse is a tree node, not a location.
+		// get_batch_qty returns nothing for one, so picking it reads as "no stock
+		// anywhere" rather than as the mis-pick it is.
+		frm.set_query("for_warehouse", function() {
+			return {
+				filters: {
+					company: frm.doc.company || "",
+					is_group: 0,
+				},
+			};
+		});
+
 		// Only batches holding stock in this plan's own Raw Materials Warehouse. With
 		// no query at all the field offered every batch on the site, so a plan built for
 		// one warehouse could be mapped to a batch sitting in another -- the reservation
@@ -2119,11 +2141,10 @@ frappe.ui.form.on("Material Planning Consolidate Item", {
 	},
 });
 
-// Batch, "Reserve stock without dimensions", Sec Nos and CNC Process are settled once a
-// row holds stock or has shipped any: changing one would describe a reservation nobody is
-// holding, or re-route material that has already gone. Sec Nos drives Calc Qty, which is
-// the weight that was reserved; CNC Process decides which warehouse the row travels
-// through, which is not a question any more once it has travelled.
+// Batch, "Reserve stock without dimensions" and Sec Nos are settled once a row holds
+// stock or has shipped any: changing one would describe a reservation nobody is holding,
+// or re-route material that has already gone. Sec Nos drives Calc Qty, which is the
+// weight that was reserved.
 //
 // Reserved is not enough on its own. A transfer RELEASES the reservation -- that is what
 // releasing means -- so after one, a shipped row and a row nobody ever reserved look
@@ -2133,17 +2154,55 @@ frappe.ui.form.on("Material Planning Consolidate Item", {
 // Unreserve the row first -- that is what the per-row Unreserve button is for. A row that
 // has shipped cannot be unlocked at all, which is the point.
 const _MP_LOCKED_MAPPING_FIELDS = [
-	"batch", "reserve_without_dimensions", "batch_sec_qty", "cnc_process",
+	"batch", "reserve_without_dimensions", "batch_sec_qty",
 ];
 // Exact Match has no batch picker or Sec Nos of its own -- both are already read-only
-// there -- so its settled row locks the two things it can still change, plus the
+// there -- so its settled row locks the one thing it can still change, plus the
 // auto-suggest skip, which only means anything while a batch is still to be chosen.
 const _MP_LOCKED_EXACT_FIELDS = [
-	"reserve_without_dimensions", "cnc_process", "skip_auto_suggest_batch",
+	"reserve_without_dimensions", "skip_auto_suggest_batch",
+];
+
+// CNC Process is the one field of that group a RESERVATION does not settle, on either
+// table. Client requirement, 22 Sep 2026: "even after reservation make the CNC Process
+// as editable, only make read only if transferred."
+//
+// Why it differs from its neighbours: a reservation is a paper hold on a batch in the
+// Raw Materials warehouse, and it is reversible -- the per-row Unreserve button hands
+// the whole thing back. reserve_batches never reads cnc_process, never holds against
+// the CNC warehouse, and flipping the flag neither invalidates the hold nor moves which
+// warehouse it is against. A transfer is the opposite on both counts: the steel has
+// physically gone to CNC or straight to the supplier, and no button brings it back. So
+// the route stops being a question at the transfer, not at the reservation -- which is
+// what the transfer code already assumes. _ensure_cnc_routing refuses a transfer with
+// "untick CNC Process on those rows in the Material Planning if the CNC step is not
+// required"; the old lock made that instruction impossible to follow on exactly the
+// reserved rows it was complaining about.
+//
+// The transfer-releases-the-reservation trap above applies here too, and harder: after a
+// transfer is_reserved is 0 again, so transferred_qty and fully_transferred are the only
+// reliable signals -- which is all _mp_row_transferred looks at.
+//
+// KNOWN HAZARD, deliberately not papered over: a Material Issue Plan keys its Raw
+// Materials snapshot, its Consolidate Items rows and therefore any PARKED TRANSFER DRAFT
+// (save_transfer_draft / get_transfer_draft) on (item, batch, cnc_process), while the
+// transfer popup's pending lines are read LIVE off this plan (_get_mp_reserved_batches).
+// Flip the flag after a draft has been parked and the two keys stop meeting: the draft is
+// unreachable from the popup, the line's DUNO / Sales Order / planned weight read back
+// blank from the stale snapshot, and a Refresh Raw Materials rebuild drops the draft
+// outright. Flip CNC Process before anything is parked on the issue plan, not after.
+const _MP_TRANSFER_LOCKED_FIELDS = [
+	"cnc_process",
 ];
 
 function _mp_row_settled(row) {
 	return !!(row.is_reserved || row.fully_transferred || flt(row.transferred_qty) > 0);
+}
+
+// The narrower predicate: has this row actually MOVED material? No is_reserved here, on
+// purpose -- a reservation is reversible and does not decide the route.
+function _mp_row_transferred(row) {
+	return !!(row.fully_transferred || flt(row.transferred_qty) > 0);
 }
 
 function _mp_lock_settled_rows(frm) {
@@ -2163,13 +2222,21 @@ function _mp_lock_settled_rows(frm) {
 				let df = frappe.meta.get_docfield(child_dt, fieldname, row.name);
 				if (df) df.read_only = settled ? 1 : 0;
 			});
+			// Same sweep, narrower rule -- both tables carry cnc_process.
+			_MP_TRANSFER_LOCKED_FIELDS.forEach(function (fieldname) {
+				let df = frappe.meta.get_docfield(child_dt, fieldname, row.name);
+				if (df) df.read_only = _mp_row_transferred(row) ? 1 : 0;
+			});
 		});
 		grid.refresh();
 	});
 
 	// The plan-wide waiver decides how every row is matched to stock. Once any row is
 	// holding or has shipped material, the rows already settled cannot follow a change
-	// to it, so the plan would be running two rules at once.
+	// to it, so the plan would be running two rules at once. Computed from the RESERVATION
+	// predicate, not the transfer one, and it stays that way: this is the plan-wide
+	// matching rule rather than one row's route, every settled row was matched under it,
+	// and a row holding a reservation is precisely a row that cannot be re-matched.
 	frm.set_df_property("check_stock_without_dimensions", "read_only", any_settled ? 1 : 0);
 }
 
@@ -2334,14 +2401,21 @@ frappe.ui.form.on("Material Planning Material Mapping", {
 		}
 
 		// A settled row -- reserved, or already transferred -- holds its batch, its
-		// dimension waiver, the Sec Nos that weight was reserved against and its CNC
-		// routing. The batch handler already refuses a change and puts the old value
-		// back, but only after the user has picked a new one and watched it disappear.
-		// Read-only says so before they start. See _mp_lock_settled_rows.
+		// dimension waiver and the Sec Nos that weight was reserved against. The batch
+		// handler already refuses a change and puts the old value back, but only after
+		// the user has picked a new one and watched it disappear. Read-only says so
+		// before they start. See _mp_lock_settled_rows.
 		_MP_LOCKED_MAPPING_FIELDS.forEach(function (fieldname) {
 			let df = frappe.meta.get_docfield(
 				"Material Planning Material Mapping", fieldname, cdn);
 			if (df) df.read_only = _mp_row_settled(row) ? 1 : 0;
+		});
+		// CNC routing is the exception: a reservation is reversible, so it stays editable
+		// until the row has actually shipped. See _MP_TRANSFER_LOCKED_FIELDS.
+		_MP_TRANSFER_LOCKED_FIELDS.forEach(function (fieldname) {
+			let df = frappe.meta.get_docfield(
+				"Material Planning Material Mapping", fieldname, cdn);
+			if (df) df.read_only = _mp_row_transferred(row) ? 1 : 0;
 		});
 		frm.fields_dict["material_mapping"].grid.refresh_row(cdn);
 	},
@@ -3358,14 +3432,20 @@ function _show_table_popup(frm, fieldname) {
 frappe.ui.form.on("Material Planning Available Raw Material", {
 	form_render(frm, cdt, cdn) {
 		let row = locals[cdt][cdn];
-		// The dimension waiver, the CNC routing and the auto-suggest skip are settled on
-		// a row that is reserved or has shipped: _apply_rwd_fractional_nos skips reserved
-		// rows, so a tick on one would appear to take and then do nothing, and nothing at
-		// all can be re-routed once it has moved. See _mp_lock_settled_rows.
+		// The dimension waiver and the auto-suggest skip are settled on a row that is
+		// reserved or has shipped: _apply_rwd_fractional_nos skips reserved rows, so a
+		// tick on one would appear to take and then do nothing. See _mp_lock_settled_rows.
 		_MP_LOCKED_EXACT_FIELDS.forEach(function (fieldname) {
 			let df = frappe.meta.get_docfield(
 				"Material Planning Available Raw Material", fieldname, cdn);
 			if (df) df.read_only = _mp_row_settled(row) ? 1 : 0;
+		});
+		// The CNC routing is not: nothing can be re-routed once it has MOVED, but a
+		// reservation is a reversible paper hold. See _MP_TRANSFER_LOCKED_FIELDS.
+		_MP_TRANSFER_LOCKED_FIELDS.forEach(function (fieldname) {
+			let df = frappe.meta.get_docfield(
+				"Material Planning Available Raw Material", fieldname, cdn);
+			if (df) df.read_only = _mp_row_transferred(row) ? 1 : 0;
 		});
 		frm.fields_dict["available_raw_materials"].grid.refresh_row(cdn);
 	},

@@ -18,3 +18,6 @@ manufyxinvenzaerp.patches.v1.backfill_sco_status
 manufyxinvenzaerp.patches.v1.backfill_production_plan_status
 manufyxinvenzaerp.patches.v1.fg_nos_kg_on_drawing_rows
 manufyxinvenzaerp.patches.v1.fix_mip_drawing_weight_shares
+manufyxinvenzaerp.patches.v1.backfill_fg_entry_mip_ref
+manufyxinvenzaerp.patches.v1.rescale_duno_calculated_weight
+manufyxinvenzaerp.patches.v1.repair_batch_sec_qty_stranded

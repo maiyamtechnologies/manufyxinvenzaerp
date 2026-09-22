@@ -85,11 +85,11 @@
    "read_only_depends_on": "eval:doc.drawing || doc.docstatus===1"
   },
   {
-   "description": "Auto calculated, never typed: the raw materials listed for this drawing add up to this. Compare it with Customer Provided Weight (Kg) -- the raw material is normally the heavier of the two, since the stock is cut down to the finished piece.",
+   "description": "Auto calculated, never typed: the Calculated Total Weight of every raw material listed for this drawing, added up. Same scale as Cust Weight (Total) -- ALL the pieces, not one -- so the two can be compared directly. Raw material is normally the heavier of the two, since stock is cut down to the finished piece.",
    "fieldname": "calculated_weight",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Calculated Weight (Kg)",
+   "label": "Calculated Weight (Total)",
    "precision": "3",
    "read_only": 1
   },
