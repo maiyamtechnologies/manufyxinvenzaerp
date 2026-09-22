@@ -6,6 +6,13 @@ is_reserved goes back to 0 and the lock lets go -- of a row whose steel has alre
 the building. The batch, the dimension waiver, the Sec Nos and the CNC routing all became
 editable again on rows where none of them could still be true.
 
+CNC Process has since been split off onto a NARROWER lock (22 Sep 2026, at the client's
+request): a transfer settles it, a reservation does not, because a reservation is a
+reversible paper hold that never touched the CNC warehouse in the first place. It is what
+this file's "settled" rule was always about -- the shipped half of it -- so it is still
+checked here, against _mp_row_transferred instead of _mp_row_settled. See
+verify_mp_cnc_process_editable for the reasoning in full.
+
 The same blind spot reached Check Mapping, which reads "batch selected but not reserved"
 as an error to fix: MP-2026-00260 reported 32 issues the moment its first transfer went
 out, every one of them settled work, each telling the user to go and reserve stock that
@@ -98,10 +105,22 @@ def run():
     js = _js()
     check("settled means reserved OR shipped",
           "row.is_reserved || row.fully_transferred || flt(row.transferred_qty) > 0" in js, True)
-    check("CNC Process is locked too (it decides the route)",
-          '"batch", "reserve_without_dimensions", "batch_sec_qty", "cnc_process",' in js, True)
-    check("Exact Match locks its own three",
-          '"reserve_without_dimensions", "cnc_process", "skip_auto_suggest_batch",' in js, True)
+    check("Material Mapping locks the batch and its figures",
+          '"batch", "reserve_without_dimensions", "batch_sec_qty",' in js, True)
+    check("Exact Match locks its own two",
+          '"reserve_without_dimensions", "skip_auto_suggest_batch",' in js, True)
+    # CNC Process used to sit in those two lists, locked by _mp_row_settled. A
+    # reservation does not settle a ROUTE -- it is reversible and holds nothing in the
+    # CNC warehouse -- so it is locked by the transfer alone now. The shipped half of
+    # this file's rule still applies to it, which is what these three check.
+    check("CNC Process is locked by the transfer alone",
+          '"cnc_process",\n];' in js.replace("\t", ""), True)
+    check("...on its own list", "_MP_TRANSFER_LOCKED_FIELDS" in js, True)
+    check("...driven by a predicate that ignores is_reserved",
+          "return !!(row.fully_transferred || flt(row.transferred_qty) > 0);" in js, True)
+    check("...and no longer by the reservation lock",
+          '"batch_sec_qty", "cnc_process"' in js or '"reserve_without_dimensions", "cnc_process"' in js,
+          False)
     check("both grids are swept, not just the expanded row",
           'function _mp_lock_settled_rows(frm)' in js, True)
     check("...and it runs on refresh", "_mp_lock_settled_rows(frm);" in js, True)

@@ -718,6 +718,11 @@ function _so_calc_rm_qty(frm, cdt, cdn) {
 // Keep the drawing's Calculated Weight in step with its rows as they are edited.
 // The server recomputes the same total on save (sales_order.recalculate_raw_material_qty);
 // this is only so the grid does not sit showing a figure the rows no longer add up to.
+//
+// total_weight, not qty -- and it has to stay the same choice the server makes, or
+// the figure changes the moment the form is saved. qty is one piece's steel;
+// total_weight is that times the drawing's piece count, which is the scale the
+// customer weight it gets compared against is on. See drawing_calculated_weight.
 function _so_roll_up_drawing_weight(frm, drawing_number) {
 	if (!drawing_number) return;
 	var dr = (frm.doc.custom_duno_items || []).find(function(r) {
@@ -725,7 +730,7 @@ function _so_roll_up_drawing_weight(frm, drawing_number) {
 	});
 	if (!dr) return;
 	var total = (frm.doc.custom_so_raw_materials || []).reduce(function(sum, r) {
-		return r.customer_drawing_number === drawing_number ? sum + flt(r.qty) : sum;
+		return r.customer_drawing_number === drawing_number ? sum + flt(r.total_weight) : sum;
 	}, 0);
 	frappe.model.set_value(dr.doctype, dr.name, "calculated_weight", flt(total, 3));
 }

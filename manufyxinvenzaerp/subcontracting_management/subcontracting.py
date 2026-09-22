@@ -924,7 +924,11 @@ def create_finished_goods_entry(sco_name, fg_weights_json=None):
         "Stock Entry", {"subcontracting_order": sco_name, "stock_entry_type": "Manufacture", "docstatus": 0}, "name"
     )
 
-    mip_status = frappe.db.get_value("Material Issue Plan", {"subcontracting_order": sco_name}, "status")
+    mip_row = frappe.db.get_value(
+        "Material Issue Plan", {"subcontracting_order": sco_name}, ["name", "status"], as_dict=True
+    ) or {}
+    mip_ref = mip_row.get("name")
+    mip_status = mip_row.get("status")
     if mip_status == "Completed":
         frappe.throw(_("The linked Material Issue Plan is already Completed and locked for further changes."))
     supplier_warehouse = _get_sco_supplier_warehouse(sco)
@@ -940,10 +944,8 @@ def create_finished_goods_entry(sco_name, fg_weights_json=None):
     fg_warehouse = ""
     if sco.items:
         fg_warehouse = sco.items[0].warehouse or ""
-    if not fg_warehouse:
-        mip_name = frappe.db.get_value("Material Issue Plan", {"subcontracting_order": sco.name})
-        if mip_name:
-            fg_warehouse = frappe.db.get_value("Material Issue Plan", mip_name, "excess_return_warehouse") or ""
+    if not fg_warehouse and mip_ref:
+        fg_warehouse = frappe.db.get_value("Material Issue Plan", mip_ref, "excess_return_warehouse") or ""
     if not fg_warehouse:
         frappe.throw(_("No finished-good warehouse set. Set the warehouse on the "
                        "Subcontracting Order item (or the Finished Goods Warehouse on the "
@@ -990,6 +992,10 @@ def create_finished_goods_entry(sco_name, fg_weights_json=None):
         se.items = []
         for row in items:
             se.append("items", row)
+        # Also tags a draft raised before custom_mip_ref was set here, so a plan
+        # part-way through the flow picks the link up on its next visit.
+        if mip_ref and not se.get("custom_mip_ref"):
+            se.custom_mip_ref = mip_ref
         se.save(ignore_permissions=True)
         return {"name": se.name, "already_existed": True}
 
@@ -998,6 +1004,17 @@ def create_finished_goods_entry(sco_name, fg_weights_json=None):
         "stock_entry_type": "Manufacture",
         "company": sco.company,
         "subcontracting_order": sco_name,
+        # The plan's Connections panel keys on custom_mip_ref alone
+        # (material_issue_plan_dashboard), so without this the one entry that
+        # finishes the job -- the entry the user goes looking for -- is the only
+        # one missing from it. Every other entry in the chain is tagged by
+        # _tag_stock_entry; this one is built here and was not.
+        #
+        # custom_sco_ref is deliberately NOT set alongside it. subcontracting_order
+        # already carries that value and every query pairs the two with OR, so it
+        # would be redundant -- and _update_sco_transferred_weight matches on
+        # custom_sco_ref alone, where a Manufacture entry has no business appearing.
+        "custom_mip_ref": mip_ref or None,
         "items": items,
     })
     se.insert(ignore_permissions=True)

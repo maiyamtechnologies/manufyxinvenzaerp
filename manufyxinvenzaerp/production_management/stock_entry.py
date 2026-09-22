@@ -213,6 +213,35 @@ def on_submit_stock_entry(doc, method):
 	if doc.stock_entry_type == "Manufacture" and doc.get("subcontracting_order"):
 		_refresh_linked_mip_weight(sco_ref=doc.subcontracting_order)
 
+	# Last, after every branch above: the plan's completion gate reads the STOCK
+	# LEDGER, and the ledger only counts submitted entries -- so the entry that
+	# empties the supplier warehouse can only be seen from its own submit.
+	#
+	# create_mip_process_loss_entry inserts its write-off as a DRAFT and then saves
+	# the plan in the same call. That save runs _maybe_mark_completed against a
+	# ledger the draft is still invisible to, so the plan is judged to be holding
+	# exactly the weight that is about to be written off, and stays Open. The
+	# submit fourteen seconds later is what actually clears it, and nothing here
+	# was listening: the branches above cover Send to Subcontractor, Material
+	# Transfer and Manufacture, but the last two steps of the chain -- Material
+	# Issue (process loss) and Repack (excess return) -- fall through all of them.
+	# MIP-2026-00003 sat Open that way with every kilo accounted for.
+	#
+	# Not gated on entry type on purpose: the point is to re-check after ANY entry
+	# this plan raised, whichever one happens to be last. recheck_mip_completion
+	# only ever moves Open/In Progress -> Completed and returns immediately when
+	# already Completed, so the branches above re-entering here cost one read.
+	if doc.get("custom_mip_ref"):
+		from manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan import (
+			recheck_mip_completion,
+		)
+		try:
+			recheck_mip_completion(doc.custom_mip_ref)
+		except Exception:
+			# A plan that cannot be re-checked must not block the stock movement --
+			# the figures are already written; only the status flip is deferred.
+			frappe.log_error(frappe.get_traceback(), "MIP completion re-check failed")
+
 
 def _reduce_batch_sec_qty(batch_no, consumed_qty):
 	"""Take `consumed_qty` pieces off the batch, atomically.
@@ -230,6 +259,20 @@ def _reduce_batch_sec_qty(batch_no, consumed_qty):
 	The restore path on cancel passes a NEGATIVE quantity to add the pieces back,
 	and subtracting a negative works the same way here -- both directions go
 	through this one statement so they cannot drift apart.
+
+	Deliberately NOT floored at zero. A floor here would break the cancel path: the
+	restore adds back exactly what was taken, so a batch clamped on the way down
+	would come back higher than it started (2 pieces, 3 consumed and clamped to 0,
+	cancelled, restores +3 = 3). The subtraction has to stay symmetric, which means
+	a row whose Sec Nos disagrees with its own Kg shows up here as a wrong count
+	rather than being quietly absorbed.
+
+	ISMB450-L7331-R004 is what that looks like: it arrived as 1061.608 Kg / 2 bars,
+	a transfer took ONE bar's 530.804 Kg while its Stock Entry row said 2 pieces,
+	and the batch was left reporting 0 pieces against the bar still standing in it.
+	The answer is to keep such a row from being written, and to REPORT a batch whose
+	count and weight disagree -- see check 7b in _collect_batch_mapping_issues and
+	patch repair_batch_sec_qty_stranded -- not to clamp the arithmetic here.
 	"""
 	frappe.db.sql(
 		"""UPDATE `tabBatch`

@@ -1,5 +1,10 @@
 const FORMULA_GROUPS = ["Structurals", "Plates"];
 
+// Must match fg_stock.FG_PARENT_ITEM_GROUP -- the server refuses an FG item set up
+// any other way (item.validate_fg_configuration), so what this file fills in here
+// is the same set-up that validation demands, not a separate opinion about it.
+const FG_GROUP = "Finished Goods";
+
 const TRANSACTION_LOCKED_FIELDS = [
 	"custom_parent_item_group",
 	"stock_uom",
@@ -19,7 +24,11 @@ function set_calculation_type(frm) {
 
 function set_default_uoms(frm) {
 	const group = frm.doc.custom_parent_item_group;
-	if (FORMULA_GROUPS.includes(group)) {
+	if (FORMULA_GROUPS.includes(group) || group === FG_GROUP) {
+		// Finished goods are stocked in Kg and counted in Nos, same as the formula
+		// groups: every FG figure downstream is Kg on the ledger with the piece
+		// count beside it. Filled in on selection rather than left for the user to
+		// guess, because the only other way to learn it was to save and be refused.
 		frm.set_value("stock_uom", "Kg");
 		frm.set_value("custom_secondary_uom", "Nos");
 	} else if (group === "Nuts and Bolts") {
@@ -31,8 +40,19 @@ function set_default_uoms(frm) {
 function apply_batch_ui(frm) {
 	const has_batch = !!frm.doc.has_batch_no;
 	const is_formula_group = FORMULA_GROUPS.includes(frm.doc.custom_parent_item_group);
+	const is_fg = frm.doc.custom_parent_item_group === FG_GROUP;
 
-	frm.toggle_display("custom_batch_prefix", has_batch);
+	// Never shown for finished goods: their batches are named and filled by
+	// fg_stock.get_or_create_fg_batch (FG-<Sales Order>-<DUNO>), so there is no
+	// abbreviation to pick. Cleared as well as hidden -- a value left behind from
+	// a group the item used to be in would still be submitted, and the server
+	// refuses a finished-goods item whose abbreviation is not blank
+	// (validate_fg_configuration), which from behind a hidden field reads as a
+	// refusal with no cause on screen.
+	frm.toggle_display("custom_batch_prefix", has_batch && !is_fg);
+	if (is_fg && frm.doc.custom_batch_prefix) {
+		frm.set_value("custom_batch_prefix", "");
+	}
 
 	if (has_batch && is_formula_group) {
 		frm.set_value("create_new_batch", 1);

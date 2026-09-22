@@ -5667,6 +5667,41 @@ def _collect_batch_mapping_issues(mp):
                         )
                     )
 
+    # 7c. A batch with weight but no pieces cannot issue anything.
+    #
+    # 7b above reads a zero as "nothing to check" -- `if batch_total_nos and ...` --
+    # and skips the row, which is exactly backwards: a zero against real weight is the
+    # fault, not the absence of one. It is also narrower than this problem, applying
+    # only to reserve-without-dimensions rows.
+    #
+    # ISMB450-L7331-R004 is the case. It arrived as 1061.608 Kg / 2 bars; a transfer
+    # took ONE bar's 530.804 Kg while its Stock Entry row said 2 pieces, so
+    # _reduce_batch_sec_qty took two bars' pieces off for one bar's weight and left the
+    # batch reporting 0 Nos with a whole bar still in it. Validate Stock showed "0" for
+    # real steel and nothing objected. Both tables are swept, because either can hold
+    # the batch.
+    seen_zero = set()
+    for table in ("available_raw_materials", "material_mapping"):
+        for r in (mp.get(table) or []):
+            batch_no = r.get("batch_no") or r.get("batch")
+            if not batch_no or not r.get("is_reserved") or batch_no in seen_zero:
+                continue
+            b = frappe.db.get_value(
+                "Batch", batch_no, ["custom_sec_qty", "batch_qty"], as_dict=True
+            ) or {}
+            # 0.01 Kg: below that a batch is dust and no whole piece is expected of it
+            # (ISMB400-L6936-R003 holds 0.006 Kg and 0 Nos is the honest answer).
+            if flt(b.get("custom_sec_qty")) <= 0 and flt(b.get("batch_qty")) > 0.01:
+                seen_zero.add(batch_no)
+                issues.append(
+                    _("Batch <b>{0}</b> ({1}) holds {2} Kg but reports 0 Nos, so no "
+                      "pieces can be issued from it. Correct the batch's Sec Qty (Nos) "
+                      "before transferring.").format(
+                        batch_no, r.get("item_code") or "",
+                        flt(b.get("batch_qty"), 3)
+                    )
+                )
+
     # 8. Items with no stock at all (unavailable_items)
     unavail = [r for r in (mp.unavailable_items or []) if r.item_code]
     if unavail:
