@@ -408,6 +408,10 @@ def get_soe_summary(sco_name):
         fields=[
             "name", "sequence_id", "operation", "status", "docstatus",
             "available_to_consume_kg", "total_consumed_kg",
+            # Who carries each operation out, for the Operations table on the Job
+            # Work Order: a Supplier for a subcontracted one, a Contractor for an
+            # internal one (_create_soes_for_sco copies it from Process Planning).
+            "supplier", "contractor",
         ],
         order_by="sequence_id asc",
     )
@@ -1963,6 +1967,22 @@ def _create_soes_for_sco(sco):
         drawing_rows = _build_soe_drawing_rows(sco, seq_idx)
         is_subcontractor = op_row.work_type == "Subcontractor"
 
+        # Each operation carries its OWN party from its Process Planning row: a
+        # Supplier on a Subcontractor row, a Contractor on an Internal Jobcard row.
+        # Every subcontracted operation used to take the Job Work Order's single
+        # supplier, however the work was really split. A row with no party -- a plan
+        # submitted before the column existed, which can no longer be edited -- keeps
+        # exactly that old behaviour. supplier_warehouse stays the Job Work Order's
+        # either way: it is where this job's material physically sits, whichever
+        # supplier carries out the operation.
+        party = op_row.get("party") or ""
+        if is_subcontractor:
+            supplier = party if (party and op_row.get("party_type") == "Supplier") else sco.supplier
+            contractor = ""
+        else:
+            supplier = ""
+            contractor = party if (party and op_row.get("party_type") == "Contractor") else ""
+
         soe = frappe.get_doc({
             "doctype": "Supplier Operation Entry",
             "subcontracting_order": sco.name,
@@ -1970,7 +1990,8 @@ def _create_soes_for_sco(sco):
             "operation": op_row.operation_name,
             "custom_inspection_mandatory": 1 if cint(op_row.inspection_mandatory) else 0,
             "sequence_id": seq_idx,
-            "supplier": sco.supplier if is_subcontractor else "",
+            "supplier": supplier,
+            "contractor": contractor,
             "supplier_warehouse": (sco.supplier_warehouse or "") if is_subcontractor else "",
             "status": "Open",
             "available_to_consume_kg": flt(available_to_consume, 3),

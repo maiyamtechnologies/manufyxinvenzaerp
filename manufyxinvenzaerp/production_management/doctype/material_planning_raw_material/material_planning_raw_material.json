@@ -34,7 +34,7 @@
    "columns": 1,
    "fieldname": "item_number",
    "fieldtype": "Data",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Item No",
    "read_only": 1
   },
@@ -42,7 +42,7 @@
    "columns": 1,
    "fieldname": "sales_order",
    "fieldtype": "Link",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Sales Order",
    "options": "Sales Order",
    "read_only": 1
@@ -89,7 +89,7 @@
    "columns": 1,
    "fieldname": "customer_drawing_number",
    "fieldtype": "Data",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Cust Drawing Number",
    "read_only": 1
   },
@@ -176,14 +176,18 @@
    "fieldtype": "Data",
    "label": "Material Spec",
    "read_only": 1,
-   "fetch_from": "item_code.custom_material_spec"
+   "fetch_from": "item_code.custom_material_spec",
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fetch_from": "item_code.custom_material_grade",
    "fieldname": "material_grade",
    "fieldtype": "Data",
    "label": "Material Grade",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "warehouse",

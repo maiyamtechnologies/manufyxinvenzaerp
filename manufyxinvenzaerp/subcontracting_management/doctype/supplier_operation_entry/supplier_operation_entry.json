@@ -14,6 +14,7 @@
   "custom_inspection_mandatory",
   "sequence_id",
   "supplier",
+  "contractor",
   "supplier_warehouse",
   "status",
   "section_break_summary",
@@ -97,6 +98,14 @@
    "label": "Supplier",
    "options": "Supplier",
    "read_only": 1
+  },
+  {
+   "fieldname": "contractor",
+   "fieldtype": "Link",
+   "options": "Contractor",
+   "label": "Contractor",
+   "read_only": 1,
+   "description": "Who carries out this operation when it is an Internal Jobcard -- taken from the Production Plan's Process Planning row, as Supplier is on a Subcontractor one."
   },
   {
    "fieldname": "supplier_warehouse",

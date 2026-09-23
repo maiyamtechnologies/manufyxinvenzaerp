@@ -280,6 +280,10 @@ doc_events = {
 			# Last: Planned Qty (Kg) from Qty (Nos) on drawing rows (sep14 FG plan, A3).
 			"manufyxinvenzaerp.production_plan_management.production_plan.apply_fg_nos",
 		],
+		# Supplier/Contractor is mandatory on every Process Planning row, enforced at
+		# submit rather than save: drafts are created from the BOM routing before
+		# anyone knows who does each operation (see _check_row_party).
+		"before_submit": "manufyxinvenzaerp.production_plan_management.production_plan.before_submit_process_planning",
 		"on_update": "manufyxinvenzaerp.drawing_management.rate_schedule_sync.on_update_production_plan",
 		"on_update_after_submit": "manufyxinvenzaerp.drawing_management.rate_schedule_sync.on_update_production_plan",
 		"on_trash": "manufyxinvenzaerp.production_plan_management.production_plan.unlink_production_plan_on_trash",

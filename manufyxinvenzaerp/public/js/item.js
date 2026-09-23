@@ -13,6 +13,10 @@ const TRANSACTION_LOCKED_FIELDS = [
 	"custom_batch_prefix",
 ];
 
+// Locked once SET (item.py _LOCK_ONCE_SET, which is what actually refuses the save):
+// a blank one can still be filled in on an Item already in use, a set one cannot change.
+const LOCK_ONCE_SET_FIELDS = ["custom_material_spec", "custom_material_grade"];
+
 function set_calculation_type(frm) {
 	const group = frm.doc.custom_parent_item_group;
 	if (FORMULA_GROUPS.includes(group)) {
@@ -73,6 +77,9 @@ function lock_transacted_fields(frm) {
 			if (r.message) {
 				TRANSACTION_LOCKED_FIELDS.forEach(field => {
 					frm.set_df_property(field, "read_only", 1);
+				});
+				LOCK_ONCE_SET_FIELDS.forEach(field => {
+					if (frm.doc[field]) frm.set_df_property(field, "read_only", 1);
 				});
 			}
 		},

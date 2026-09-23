@@ -1294,6 +1294,7 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Planned") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Transferred") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("In Stock") + "</th>"
+		+ "<th class='text-right' style='white-space:nowrap'>" + __("Available NOS") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("NOS")
 			+ "<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("edit to transfer part") + "</div></th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Transfer Qty (Kg)")
@@ -1393,6 +1394,11 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 					  __("{0} reserved for other drawings or plans", [format_number(flt(d.reserved_for_others_kg), null, 3)]) +
 					  "</div>"
 					: "") + "</td>" +
+			// The In Stock Kg in pieces, at this line's own piece weight (server:
+			// _available_nos). A dash where there is no piece weight to divide by.
+			"<td class='text-right' style='white-space:nowrap'>" +
+				(d.available_nos === null || d.available_nos === undefined ? "—"
+					: format_number(flt(d.available_nos), null, 3)) + "</td>" +
 			"<td class='text-right'>" +
 				(sec_drives_qty
 					? "<input type='number' step='0.001' min='0' class='form-control input-xs text-right mip-sec-qty' " +

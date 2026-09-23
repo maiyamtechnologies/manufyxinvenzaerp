@@ -52,11 +52,13 @@
    "read_only_depends_on": "eval:doc.is_locked"
   },
   {
-   "fetch_from": "material_code.custom_material_spec",
    "fieldname": "material_spec",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Material Spec",
-   "read_only": 1
+   "read_only": 1,
+   "options": "Material Spec",
+   "read_only_depends_on": "eval:doc.is_locked",
+   "description": "The Material Spec typed in the import sheet for this line, or the Item's own when the sheet leaves it blank. No longer fetched from the Item: Verify Raw Materials compares this against the Item's spec, and a fetch would overwrite the very value it has to check (see _check_item_spec_grade)."
   },
   {
    "fetch_from": "material_code.item_name",

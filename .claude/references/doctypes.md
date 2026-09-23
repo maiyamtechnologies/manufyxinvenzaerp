@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-23 21:37:09_
+_Generated: 2026-09-23 22:34:08_
 
 ## drawing
 
@@ -273,6 +273,17 @@ _Generated: 2026-09-23 21:37:09_
 | Module | manufyxinvenzaerp |
 | Path | `manufyxinvenzaerp/doctype/material_spec` |
 | Controller | `manufyxinvenzaerp/doctype/material_spec/material_spec.py` |
+| Client script | none |
+
+---
+
+## contractor
+
+| Key | Value |
+|-----|-------|
+| Module | production_management |
+| Path | `production_management/doctype/contractor` |
+| Controller | `production_management/doctype/contractor/contractor.py` |
 | Client script | none |
 
 ---

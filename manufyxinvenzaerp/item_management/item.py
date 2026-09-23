@@ -11,6 +11,22 @@ _LOCKED_FIELDS = {
     "custom_batch_prefix": "Custom Batch Abbreviation",
 }
 
+# Locked once SET, rather than outright. Spec and grade are mirrored onto 25 child
+# tables by fetch_from and matched against the Sales Order sheet by Verify Raw
+# Materials, so changing one on an Item already in use would leave rows fetched before
+# the change describing a different material from rows fetched after it -- a different
+# spec or grade is a different Item.
+#
+# But filling a BLANK one in is not a change of material, and it has to stay possible:
+# when this lock arrived, every one of the 37 Items with transactions had neither set.
+# Locking those outright would have left them unable ever to carry a spec or grade, and
+# every sheet row naming one would have been refused by Verify with no fix short of a
+# new Item for every material in stock.
+_LOCK_ONCE_SET = {
+    "custom_material_spec": "Material Spec",
+    "custom_material_grade": "Material Grade",
+}
+
 
 def validate_item(doc, method):
     validate_parent_item_group(doc)
@@ -197,6 +213,14 @@ def validate_locked_fields(doc):
                 _("Cannot change {0} for Item {1} because transactions already exist.").format(
                     label, doc.name
                 )
+            )
+    for field, label in _LOCK_ONCE_SET.items():
+        stored = frappe.db.get_value("Item", doc.name, field)
+        if stored and stored != doc.get(field):
+            frappe.throw(
+                _("Cannot change {0} for Item {1} because transactions already exist. "
+                  "A different {0} is a different material -- create a new Item for it.")
+                .format(label, doc.name)
             )
 
 

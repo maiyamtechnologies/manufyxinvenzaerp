@@ -811,6 +811,7 @@ def get_mip_pending_items(mip_name):
         row["round_up_excess_kg"] = 0.0
         row["round_up_excess_pieces"] = 0.0
         row["kg_per_piece"], row["piece_from_dimensions"] = _line_kg_per_piece(row)
+        row["available_nos"] = _available_nos(row, row["kg_per_piece"])
 
         # "In Stock" stays the physical figure. What the popup limits against is what
         # this plan may take: physical less other plans' reservations, and never more
@@ -1026,6 +1027,21 @@ def _line_kg_per_piece(line):
             if abs(planned_qty / piece - planned_sec) <= _SEC_NOS_ROUNDING * members + 0.0001:
                 return flt(piece, 6), True
     return flt(from_plan, 6), False
+
+
+def _available_nos(line, kg_per_piece):
+    """Pieces the batch's In Stock Kg makes, at this line's own piece weight.
+
+    Shown beside In Stock (Kg) in the transfer popups. kg_per_piece is what
+    _line_kg_per_piece gives -- the same piece weight the popup uses to turn NOS into
+    Kg -- so the two columns cannot disagree about what a piece weighs. Not rounded to
+    whole pieces: a remnant reads as e.g. 3.600, which is what is physically there.
+    None when there is no piece weight at all (no dimensions and no planned NOS), and
+    the popup shows a dash rather than a number it would have had to invent."""
+    kg_per_piece = flt(kg_per_piece)
+    if kg_per_piece <= 0:
+        return None
+    return flt(flt(line.get("available_qty")) / kg_per_piece, 3)
 
 
 def _qty_for_sec(line, new_sec):
@@ -1932,6 +1948,11 @@ def get_mip_cnc_pending_items(mip_name):
             "round_up_excess_kg": 0.0,
             "round_up_excess_pieces": 0.0,
         })
+    for row in result:
+        # Priced into available_nos only. kg_per_piece is deliberately NOT added to
+        # these rows: the popup reads that key for its own NOS -> Kg arithmetic, and
+        # this leg has always done without it.
+        row["available_nos"] = _available_nos(row, _line_kg_per_piece(row)[0])
     return result
 
 
