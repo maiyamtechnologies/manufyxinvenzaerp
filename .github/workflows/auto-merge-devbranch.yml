@@ -7,7 +7,13 @@ on:
 
 jobs:
   auto-merge:
-    if: contains(github.event.head_commit.message, '[autodeploy]')
+    # Two tags reach production. [autodeploy] is the normal route and goes through
+    # the test gate on main. [urgentfix] skips that gate -- same merge, same deploy,
+    # same backup and rollback, but the suite is not run first. Use it when the fix
+    # cannot wait for CI, and expect the Deploy Log record to be marked Tests Skipped.
+    if: >-
+      contains(github.event.head_commit.message, '[autodeploy]') ||
+      contains(github.event.head_commit.message, '[urgentfix]')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,6 +33,21 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
         run: |
           set -e
+
+          # Carry the tag onto the merge commit deliberately, rather than leaving
+          # main.yml to infer it. `gh pr merge` writes GitHub's default subject
+          # ("Merge pull request #N from ..."), which would drop [urgentfix] on the
+          # floor -- and the deploy workflow keys the skipped test gate on it. An
+          # urgent fix silently downgraded to a normal one would be the worst kind
+          # of failure here: it still deploys, just not when you needed it to.
+          if printf '%s' "$COMMIT_MESSAGE" | grep -qF '[urgentfix]'; then
+            DEPLOY_TAG='[urgentfix]'
+          else
+            DEPLOY_TAG='[autodeploy]'
+          fi
+          echo "deploy_tag=$DEPLOY_TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploy tag for this merge: $DEPLOY_TAG"
+
           EXISTING_PR=$(gh pr list --base main --head devbranch --state open --json number --jq '.[0].number')
 
           if [ -n "$EXISTING_PR" ]; then
@@ -48,5 +69,11 @@ jobs:
       - name: Merge PR into main
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          DEPLOY_TAG: ${{ steps.pr.outputs.deploy_tag }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         run: |
-          gh pr merge ${{ steps.pr.outputs.pr_number }} --merge --delete-branch=false
+          set -e
+          # --subject puts the tag on the merge commit itself, which is the commit
+          # main.yml reads as github.event.head_commit.message.
+          gh pr merge "$PR_NUMBER" --merge --delete-branch=false \
+            --subject "Merge pull request #${PR_NUMBER} from devbranch ${DEPLOY_TAG}"

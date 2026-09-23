@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-23 14:04:29_
+_Generated: 2026-09-23 14:24:35_
 
 ## drawing
 
@@ -201,6 +201,24 @@ _Generated: 2026-09-23 14:04:29_
 | Path | `manufyxinvenzaerp/doctype/delivery_challan_item` |
 | Controller | `manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py` |
 | Client script | none |
+
+---
+
+## deploy_log
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/deploy_log` |
+| Controller | `manufyxinvenzaerp/doctype/deploy_log/deploy_log.py` |
+| Client script | none |
+
+### Methods
+
+| Method | Whitelisted |
+|--------|-------------|
+| ` validate` | no |
+| ` _set_duration` | no |
 
 ---
 

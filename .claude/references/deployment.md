@@ -37,16 +37,61 @@ Two traps:
 
 ## Pipeline
 
-`.github/workflows/main.yml`, on push to `main`. A push to `devbranch` with `[autodeploy]`
-in the commit message is merged to `main` by `auto-merge-devbranch.yml`, which triggers it.
+`.github/workflows/main.yml`, on push to `main`. A push to `devbranch` tagged in the commit
+message is merged to `main` by `auto-merge-devbranch.yml`, which triggers it.
 
 | Job | What it does | Gate |
 |-----|--------------|------|
-| Run App Test Suite | Throwaway bench + MariaDB + 2 Redis containers, installs the app, runs the suite | always |
-| SSH Deploy | Backup, pull, build, clear-cache, migrate, restart on the live server | `vars.LIVE_DEPLOY == 'true'` |
+| Read deploy flags | Looks for `[urgentfix]` in the merge commit and in every commit in the push | always |
+| Run App Test Suite | Throwaway bench + MariaDB + 2 Redis containers, installs the app, runs the suite | skipped when `[urgentfix]` |
+| SSH Deploy | Backup, pull, build, clear-cache, migrate, restart on the live server | `vars.LIVE_DEPLOY == 'true'` **and** the test job succeeded *or was skipped* |
 
 Set `LIVE_DEPLOY` under Settings → Secrets and variables → Actions → Variables. Unset it to
 run CI without touching production.
+
+### Two tags
+
+| Tag | Test suite | Everything else |
+|-----|-----------|-----------------|
+| `[autodeploy]` | runs, and must pass | backup, pull, build, migrate, restart, rollback on failure |
+| `[urgentfix]` | **skipped** | identical |
+
+`[urgentfix]` trades the warning, not the safety net: the backup, the `gzip -t` check and
+the rollback all still happen. The Deploy Log record is stamped **Tests Skipped**, so a
+deploy that went out untested stays identifiable long after the run has scrolled off.
+
+Three things that look like details and are not:
+
+- The merge commit carries the tag **deliberately**. `gh pr merge` writes GitHub's own
+  subject ("Merge pull request #N from …") and would drop `[urgentfix]` on the floor, so
+  `auto-merge-devbranch.yml` passes `--subject` with the tag in it. `main.yml` reads
+  `github.event.head_commit.message`, which on a merge is that commit.
+- The deploy job needs `!cancelled()`. A skipped `needs` job normally skips everything
+  downstream, so without it an urgent fix would merge and then deploy **nothing at all** —
+  the quietest possible way to fail.
+- It still refuses a *failed* test. The condition names the two allowed results
+  (`success`, `skipped`) rather than excluding `failure`, which also covers a test job
+  that is cancelled or times out.
+
+### Deploy Log in the ERP
+
+The pipeline writes a log per deploy to `$BENCH_PATH/Auto-deploy-logs` and keeps the last
+20. That is readable only over SSH — which is exactly the person who cannot read it when a
+deploy fails out of hours. `manufyxinvenzaerp/deploy_log.py` copies the same log into a
+**Deploy Log** record at the end of every run, on both the success and the rollback path.
+
+- Status is `Completed`, `Rolled Back` or `Failed`; a failure also carries **Failed Step**
+  and an **Error Summary** (the last 30 lines), with the whole log underneath.
+- Called with `bench execute` from the deploy script — on the server, inside the bench that
+  just deployed. No token, no inbound port.
+- Commit sha/message/branch are read from git **on the server**, not passed through the
+  shell: a commit message with a quote in it would otherwise have to survive two shells.
+- It cannot fail a deploy. Everything is caught Python-side and the call ends in `|| true`.
+  A deploy that worked being reported as failed because its *logging* failed is the worst
+  of both outcomes.
+- Records prune to the last 20, matching the server, so a record never outlives the file it
+  points at. `_prune()` slices in Python — `limit_start` with `limit_page_length=0` returns
+  **everything** in Frappe, and the first version of it deleted the whole table.
 
 ## Deploy safety
 

@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 14:04:29_
+_Generated: 2026-09-23 14:24:35_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 14:04:29_
 
 ## Python files
 
-_Total: 368_
+_Total: 374_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -36,6 +36,7 @@ _Total: 368_
 - accounts_management/report/customer_fund_usage/__init__.py
 - accounts_management/report/__init__.py
 - config/__init__.py
+- deploy_log.py
 - drawing_management/bom_class_override.py
 - drawing_management/doctype/drawing/drawing.py
 - drawing_management/doctype/drawing/__init__.py
@@ -72,6 +73,8 @@ _Total: 368_
 - manufyxinvenzaerp/doctype/delivery_challan/__init__.py
 - manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py
 - manufyxinvenzaerp/doctype/delivery_challan_item/__init__.py
+- manufyxinvenzaerp/doctype/deploy_log/deploy_log.py
+- manufyxinvenzaerp/doctype/deploy_log/__init__.py
 - manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.py
 - manufyxinvenzaerp/doctype/gate_pass_purpose/__init__.py
 - manufyxinvenzaerp/doctype/__init__.py
@@ -220,6 +223,8 @@ _Total: 368_
 - tests/_chk_tmp.py
 - tests/create_full_test_entry.py
 - tests/create_test_data.py
+- tests/_dlprune_tmp.py
+- tests/_dl_tmp.py
 - tests/_drw2_tmp.py
 - tests/_drw_tmp.py
 - tests/find_cascade_fixture.py
@@ -287,6 +292,7 @@ _Total: 368_
 - tests/verify_cut_sheet_w2_derived.py
 - tests/verify_decision_log.py
 - tests/verify_delivery_challan.py
+- tests/verify_deploy_log.py
 - tests/verify_drawing_create_revision.py
 - tests/verify_drawing_import_savepoint.py
 - tests/verify_drawing_weight_cascade2.py
@@ -437,7 +443,7 @@ _Total: 32_
 
 ## JSON files
 
-_Total: 168_
+_Total: 169_
 
 - accounts_management/custom/payment_entry.json
 - accounts_management/custom/payment_request.json
@@ -541,6 +547,7 @@ _Total: 168_
 - manufyxinvenzaerp/custom/warranty_claim.json
 - manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.json
 - manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.json
+- manufyxinvenzaerp/doctype/deploy_log/deploy_log.json
 - manufyxinvenzaerp/doctype/gate_pass_purpose/gate_pass_purpose.json
 - manufyxinvenzaerp/doctype/manufyxinvenza_settings/manufyxinvenza_settings.json
 - manufyxinvenzaerp/doctype/material_grade/material_grade.json
@@ -726,6 +733,14 @@ _Total: 168_
 - Path: `manufyxinvenzaerp/doctype/delivery_challan_item`
 - Controller: `manufyxinvenzaerp/doctype/delivery_challan_item/delivery_challan_item.py`
 - Client script: none
+
+### deploy_log
+- Path: `manufyxinvenzaerp/doctype/deploy_log`
+- Controller: `manufyxinvenzaerp/doctype/deploy_log/deploy_log.py`
+- Client script: none
+- Methods:
+  - validate:
+  - _set_duration:
 
 ### gate_pass_purpose
 - Path: `manufyxinvenzaerp/doctype/gate_pass_purpose`
@@ -1095,6 +1110,13 @@ Functions:
   - 5:validate_payment_request:
   - 29:payment_entry_query:
   - 56:get_fund_usage:
+
+### deploy_log.py
+Functions:
+  - 39:record:
+  - 111:_git_context:
+  - 139:_read_log:
+  - 165:_prune:
 
 ### drawing_management/bom_class_override.py
 Functions:
@@ -1699,6 +1721,14 @@ Functions:
   - 135:make_bom:
   - 171:run:
 
+### tests/_dlprune_tmp.py
+Functions:
+  - 4:run:
+
+### tests/_dl_tmp.py
+Functions:
+  - 2:run:
+
 ### tests/_drw2_tmp.py
 Functions:
   - 3:run:
@@ -2106,6 +2136,16 @@ Functions:
   - 91:_status:
   - 95:_pending:
   - 99:run:
+
+### tests/verify_deploy_log.py
+Functions:
+  - 39:check:
+  - 45:_log_file:
+  - 55:_workflow:
+  - 70:run:
+  - 82:_run:
+  - 188:_cleanup:
+  - 202:_summary:
 
 ### tests/verify_drawing_create_revision.py
 Functions:
