@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 22:34:08_
+_Generated: 2026-09-23 23:21:54_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 22:34:08_
 
 ## Python files
 
-_Total: 394_
+_Total: 381_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -105,6 +105,7 @@ _Total: 394_
 - patches/v1/fix_bom_item_number_field_type.py
 - patches/v1/fix_mip_drawing_weight_shares.py
 - patches/v1/__init__.py
+- patches/v1/inspection_feedback_to_rows.py
 - patches/v1/remove_sco_transfer_fields.py
 - patches/v1/remove_wo_transfer_fields.py
 - patches/v1/rename_excess_batch_mapped_statuses.py
@@ -229,33 +230,18 @@ _Total: 394_
 - tests/_chk_tmp.py
 - tests/create_full_test_entry.py
 - tests/create_test_data.py
-- tests/_dlprune_tmp.py
-- tests/_dl_tmp.py
-- tests/_dp_apply_tmp.py
-- tests/_dp_grid_tmp.py
-- tests/_dp_hook_tmp.py
-- tests/_dp_order_tmp.py
-- tests/_dp_try_tmp.py
-- tests/_dpw_apply_tmp.py
-- tests/_dpw_price_tmp.py
-- tests/_drw2_tmp.py
-- tests/_drw_tmp.py
 - tests/find_cascade_fixture.py
 - tests/find_clean_mp.py
 - tests/_find_mip_excess.py
-- tests/_grid_before_after_tmp.py
 - tests/__init__.py
 - tests/_mfx_probe.py
 - tests/move_fixtures_to_custom_json.py
-- tests/_plan_grid_tmp.py
 - tests/_probe_ab.py
 - tests/_probe_tmp.py
 - tests/_render_challan.py
-- tests/_rep_tmp.py
 - tests/reset_transactions.py
 - tests/revert_wo_jc_cleanup.py
 - tests/_showmsg.py
-- tests/_so_tabs_tmp.py
 - tests/_t_close.py
 - tests/_t_cs.py
 - tests/test_alternate_item.py
@@ -339,6 +325,7 @@ _Total: 394_
 - tests/verify_fg_schema.py
 - tests/verify_fg_stock_movements.py
 - tests/verify_grid_and_tab_layout.py
+- tests/verify_inspection_rows_and_return_split.py
 - tests/verify_internal_job_sco.py
 - tests/verify_manual_mr_multi_supplier.py
 - tests/verify_mapped_status_lists_match.py
@@ -842,6 +829,10 @@ _Total: 171_
   - _autofill_total_qty_to_check:
   - _set_inspection_complete_date:
   - before_submit:
+  - _result_rows:
+  - _row_label:
+  - _validate_row_feedback:
+  - _derive_header_result:
   - _validate_scalar_result:
   - _validate_soe_items:
   - _validate_pr_items:
@@ -1318,11 +1309,12 @@ Functions:
   - 96:add_inspection_call:
   - 143:update_inspection_call_date:
   - 163:create_inspection_entry:
-  - 247:on_submit_inspection_entry:
-  - 332:_apply_soe_inspection_results:
-  - 386:_resolve_pr_item_batch_nos:
-  - 410:_get_source_doc:
-  - 425:_resolve_traceability:
+  - 251:create_soe_inspection:
+  - 284:on_submit_inspection_entry:
+  - 369:_apply_soe_inspection_results:
+  - 423:_resolve_pr_item_batch_nos:
+  - 447:_get_source_doc:
+  - 462:_resolve_traceability:
 
 ### production_management/manual_release_check.py
 
@@ -1687,7 +1679,8 @@ Functions:
   - 2093:create_mip_cnc_forward_entry:
   - 2154:_override_changes_dimensions:
   - 2165:_set_excess_repack_rates:
-  - 2201:create_mip_excess_return_entry:
+  - 2210:_split_extra_dimensions:
+  - 2269:create_mip_excess_return_entry:
 
 ### subcontracting_management/overrides.py
 Functions:
@@ -1778,52 +1771,6 @@ Functions:
   - 135:make_bom:
   - 171:run:
 
-### tests/_dlprune_tmp.py
-Functions:
-  - 4:run:
-
-### tests/_dl_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_dp_apply_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_dp_grid_tmp.py
-Functions:
-  - 3:run:
-
-### tests/_dp_hook_tmp.py
-Functions:
-  - 9:stored:
-  - 15:run:
-
-### tests/_dp_order_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_dp_try_tmp.py
-Functions:
-  - 9:show:
-  - 21:run:
-
-### tests/_dpw_apply_tmp.py
-Functions:
-  - 3:run:
-
-### tests/_dpw_price_tmp.py
-Functions:
-  - 3:run:
-
-### tests/_drw2_tmp.py
-Functions:
-  - 3:run:
-
-### tests/_drw_tmp.py
-Functions:
-  - 3:run:
-
 ### tests/find_cascade_fixture.py
 Functions:
   - 4:run:
@@ -1836,12 +1783,6 @@ Functions:
 Functions:
   - 4:run:
 
-### tests/_grid_before_after_tmp.py
-Functions:
-  - 4:colsize:
-  - 14:grid:
-  - 24:run:
-
 ### tests/_mfx_probe.py
 Functions:
   - 4:run:
@@ -1850,11 +1791,6 @@ Functions:
 Functions:
   - 64:_all_target_doctypes:
   - 70:run:
-
-### tests/_plan_grid_tmp.py
-Functions:
-  - 2:cs:
-  - 5:run:
 
 ### tests/_probe_ab.py
 Functions:
@@ -1867,10 +1803,6 @@ Functions:
 ### tests/_render_challan.py
 Functions:
   - 7:run:
-
-### tests/_rep_tmp.py
-Functions:
-  - 2:run:
 
 ### tests/reset_transactions.py
 Functions:
@@ -1896,10 +1828,6 @@ Functions:
 ### tests/_showmsg.py
 Functions:
   - 4:run:
-
-### tests/_so_tabs_tmp.py
-Functions:
-  - 2:run:
 
 ### tests/_t_close.py
 Functions:
@@ -2529,6 +2457,18 @@ Functions:
   - 38:_visible_columns:
   - 55:run:
 
+### tests/verify_inspection_rows_and_return_split.py
+Functions:
+  - 26:check:
+  - 32:_throws:
+  - 40:_meta_fields:
+  - 44:_split:
+  - 99:_soe_layout:
+  - 120:_soe_create_inspection:
+  - 165:_entry_rules:
+  - 224:_patch:
+  - 240:run:
+
 ### tests/verify_internal_job_sco.py
 Functions:
   - 13:run:
@@ -3077,7 +3017,7 @@ Functions:
 - `subcontracting_management/material_issue_plan_transfer.py:1898` — `get_mip_cnc_pending_items`
 - `subcontracting_management/material_issue_plan_transfer.py:1960` — `create_mip_cnc_partial_forward`
 - `subcontracting_management/material_issue_plan_transfer.py:2093` — `create_mip_cnc_forward_entry`
-- `subcontracting_management/material_issue_plan_transfer.py:2201` — `create_mip_excess_return_entry`
+- `subcontracting_management/material_issue_plan_transfer.py:2269` — `create_mip_excess_return_entry`
 - `subcontracting_management/subcontracting.py:27` — `create_sco_from_production_plan`
 - `subcontracting_management/subcontracting.py:271` — `create_sco_and_mip_from_production_plan`
 - `subcontracting_management/subcontracting.py:296` — `delete_sco_and_mip_for_production_plan`
@@ -3113,6 +3053,7 @@ Functions:
 - `production_management/inspection.py:96` — `add_inspection_call`
 - `production_management/inspection.py:143` — `update_inspection_call_date`
 - `production_management/inspection.py:163` — `create_inspection_entry`
+- `production_management/inspection.py:251` — `create_soe_inspection`
 - `production_management/stock_entry.py:1481` — `get_production_plans_for_sales_order`
 - `production_management/stock_entry.py:1506` — `@frappe.validate_and_sanitize_search_inputs`
 - `production_management/stock_entry.py:1540` — `get_job_work_order_for_production_plan`

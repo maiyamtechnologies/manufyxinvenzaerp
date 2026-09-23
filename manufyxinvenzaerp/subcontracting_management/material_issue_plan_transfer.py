@@ -2197,6 +2197,74 @@ def _set_excess_repack_rates(se):
         row.basic_amount = flt(row.transfer_qty * row.basic_rate, row.precision("basic_amount"))
 
 
+# Fields a dimension line copies from the excess row it was split from: everything
+# that says WHAT the material is and WHERE it came from. Length / Width / NOS / Weight
+# are the line's own; stock_entry_created is set afterwards like any other row.
+_SPLIT_COPY_FIELDS = (
+    "item_code", "item_name", "material_spec", "material_grade", "parent_item_group",
+    "unit_weight", "thickness", "sec_uom", "uom", "return_reason", "return_warehouse",
+    "source_table", "source_row", "source_mip_raw_material_row",
+)
+
+
+def _split_extra_dimensions(mip, overrides):
+    """One off-cut can come back as several pieces of different sizes. Each extra
+    size typed in the Return Excess dialog becomes its own excess row, cloned from the
+    row it belongs to and placed right under it.
+
+    Its own row, rather than several sizes crammed onto one: every returned size is
+    received as a NEW batch, and each batch is traced back to exactly one excess row
+    (custom_source_mip_excess_row). One row per size keeps that one-to-one, so returned
+    totals, process loss and the batch trail all go on working unchanged.
+
+    In memory only. create_mip_excess_return_entry commits before it inserts the Stock
+    Entry, and its docstring forbids new writes above that commit; these rows reach
+    the database with the plan's own save at the end, with everything else.
+
+    Refused where a split would mean something else:
+      - a row claimed by another Material Planning must come back as what was claimed;
+      - a weight-only row (Nuts and Bolts, or "Enter Weight, Not Pieces") has no
+        dimensions to split.
+    """
+    rows = list(mip.excess_return_items or [])
+    for r in rows:
+        override = overrides.get(r.name) or {}
+        extra = [d for d in (override.get("extra_dimensions") or []) if d]
+        if not extra or r.get("stock_entry_created"):
+            continue
+        if r.get("mapped_material_planning"):
+            frappe.throw(
+                _("Row {0} ({1}) is claimed by {2} and must come back as it was claimed, "
+                  "so it cannot be split into several sizes.")
+                .format(r.idx, r.item_code, r.mapped_material_planning),
+                title=_("Cannot Split a Claimed Row"))
+        if (r.parent_item_group or "") not in _DIMENSION_DRIVEN_GROUPS or r.get("enter_weight_instead_of_pieces"):
+            frappe.throw(
+                _("Row {0} ({1}) is returned by weight, so it has no dimensions to split.")
+                .format(r.idx, r.item_code),
+                title=_("Cannot Split a Weight-Only Row"))
+
+        insert_at = mip.excess_return_items.index(r) + 1
+        for dims in extra:
+            clone = mip.append("excess_return_items", {f: r.get(f) for f in _SPLIT_COPY_FIELDS})
+            # Named AFTER append: append marks a nameless row as new, so the plan's
+            # save inserts it. Named before, it would be taken for an existing row --
+            # an UPDATE matching nothing, and the row silently never saved.
+            clone.name = frappe.generate_hash(length=10)
+            mip.excess_return_items.remove(clone)
+            mip.excess_return_items.insert(insert_at, clone)
+            insert_at += 1
+            # Priced by the same override path as the row it came from.
+            overrides[clone.name] = {
+                "name": clone.name,
+                "length": dims.get("length"), "width": dims.get("width"),
+                "sec_qty": dims.get("sec_qty"),
+                "return_reason": override.get("return_reason"),
+            }
+    for i, row in enumerate(mip.excess_return_items, start=1):
+        row.idx = i
+
+
 @frappe.whitelist()
 def create_mip_excess_return_entry(mip_name, rows_json=None):
     """Receive unconsumed/off-cut material back into stock as fresh Material
@@ -2236,6 +2304,9 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
         frappe.throw(_("Please set the Finished Goods Warehouse on this Material Issue Plan first."))
 
     overrides = {o.get("name"): o for o in _json.loads(rows_json)} if rows_json else {}
+    # Several sizes for one off-cut become several rows before anything else runs,
+    # so the loop below prices and receives each one exactly like any other row.
+    _split_extra_dimensions(mip, overrides)
 
     se_items = []
     new_row_names = []

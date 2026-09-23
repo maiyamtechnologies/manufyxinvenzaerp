@@ -9,7 +9,9 @@
   "customer_drawing_number",
   "qty_nos",
   "accept_qty",
-  "reject_qty"
+  "reject_qty",
+  "feedback",
+  "rework_remarks"
  ],
  "fields": [
   {
@@ -18,14 +20,16 @@
    "in_list_view": 1,
    "label": "Drawing",
    "options": "Drawing",
-   "reqd": 1
+   "reqd": 1,
+   "columns": 2
   },
   {
    "fieldname": "customer_drawing_number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Cust Drawing No",
-   "read_only": 1
+   "read_only": 1,
+   "columns": 2
   },
   {
    "fieldname": "qty_nos",
@@ -33,13 +37,15 @@
    "in_list_view": 1,
    "label": "Completed NOS",
    "read_only": 1,
-   "description": "Nos logged as completed and awaiting inspection."
+   "description": "Nos logged as completed and awaiting inspection.",
+   "columns": 1
   },
   {
    "fieldname": "accept_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Accepted Qty"
+   "label": "Accepted Qty",
+   "columns": 1
   },
   {
    "fieldname": "reject_qty",
@@ -47,12 +53,29 @@
    "in_list_view": 1,
    "label": "Rejected Qty",
    "read_only": 1,
-   "description": "Auto-calculated: Completed Qty minus Accepted Qty."
+   "description": "Auto-calculated: Completed Qty minus Accepted Qty.",
+   "columns": 1
+  },
+  {
+   "fieldname": "feedback",
+   "fieldtype": "Select",
+   "label": "Feedback",
+   "options": "\nOk\nNot Ok",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "rework_remarks",
+   "fieldtype": "Small Text",
+   "label": "Rework Remarks",
+   "in_list_view": 1,
+   "columns": 2,
+   "mandatory_depends_on": "eval:doc.reject_qty>0"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-08-09 00:00:00.000000",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Subcontracting Management",
  "name": "SOE Inspection Item",

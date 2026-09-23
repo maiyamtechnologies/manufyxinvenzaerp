@@ -96,8 +96,9 @@ def run():
 
     print()
     print("=== the live preview still recalculates as figures are typed ===")
+    # Delegated, so the extra size lines added by the duplicate icon recalculate too.
     check("bound to all three boxes",
-          '$tr.find("._rex_length, ._rex_width, ._rex_sec_qty").on("input", _refresh)' in js, True)
+          'dialog.$wrapper.on("input", "._rex_length, ._rex_width, ._rex_sec_qty"' in js, True)
 
     print()
     print("=== SUMMARY ===")

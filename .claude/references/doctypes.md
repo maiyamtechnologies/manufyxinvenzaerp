@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-23 22:34:08_
+_Generated: 2026-09-23 23:21:54_
 
 ## drawing
 
@@ -367,6 +367,10 @@ _Generated: 2026-09-23 22:34:08_
 | ` _autofill_total_qty_to_check` | no |
 | ` _set_inspection_complete_date` | no |
 | ` before_submit` | no |
+| ` _result_rows` | no |
+| ` _row_label` | no |
+| ` _validate_row_feedback` | no |
+| ` _derive_header_result` | no |
 | ` _validate_scalar_result` | no |
 | ` _validate_soe_items` | no |
 | ` _validate_pr_items` | no |

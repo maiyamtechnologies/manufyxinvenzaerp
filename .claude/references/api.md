@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-23 22:34:08_
+_Generated: 2026-09-23 23:21:54_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -142,6 +142,7 @@ All `@frappe.whitelist()` methods. Call from JS:
 |--------|------|
 | `update_inspection_call_date` | 143 |
 | `create_inspection_entry` | 163 |
+| `create_soe_inspection` | 251 |
 | `add_inspection_call` | 96 |
 ## production_management/production_utils.py
 
@@ -251,7 +252,7 @@ All `@frappe.whitelist()` methods. Call from JS:
 | `get_mip_cnc_pending_items` | 1898 |
 | `create_mip_cnc_partial_forward` | 1960 |
 | `create_mip_cnc_forward_entry` | 2093 |
-| `create_mip_excess_return_entry` | 2201 |
+| `create_mip_excess_return_entry` | 2269 |
 | `submit_mip_transfer_entry` | 249 |
 | `get_mip_process_loss_state` | 301 |
 | `create_mip_process_loss_entry` | 374 |
@@ -300,4 +301,4 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 ## Total
 
-_164 whitelisted methods_
+_165 whitelisted methods_

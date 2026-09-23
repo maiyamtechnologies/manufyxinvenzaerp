@@ -20,11 +20,13 @@
   "section_break_summary",
   "total_available_nos",
   "total_completed_nos",
+  "column_break_summary_kg",
   "available_to_consume_kg",
   "total_consumed_kg",
   "section_break_drawing_details",
   "drawing_details",
   "section_break_log",
+  "create_inspection_btn",
   "consumption_log",
   "custom_inspection_tab",
   "custom_inspection_status",
@@ -153,6 +155,10 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_summary_kg",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "section_break_drawing_details",
    "fieldtype": "Section Break",
    "label": "Drawing Details"
@@ -167,6 +173,12 @@
    "fieldname": "section_break_log",
    "fieldtype": "Section Break",
    "label": "Consumption Log"
+  },
+  {
+   "fieldname": "create_inspection_btn",
+   "fieldtype": "Button",
+   "label": "Create Inspection",
+   "depends_on": "eval:doc.custom_inspection_mandatory && doc.docstatus===0 && !doc.__islocal"
   },
   {
    "fieldname": "consumption_log",
@@ -188,13 +200,15 @@
    "default": "Open",
    "read_only": 1,
    "no_copy": 1,
-   "depends_on": "eval:doc.custom_inspection_mandatory"
+   "depends_on": "eval:doc.custom_inspection_mandatory",
+   "hidden": 1
   },
   {
    "fieldname": "custom_inspection_call_date",
    "fieldtype": "Date",
    "label": "Inspection Call Date",
-   "depends_on": "eval:doc.custom_inspection_mandatory"
+   "depends_on": "eval:doc.custom_inspection_mandatory",
+   "hidden": 1
   },
   {
    "fieldname": "custom_inspection_items_section",
@@ -235,8 +249,14 @@
   }
  ],
  "is_submittable": 1,
- "links": [],
- "modified": "2026-06-24 00:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Inspection Entry",
+   "link_fieldname": "supplier_operation_entry",
+   "group": "Inspection"
+  }
+ ],
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Subcontracting Management",
  "name": "Supplier Operation Entry",

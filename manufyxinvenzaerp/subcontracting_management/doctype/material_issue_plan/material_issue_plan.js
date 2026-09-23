@@ -2037,6 +2037,11 @@ function _render_excess_action_btn(frm) {
 // excess_return_items row itself server-side, so re-opening this dialog
 // later (or the grid) shows whatever was last entered.
 function _show_return_excess_dialog(frm) {
+	// The extra size lines entered under one row (see the duplicate icon below).
+	function _rex_extras($main) {
+		return $main.closest("tbody").find("tr._rex_extra[data-for='" + $main.data("name") + "']");
+	}
+
 	let rows = (frm.doc.excess_return_items || []).filter((r) => !r.stock_entry_created && flt(r.qty) > 0);
 	if (!rows.length) {
 		frappe.msgprint(__("No pending excess return rows to process. All rows already have a Stock Entry created, or no rows with Weight (Kg) > 0 exist."));
@@ -2066,8 +2071,17 @@ function _show_return_excess_dialog(frm) {
 			? `<span class="_rex_qty_preview" style="font-weight:600">${format_number(flt(r.qty), null, 3)}</span>`
 			: `<input type="number" step="0.001" min="0" class="${num} _rex_qty" style="width:96px" value="${flt(r.qty, 3)}">`;
 
-		return `<tr data-name="${frappe.utils.escape_html(r.name)}" data-group="${frappe.utils.escape_html(g || "")}"
-			data-thickness="${flt(r.thickness)}" data-unit-weight="${flt(r.unit_weight)}">
+		// Several sizes for one off-cut: a Structurals/Plates row can be split into
+		// extra dimension lines (the duplicate icon). Not a claimed row -- it must come
+		// back as it was claimed -- and not a weight-only one, which has no dimensions.
+		let can_split = dim_driven && !r.mapped_material_planning && !r.enter_weight_instead_of_pieces;
+		let summary = dim_driven
+			? `<tr class="_rex_sum" data-for="${frappe.utils.escape_html(r.name)}">
+				<td></td><td colspan="7" style="padding:2px 8px 8px;font-size:11px" class="_rex_sum_text"></td></tr>`
+			: "";
+
+		return `<tr class="_rex_main" data-name="${frappe.utils.escape_html(r.name)}" data-group="${frappe.utils.escape_html(g || "")}"
+			data-thickness="${flt(r.thickness)}" data-unit-weight="${flt(r.unit_weight)}" data-planned="${flt(r.qty)}">
 			<td style="padding:6px 8px">
 				${frappe.utils.escape_html(r.item_code || "")}
 				<div class="text-muted" style="font-size:11px">${frappe.utils.escape_html(g || "—")}</div>
@@ -2083,7 +2097,11 @@ function _show_return_excess_dialog(frm) {
 					placeholder="${__("Reason (required)…")}"
 					value="${frappe.utils.escape_html(r.return_reason || "")}">
 			</td>
-		</tr>`;
+			<td style="padding:6px 4px;text-align:center">
+				${can_split ? `<button type="button" class="btn btn-xs btn-default _rex_dup"
+					title="${__("Add another size for this item")}">${frappe.utils.icon("duplicate", "xs")}</button>` : ""}
+			</td>
+		</tr>${summary}`;
 	}).join("");
 
 	let th = "padding:6px 8px;background:#f4f5f7;border-bottom:2px solid #d1d8dd;font-weight:600;font-size:11px;white-space:nowrap;";
@@ -2101,6 +2119,7 @@ function _show_return_excess_dialog(frm) {
 			<th style="${th}">${__("NOS")}</th>
 			<th style="${th}text-align:right">${__("Qty (Kg)")}</th>
 			<th style="${th}min-width:240px">${__("Return Reason")}</th>
+			<th style="${th}width:40px"></th>
 		</tr></thead>
 		<tbody>${rows_html}</tbody>
 	</table></div>`;
@@ -2114,7 +2133,7 @@ function _show_return_excess_dialog(frm) {
 			let payload = [];
 			let missing_reason = [];
 			let incomplete = [];
-			dialog.$wrapper.find("tbody tr").each(function() {
+			dialog.$wrapper.find("tbody tr._rex_main").each(function() {
 				let $tr = $(this);
 				let reason = ($tr.find("._rex_reason").val() || "").trim();
 				let g = $tr.data("group");
@@ -2133,6 +2152,22 @@ function _show_return_excess_dialog(frm) {
 					if (!entry.sec_qty) need.push(__("NOS"));
 					if (!flt($tr.data("thickness")) && g === "Plates") need.push(__("Thickness (on the batch)"));
 					if (need.length) incomplete.push(item + " — " + need.join(", "));
+					// The extra sizes of this same off-cut. Same completeness rule, named
+					// by their position so the user can find the one that is short.
+					let extra = [];
+					_rex_extras($tr).each(function(i) {
+						let $x = $(this);
+						let d = { length: flt($x.find("._rex_length").val()),
+						          sec_qty: flt($x.find("._rex_sec_qty").val()) };
+						if (g === "Plates") d.width = flt($x.find("._rex_width").val());
+						let xn = [];
+						if (!d.length) xn.push(__("Length"));
+						if (g === "Plates" && !d.width) xn.push(__("Width"));
+						if (!d.sec_qty) xn.push(__("NOS"));
+						if (xn.length) incomplete.push(item + " (" + __("size {0}", [i + 2]) + ") — " + xn.join(", "));
+						extra.push(d);
+					});
+					if (extra.length) entry.extra_dimensions = extra;
 				} else {
 					entry.qty = flt($tr.find("._rex_qty").val());
 					if (entry.qty <= 0) incomplete.push(item + " — " + __("Qty"));
@@ -2181,23 +2216,83 @@ function _show_return_excess_dialog(frm) {
 		},
 	});
 
-	// Live Qty preview as the user edits Length/Width/Sec Qty on a dimension-driven row.
-	dialog.$wrapper.find("tbody tr").each(function() {
-		let $tr = $(this);
-		let g = $tr.data("group");
-		if (!_is_dim_driven(g)) return;
-		function _refresh() {
-			let L = flt($tr.find("._rex_length").val());
-			let W = flt($tr.find("._rex_width").val());
-			let S = flt($tr.find("._rex_sec_qty").val());
-			let uw = flt($tr.data("unit-weight"));
-			let T = flt($tr.data("thickness"));
-			let qty = null;
-			if (g === "Structurals" && L && uw && S) qty = (L / 1000) * uw * S;
-			else if (g === "Plates" && L && W && T && uw && S) qty = (L / 1000) * (W / 1000) * T * uw * S;
-			$tr.find("._rex_qty_preview").text(qty !== null ? format_number(flt(qty, 3), null, 3) : "—");
-		}
-		$tr.find("._rex_length, ._rex_width, ._rex_sec_qty").on("input", _refresh);
+	// Kg of one line (a row or one of its extra sizes), from that line's own inputs
+	// and the off-cut's shape -- the same formula as utils/dimension_formula.
+	function _rex_line_kg($tr, g) {
+		let L = flt($tr.find("._rex_length").val());
+		let W = flt($tr.find("._rex_width").val());
+		let S = flt($tr.find("._rex_sec_qty").val());
+		let uw = flt($tr.data("unit-weight"));
+		let T = flt($tr.data("thickness"));
+		if (g === "Structurals" && L && uw && S) return (L / 1000) * uw * S;
+		if (g === "Plates" && L && W && T && uw && S) return (L / 1000) * (W / 1000) * T * uw * S;
+		return null;
+	}
+
+	// One item's lines -> its preview cells and its Planned / Returning / Difference line.
+	// Planned is the row's Weight as the dialog opened; Returning adds up every size
+	// being sent back; the Difference is what is not coming back -- process loss later.
+	function _rex_refresh_item($main) {
+		let g = $main.data("group");
+		let total = 0, any = false;
+		$main.add(_rex_extras($main)).each(function() {
+			let kg = _rex_line_kg($(this), g);
+			$(this).find("._rex_qty_preview").text(kg !== null ? format_number(flt(kg, 3), null, 3) : "—");
+			if (kg !== null) { total += kg; any = true; }
+		});
+		let planned = flt($main.data("planned"));
+		let diff = flt(planned - total, 3);
+		let tone = !any ? "#6b7280" : diff > 0.0005 ? "#b45309" : diff < -0.0005 ? "#b91c1c" : "#15803d";
+		dialog.$wrapper.find("tr._rex_sum[data-for='" + $main.data("name") + "'] ._rex_sum_text").html(
+			__("Planned") + " <b>" + format_number(planned, null, 3) + "</b> Kg &nbsp;·&nbsp; "
+			+ __("Returning") + " <b>" + (any ? format_number(flt(total, 3), null, 3) : "—") + "</b> Kg &nbsp;·&nbsp; "
+			+ "<span style='color:" + tone + "'>" + __("Difference") + " <b>"
+			+ (any ? format_number(diff, null, 3) : "—") + "</b> Kg</span>");
+	}
+
+	function _rex_main_of($tr) {
+		return $tr.hasClass("_rex_main") ? $tr
+			: dialog.$wrapper.find("tr._rex_main[data-name='" + $tr.data("for") + "']");
+	}
+
+	dialog.$wrapper.on("input", "._rex_length, ._rex_width, ._rex_sec_qty", function() {
+		let $main = _rex_main_of($(this).closest("tr"));
+		if (_is_dim_driven($main.data("group"))) _rex_refresh_item($main);
+	});
+
+	// Duplicate icon: another size of the same off-cut, entered under it. Only the
+	// dimensions are asked for -- item, thickness and reason are the row's own.
+	dialog.$wrapper.on("click", "._rex_dup", function() {
+		let $main = $(this).closest("tr._rex_main");
+		let g = $main.data("group");
+		let $line = $(`<tr class="_rex_extra" data-for="${$main.data("name")}" data-group="${g}"
+				data-thickness="${$main.data("thickness")}" data-unit-weight="${$main.data("unit-weight")}">
+			<td style="padding:6px 8px;color:#6b7280;font-size:11px;white-space:nowrap">&#8627; ${__("another size")}</td>
+			<td style="padding:6px 8px"><input type="number" step="0.001" min="0" class="${num} _rex_length" style="width:96px"></td>
+			<td style="padding:6px 8px"><input type="number" step="0.001" min="0" class="${num} _rex_width" style="width:96px"
+				${g === "Plates" ? "" : "disabled"}></td>
+			<td style="padding:6px 8px;text-align:right;color:#6b7280">${flt($main.data("thickness")) ? format_number(flt($main.data("thickness")), null, 2) : "—"}</td>
+			<td style="padding:6px 8px"><input type="number" step="0.001" min="0" class="${num} _rex_sec_qty" style="width:96px"></td>
+			<td style="padding:6px 8px;text-align:right;white-space:nowrap"><span class="_rex_qty_preview" style="font-weight:600">—</span></td>
+			<td></td>
+			<td style="padding:6px 4px;text-align:center">
+				<button type="button" class="btn btn-xs btn-default _rex_del" title="${__("Remove this size")}">&times;</button></td>
+		</tr>`);
+		let $last = _rex_extras($main).last();
+		($last.length ? $last : $main).after($line);
+		$line.find("._rex_length").trigger("focus");
+		_rex_refresh_item($main);
+	});
+
+	dialog.$wrapper.on("click", "._rex_del", function() {
+		let $tr = $(this).closest("tr");
+		let $main = _rex_main_of($tr);
+		$tr.remove();
+		_rex_refresh_item($main);
+	});
+
+	dialog.$wrapper.find("tr._rex_main").each(function() {
+		if (_is_dim_driven($(this).data("group"))) _rex_refresh_item($(this));
 	});
 
 	dialog.show();
