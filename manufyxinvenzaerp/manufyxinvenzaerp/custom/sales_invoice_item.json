@@ -611,7 +611,7 @@
    "insert_after": "qty",
    "is_system_generated": 1,
    "is_virtual": 0,
-   "label": "Qty (Nos)",
+   "label": "NOS",
    "length": 0,
    "link_filters": null,
    "mandatory_depends_on": null,

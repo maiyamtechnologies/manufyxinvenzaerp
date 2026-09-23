@@ -113,6 +113,9 @@ def _plan_to_job(d, bom):
     pp = frappe.get_doc("Production Plan", create_production_plan_from_bom(bom))
     pp.po_items[0].custom_sec_qty = 1
     pp.save(ignore_permissions=True)
+    # Supplier/Contractor is mandatory at submit since 2026-09-24; see assign_parties.
+    from manufyxinvenzaerp.tests.verify_fg_bom_pp_kg import assign_parties
+    assign_parties(pp)
     pp.submit()
     kg = flt(pp.po_items[0].planned_qty, 3)
     per = flt(flt(d.customer_provided_wt) / flt(d.no_of_qty_to_manufacture), 3)

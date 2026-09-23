@@ -153,6 +153,26 @@ def build_fg_chain(duno="D1", nos=10, per_nos=30, rate=20, rm_length=1000, rm_se
     )
 
 
+def assign_parties(pp):
+    """Give every Process Planning row its Supplier/Contractor, as a user now must.
+
+    Since 2026-09-24 the column is mandatory at submit
+    (production_plan.before_submit_process_planning). A plan made from the BOM routing
+    arrives without one -- nobody could know who does each operation at that point --
+    so a fixture that submits it has to fill them in first, exactly as the form does.
+    A Contractor is created if the site has none; it goes when the test rolls back."""
+    contractor = frappe.db.get_value("Contractor", {}, "name") or frappe.get_doc({
+        "doctype": "Contractor", "contractor_name": "ZZ Test Contractor",
+    }).insert(ignore_permissions=True).name
+    supplier = frappe.db.get_value("Supplier", {"disabled": 0}, "name")
+    for r in (pp.get("custom_process_planning") or []):
+        if r.get("party"):
+            continue
+        sub = r.work_type == "Subcontractor"
+        r.party_type = "Supplier" if sub else "Contractor"
+        r.party = supplier if sub else contractor
+
+
 def make_pp(bom, nos=None, submit=False):
     """A Production Plan from the BOM's own button, optionally re-set to `nos` pieces."""
     from manufyxinvenzaerp.drawing_management.drawing_utils import create_production_plan_from_bom
@@ -162,6 +182,7 @@ def make_pp(bom, nos=None, submit=False):
         pp.po_items[0].custom_sec_qty = nos
         pp.save(ignore_permissions=True)
     if submit:
+        assign_parties(pp)
         pp.submit()
     return pp
 
@@ -290,6 +311,7 @@ def _run():
     r.custom_sec_qty = 2.5
     check("half a piece is refused", "whole number" in (refused(pp1.save) or ""), True)
     pp1.reload()
+    assign_parties(pp1)
     pp1.submit()
 
     print()

@@ -1193,6 +1193,7 @@ def validate_process_planning(doc, method):
 			)
 		if row.work_type == "Subcontractor":
 			has_subcontractor = True
+		_check_row_party(row)
 
 	# Backstop for the field's client-side mandatory_depends_on — covers API/
 	# import-created documents that bypass the form's own validation.
@@ -1201,6 +1202,53 @@ def validate_process_planning(doc, method):
 			_("Set Vendor/Contractor — it's required when any Process Planning row has "
 			  "Work Type set to Subcontractor."),
 			title=_("Vendor/Contractor Required"),
+		)
+
+
+# Which master a Process Planning row's Supplier/Contractor comes from, by Work Type.
+PARTY_TYPE_BY_WORK_TYPE = {"Subcontractor": "Supplier", "Internal Jobcard": "Contractor"}
+
+
+def _check_row_party(row):
+	"""Keep a row's party type in step with its Work Type; refuse the wrong kind.
+
+	party_type is derived, never chosen: Subcontractor -> Supplier, Internal Jobcard ->
+	Contractor. The form sets it as Work Type changes; this is the backstop for rows
+	written any other way. A party already chosen under the OTHER type is refused
+	rather than silently cleared -- a Supplier on a row switched to Internal Jobcard is
+	a decision somebody has to remake, not one to throw away without saying so.
+
+	Blank is allowed here. The column is mandatory, but that is enforced on SUBMIT
+	(before_submit_process_planning), not on every save: Make Production Plan and
+	create_production_plan_from_bom create the plan as a draft from the BOM routing,
+	before anyone could know who does each operation, and must go on working."""
+	expected = PARTY_TYPE_BY_WORK_TYPE.get(row.work_type)
+	if row.get("party") and row.get("party_type") and row.party_type != expected:
+		frappe.throw(
+			_("Row {0} ({1}): {2} is a {3}, but a {4} row needs a {5}. Choose a {5} "
+			  "for this row.").format(row.idx, row.operation_name, frappe.bold(row.party),
+			                          row.party_type, row.work_type, expected),
+			title=_("Supplier/Contractor Does Not Match Work Type"),
+		)
+	row.party_type = expected
+
+
+def before_submit_process_planning(doc, method=None):
+	"""Every Process Planning row needs its Supplier/Contractor before the plan is
+	submitted -- the column is mandatory. Checked here rather than as a field-level
+	`reqd` for the reason given in _check_row_party: drafts are created by code that
+	cannot know the parties yet. Once submitted the table cannot be edited, so this is
+	the last point at which a missing party can still be filled in."""
+	missing = [
+		_("Row {0} ({1}, {2})").format(r.idx, r.operation_name, r.work_type)
+		for r in (doc.custom_process_planning or []) if not r.get("party")
+	]
+	if missing:
+		frappe.throw(
+			_("Set Supplier/Contractor on every Process Planning row before submitting "
+			  "-- a Supplier for Subcontractor rows, a Contractor for Internal Jobcard "
+			  "rows:<br>{0}").format("<br>".join(missing)),
+			title=_("Supplier/Contractor Required"),
 		)
 
 
@@ -1349,13 +1397,13 @@ def apply_fg_nos(doc, method=None):
 			if not info.has_per_nos:
 				continue  # legacy row (D13): planned_qty stays as it was entered
 			frappe.throw(
-				_("Row {0}: enter Qty (Nos) for drawing {1} (DUNO {2}). Planned Qty (Kg) is "
+				_("Row {0}: enter NOS for drawing {1} (DUNO {2}). Planned Qty (Kg) is "
 				  "calculated from it.").format(row.idx, row.custom_drawing, info.duno_mark_no),
-				title=_("Qty (Nos) Required"),
+				title=_("NOS Required"),
 			)
 		if nos != int(nos):
 			frappe.throw(
-				_("Row {0}: Qty (Nos) must be a whole number of pieces, not {1}.").format(row.idx, nos),
+				_("Row {0}: NOS must be a whole number of pieces, not {1}.").format(row.idx, nos),
 				title=_("Whole Pieces Only"),
 			)
 		if not info.nos or not info.total:

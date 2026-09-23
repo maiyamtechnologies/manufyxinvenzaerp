@@ -586,7 +586,7 @@ function _show_planned_stock_validation(frm) {
 			let html = '<table class="table table-bordered table-condensed" style="font-size:12px;width:100%;table-layout:auto;margin-bottom:0;">';
 			html += "<thead><tr>" + [
 				[__("Item"), ""], [__("Batch"), ""], [__("Planned Kg"), num],
-				[__("Planned Sec Nos"), num], [__("Drawings"), num],
+				[__("Planned NOS"), num], [__("Drawings"), num],
 				[__("Batch Stock (Kg)"), num], [__("Short By"), num],
 			].map(([h, st]) => '<th style="' + st + '">' + h + "</th>").join("") + "</tr></thead><tbody>";
 
@@ -614,7 +614,7 @@ function _show_planned_stock_validation(frm) {
 			let short_rows = rows.filter((d) => d.short_by > 0).length;
 			let notes = [];
 			if (fractional) {
-				notes.push(__("{0} item(s) have a fractional Sec Nos — one batch shared across several drawings. Choose whole pieces when you transfer; the surplus is recorded as excess to return.", [fractional]));
+				notes.push(__("{0} item(s) have a fractional NOS — one batch shared across several drawings. Choose whole pieces when you transfer; the surplus is recorded as excess to return.", [fractional]));
 			}
 			if (short_rows) {
 				notes.push(__("{0} item(s) need more Kg than the batch currently holds.", [short_rows]));
@@ -917,12 +917,12 @@ function _run_verify_raw_materials(frm, opts) {
 			let rows_html = issues.map(function(row) {
 				let formula_cell = row.formula_ok
 					? `<span style="color:#888;">—</span>`
-					: `<span style="color:#c0392b;font-weight:600;">${__("Expected")} ${row.checked_field === "sec_qty" ? "Sec Qty" : "Qty"} = ${row.formula_expected}</span>`;
+					: `<span style="color:#c0392b;font-weight:600;">${__("Expected")} ${row.checked_field === "sec_qty" ? "NOS" : "Qty"} = ${row.formula_expected}</span>`;
 				let so_cell = row.so_expected_sec_qty === null
 					? `<span style="color:#888;">—</span>`
 					: (row.so_ok
 						? `<span style="color:#2e7d32;">${__("OK")}</span>`
-						: `<span style="color:#c0392b;font-weight:600;">${__("SO requires Sec Qty")} = ${row.so_expected_sec_qty}</span>`);
+						: `<span style="color:#c0392b;font-weight:600;">${__("SO requires NOS")} = ${row.so_expected_sec_qty}</span>`);
 				return `<tr>
 					<td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;">${row.idx}</td>
 					<td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;">${frappe.utils.escape_html(row.item_number)}</td>
@@ -942,7 +942,7 @@ function _run_verify_raw_materials(frm, opts) {
 						<th style="padding:6px 10px;text-align:left;">${__("Item No")}</th>
 						<th style="padding:6px 10px;text-align:left;">${__("Material Code")}</th>
 						<th style="padding:6px 10px;text-align:left;">${__("Drawing")}</th>
-						<th style="padding:6px 10px;text-align:left;">${__("Sec Qty (Nos)")}</th>
+						<th style="padding:6px 10px;text-align:left;">${__("NOS")}</th>
 						<th style="padding:6px 10px;text-align:left;">${__("Qty (Kg)")}</th>
 						<th style="padding:6px 10px;text-align:left;">${__("Formula Check")}</th>
 						<th style="padding:6px 10px;text-align:left;">${__("Sales Order Check")}</th>
@@ -2504,7 +2504,7 @@ frappe.ui.form.on("Material Planning Material Mapping", {
 							let group = d.custom_parent_item_group || "";
 							if (group === "Structurals" || group === "Plates") {
 								frappe.show_alert({
-									message: __("Batch selected — enter <b>Sec Qty (NOS)</b> to calculate the required weight."),
+									message: __("Batch selected — enter <b>NOS</b> to calculate the required weight."),
 									indicator: "blue",
 								}, 6);
 							}
@@ -2651,7 +2651,7 @@ function _mp_apply_cut_sheet_to_row(frm, cdt, cdn) {
 			if (row.__cut_sheet_announced !== cs.name) {
 				row.__cut_sheet_announced = cs.name;
 				frappe.show_alert({
-					message: __("Batch {0} is cut per {1} — W1 {2} × {3}, {4} piece(s) free. Enter Sec Nos in PIECES.", [
+					message: __("Batch {0} is cut per {1} — W1 {2} × {3}, {4} piece(s) free. Enter NOS in PIECES.", [
 						row.batch, cs.name, flt(cs.w1_length), flt(cs.w1_width), flt(cs.available_sec_qty)]),
 					indicator: "blue",
 				}, 7);
@@ -2839,9 +2839,9 @@ function _add_reservation_buttons(frm) {
 			if (missing_sec.length) {
 				let items = missing_sec.map(r => `Row ${r.idx}: ${r.item_code} (Batch: ${r.batch})`).join("<br>");
 				frappe.msgprint({
-					title: __("Sec Qty Required"),
+					title: __("Required NOS"),
 					indicator: "red",
-					message: __("Enter <b>Sec Qty (NOS)</b> for the following rows before reserving:<br><br>{0}", [items]),
+					message: __("Enter <b>NOS</b> for the following rows before reserving:<br><br>{0}", [items]),
 				});
 				return;
 			}
@@ -3004,7 +3004,7 @@ function _show_excess_material_mapping_dialog(frm, existing_row) {
 		{
 			fieldtype: "Float",
 			fieldname: "sec_qty_to_use",
-			label: __("Sec Qty to Use"),
+			label: __("To Use NOS"),
 			description: __("How many pieces to take. Whatever you leave stays free for another job to claim."),
 		},
 		{ fieldtype: "Column Break" },
@@ -3056,7 +3056,7 @@ function _show_excess_material_mapping_dialog(frm, existing_row) {
 			}
 			let sec_qty = flt(values.sec_qty_to_use);
 			if (!sec_qty) {
-				frappe.msgprint(__("Enter Sec Qty to use."));
+				frappe.msgprint(__("Enter NOS to use."));
 				return;
 			}
 
@@ -3144,7 +3144,7 @@ function _show_excess_material_mapping_dialog(frm, existing_row) {
 		}
 		let th = "white-space:nowrap;padding:6px 10px;background:#f4f5f7;border-bottom:2px solid #d1d8dd;font-weight:600;font-size:11px;";
 		let td = "padding:5px 10px;white-space:nowrap;border-bottom:1px solid #f0f0f0;";
-		let cols = [__("Item Code"), __("Item Name"), __("Source"), __("Batch / MIP"), __("L (mm)"), __("W (mm)"), __("T (mm)"), __("Planned Sec Nos"), __("Free Sec Nos"), __("Free (Kg)"), __("Supplier")];
+		let cols = [__("Item Code"), __("Item Name"), __("Source"), __("Batch / MIP"), __("L (mm)"), __("W (mm)"), __("T (mm)"), __("Planned NOS"), __("Free NOS"), __("Free (Kg)"), __("Supplier")];
 		let thead = "<tr>" + cols.map(c => `<th style="${th}">${c}</th>`).join("") + "</tr>";
 		let tbody = rows.map((r, i) => {
 			if (r._kind === "batch") {
@@ -3249,7 +3249,7 @@ const _TABLE_VIEW_CONFIG = {
 			{ fieldname: "length",            label: "Length (mm)" },
 			{ fieldname: "width",             label: "Width (mm)" },
 			{ fieldname: "thickness",         label: "Thickness" },
-			{ fieldname: "sec_qty",           label: "Sec Qty" },
+			{ fieldname: "sec_qty",           label: "NOS" },
 			{ fieldname: "sec_uom",           label: "Sec UOM" },
 			{ fieldname: "qty",               label: "Required Qty" },
 			{ fieldname: "uom",               label: "UOM" },
@@ -3275,7 +3275,7 @@ const _TABLE_VIEW_CONFIG = {
 			{ fieldname: "length",            label: "Length (mm)" },
 			{ fieldname: "width",             label: "Width (mm)" },
 			{ fieldname: "thickness",         label: "Thickness" },
-			{ fieldname: "sec_qty",           label: "Sec Qty" },
+			{ fieldname: "sec_qty",           label: "NOS" },
 			{ fieldname: "sec_uom",           label: "Sec UOM" },
 			{ fieldname: "required_qty",      label: "Required Qty" },
 			{ fieldname: "available_qty",     label: "Available Qty" },
@@ -3301,12 +3301,12 @@ const _TABLE_VIEW_CONFIG = {
 			{ fieldname: "length",            label: "Length (mm)" },
 			{ fieldname: "width",             label: "Width (mm)" },
 			{ fieldname: "thickness",         label: "Thickness" },
-			{ fieldname: "sec_qty",           label: "Required Sec Qty" },
+			{ fieldname: "sec_qty",           label: "Required NOS" },
 			{ fieldname: "batch",             label: "Batch" },
 			{ fieldname: "batch_mapped",      label: "Status" },
 			{ fieldname: "batch_length",      label: "Batch Length" },
 			{ fieldname: "reserve_without_dimensions", label: "Reserve w/o Dimensions" },
-			{ fieldname: "batch_sec_qty",     label: "Batch Sec Qty" },
+			{ fieldname: "batch_sec_qty",     label: "Batch NOS" },
 			{ fieldname: "batch_calc_qty",    label: "Calc Qty (Kg)" },
 			{ fieldname: "is_reserved",       label: "Reserved" },
 			{ fieldname: "reserved_qty",      label: "Reserved Qty" },
@@ -3327,7 +3327,7 @@ const _TABLE_VIEW_CONFIG = {
 			{ fieldname: "length",             label: "Length (mm)" },
 			{ fieldname: "width",              label: "Width (mm)" },
 			{ fieldname: "thickness",          label: "Thickness" },
-			{ fieldname: "sec_qty",            label: "Sec Qty" },
+			{ fieldname: "sec_qty",            label: "NOS" },
 			{ fieldname: "sec_uom",            label: "Sec UOM" },
 			{ fieldname: "unit_weight",        label: "Unit Weight" },
 			{ fieldname: "alternate_item",     label: "Alt Item" },
@@ -3477,7 +3477,7 @@ frappe.ui.form.on("Material Planning Available Raw Material", {
 			return;
 		}
 		frappe.show_alert({
-			message: __("Sec Qty (NOS) will be recalculated from batch {0} on save.",
+			message: __("NOS will be recalculated from batch {0} on save.",
 				[row.batch_no || __("the assigned batch")]),
 			indicator: "blue",
 		}, 5);
@@ -3688,7 +3688,7 @@ function _run_auto_suggest_dimensions(frm) {
 					html += "<b>" + __("Suggested for {0} item(s)", [up.length]) + "</b>"
 						+ "<table class='table table-bordered table-condensed' style='margin-top:8px;font-size:12px'>"
 						+ "<thead><tr><th>" + __("Item") + "</th><th class='text-right'>" + __("Length") + "</th>"
-						+ "<th class='text-right'>" + __("Sec Qty") + "</th>"
+						+ "<th class='text-right'>" + __("NOS") + "</th>"
 						+ "<th class='text-right'>" + __("Required") + "</th>"
 						+ "<th class='text-right'>" + __("Purchase") + "</th></tr></thead><tbody>";
 					up.forEach(function(u) {
@@ -3718,7 +3718,7 @@ function _run_auto_suggest_dimensions(frm) {
 
 	if (filled.length) {
 		frappe.confirm(
-			__("{0} of {1} row(s) already have dimensions or Sec Qty. Overwrite them with the suggestion?",
+			__("{0} of {1} row(s) already have dimensions or NOS. Overwrite them with the suggestion?",
 				[filled.length, (frm.doc.consolidate_items || []).length]),
 			go
 		);
@@ -3867,7 +3867,7 @@ function _am_build_picker(dialog, all_rows, on_select) {
 		["customer_drawing_number", __("Cust Drawing No")],
 		["sales_order", __("Sales Order")],
 		["batch_no", __("Batch No")],
-		["sec_qty", __("Sec Qty")],
+		["sec_qty", __("NOS")],
 		["required_qty", __("Required Qty (Kg)")],
 		["is_reserved", __("Reserved")],
 	];
@@ -3963,7 +3963,7 @@ function _show_exact_match_reassign_dialog(frm, preselect_row_name) {
 			{ fieldtype: "HTML", fieldname: "no_selection_html" },
 			{ fieldtype: "Section Break", label: __("Current Allocation") },
 			{ fieldname: "current_batch", fieldtype: "Data", label: __("Current Batch"), read_only: 1 },
-			{ fieldname: "current_sec_qty", fieldtype: "Float", label: __("Current Sec Qty (Nos)"), read_only: 1 },
+			{ fieldname: "current_sec_qty", fieldtype: "Float", label: __("Current NOS"), read_only: 1 },
 			{ fieldtype: "Column Break" },
 			{ fieldname: "current_qty", fieldtype: "Float", label: __("Current Required Qty (Kg)"), read_only: 1 },
 			{ fieldtype: "HTML", fieldname: "cross_item_notice_html" },
@@ -3974,7 +3974,7 @@ function _show_exact_match_reassign_dialog(frm, preselect_row_name) {
 			{ fieldtype: "Column Break" },
 			{ fieldname: "width", fieldtype: "Float", label: __("Width (mm)"), read_only: 1 },
 			{ fieldname: "thickness", fieldtype: "Float", label: __("Thickness (mm)"), read_only: 1 },
-			{ fieldname: "sec_qty", fieldtype: "Float", label: __("Sec Qty (Nos)") },
+			{ fieldname: "sec_qty", fieldtype: "Float", label: __("NOS") },
 			{ fieldname: "calculated_qty", fieldtype: "Float", label: __("Calculated Qty (Kg)"), read_only: 1 },
 			{ fieldname: "reserve_without_dimensions", fieldtype: "Check", label: __("Reserve Without Dimensions") },
 		],

@@ -309,7 +309,7 @@
    "label": "Totals"
   },
   {
-   "description": "Sum of qty for Structurals/Plates; sum of Sec Qty for items if Sec UOM is KG (Bolt and nuts)",
+   "description": "Sum of qty for Structurals/Plates; sum of NOS for items if Sec UOM is KG (Bolt and nuts)",
    "fieldname": "total_weight",
    "fieldtype": "Float",
    "label": "Total Weight (KG)",

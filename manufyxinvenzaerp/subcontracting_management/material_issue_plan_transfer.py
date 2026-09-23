@@ -192,7 +192,7 @@ def _validate_selected_against_stock(mip, selected):
     if problems:
         frappe.throw(
             _("Stock validation failed — nothing has been transferred:<br><br>{0}<br><br>"
-              "Lower the Sec Nos on the line(s) above, or transfer what is available now and the "
+              "Lower the NOS on the line(s) above, or transfer what is available now and the "
               "rest later. Reopen <b>Select Materials to Transfer</b> to see the current figures.")
             .format("<hr style='margin:8px 0'>".join(problems)),
             title=_("Cannot Transfer"),
@@ -811,6 +811,7 @@ def get_mip_pending_items(mip_name):
         row["round_up_excess_kg"] = 0.0
         row["round_up_excess_pieces"] = 0.0
         row["kg_per_piece"], row["piece_from_dimensions"] = _line_kg_per_piece(row)
+        row["available_nos"] = _available_nos(row, row["kg_per_piece"])
 
         # "In Stock" stays the physical figure. What the popup limits against is what
         # this plan may take: physical less other plans' reservations, and never more
@@ -864,7 +865,7 @@ def update_transfer_sec_qty(mip_name, item_code, batch_no, planned_sec_qty=None,
     mip = frappe.get_doc("Material Issue Plan", mip_name)
     new_sec = flt(new_sec_qty)
     if new_sec <= 0:
-        frappe.throw(_("Sec Qty must be greater than zero."))
+        frappe.throw(_("NOS must be greater than zero."))
 
     if transfer_type == "cnc_forward":
         return _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec)
@@ -882,7 +883,7 @@ def update_transfer_sec_qty(mip_name, item_code, batch_no, planned_sec_qty=None,
 
     planned_qty, planned_sec = flt(line["qty"], 3), flt(line["custom_sec_qty"], 3)
     if planned_sec <= 0 or planned_qty <= 0:
-        frappe.throw(_("This row has no planned Sec Qty to recalculate from."))
+        frappe.throw(_("This row has no planned NOS to recalculate from."))
 
     new_qty, kg_per_piece = _qty_for_sec(line, new_sec)
     excess_kg = flt(max(0.0, new_qty - planned_qty), 3)
@@ -935,7 +936,7 @@ def _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec):
                      .format(item_code, batch_no or "-"))
     planned_qty, planned_sec = flt(line["qty"], 3), flt(line["custom_sec_qty"], 3)
     if planned_sec <= 0 or planned_qty <= 0:
-        frappe.throw(_("This row has no planned Sec Qty to recalculate from."))
+        frappe.throw(_("This row has no planned NOS to recalculate from."))
 
     new_qty, kg_per_piece = _qty_for_sec(line, new_sec)
     at_cnc = flt(min(planned_qty, flt(line.get("available_qty"))), 3)
@@ -949,7 +950,7 @@ def _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec):
                 _num(new_sec), _num(kg_per_piece), _num(new_qty)),
             _("Waiting at CNC for this plan: {0} Kg ({1} Nos)").format(_num(planned_qty), _num(planned_sec)),
             _("In the CNC warehouse: {0} Kg").format(_num(line.get("available_qty"))),
-            _("<b>Short by: {0} Kg</b>. Only what has arrived at CNC can be forwarded — lower the Sec Nos to {1} or less.")
+            _("<b>Short by: {0} Kg</b>. Only what has arrived at CNC can be forwarded — lower the NOS to {1} or less.")
             .format(_num(new_qty - at_cnc), _num(planned_sec)),
         ])
     return {
@@ -1026,6 +1027,21 @@ def _line_kg_per_piece(line):
             if abs(planned_qty / piece - planned_sec) <= _SEC_NOS_ROUNDING * members + 0.0001:
                 return flt(piece, 6), True
     return flt(from_plan, 6), False
+
+
+def _available_nos(line, kg_per_piece):
+    """Pieces the batch's In Stock Kg makes, at this line's own piece weight.
+
+    Shown beside In Stock (Kg) in the transfer popups. kg_per_piece is what
+    _line_kg_per_piece gives -- the same piece weight the popup uses to turn NOS into
+    Kg -- so the two columns cannot disagree about what a piece weighs. Not rounded to
+    whole pieces: a remnant reads as e.g. 3.600, which is what is physically there.
+    None when there is no piece weight at all (no dimensions and no planned NOS), and
+    the popup shows a dash rather than a number it would have had to invent."""
+    kg_per_piece = flt(kg_per_piece)
+    if kg_per_piece <= 0:
+        return None
+    return flt(flt(line.get("available_qty")) / kg_per_piece, 3)
 
 
 def _qty_for_sec(line, new_sec):
@@ -1287,7 +1303,7 @@ def _log_round_up_excess(mip, items, excess_plan=None):
     Return Warehouse defaults to the plan's raw-material warehouse, which is where an
     off-cut normally goes back to; the popup lets it be pointed at a scrap warehouse
     instead, per row."""
-    SOURCE_TABLE = "Round Up Sec Qty for Transfer"
+    SOURCE_TABLE = "Round Up NOS for Transfer"
     by_key = {
         (r.source_table, r.source_row): r
         for r in (mip.excess_return_items or [])
@@ -1370,7 +1386,7 @@ def _log_round_up_excess(mip, items, excess_plan=None):
                 "qty": excess_kg,
                 "return_warehouse": return_warehouse,
                 "return_reason": _(
-                    "Rounding surplus from \"Round Up Sec Qty for Transfer\" -- placeholder "
+                    "Rounding surplus from \"Round Up NOS for Transfer\" -- placeholder "
                     "dimensions (standard piece size); confirm the exact leftover once "
                     "this material is cut."
                 ),
@@ -1932,6 +1948,11 @@ def get_mip_cnc_pending_items(mip_name):
             "round_up_excess_kg": 0.0,
             "round_up_excess_pieces": 0.0,
         })
+    for row in result:
+        # Priced into available_nos only. kg_per_piece is deliberately NOT added to
+        # these rows: the popup reads that key for its own NOS -> Kg arithmetic, and
+        # this leg has always done without it.
+        row["available_nos"] = _available_nos(row, _line_kg_per_piece(row)[0])
     return result
 
 
@@ -2176,6 +2197,74 @@ def _set_excess_repack_rates(se):
         row.basic_amount = flt(row.transfer_qty * row.basic_rate, row.precision("basic_amount"))
 
 
+# Fields a dimension line copies from the excess row it was split from: everything
+# that says WHAT the material is and WHERE it came from. Length / Width / NOS / Weight
+# are the line's own; stock_entry_created is set afterwards like any other row.
+_SPLIT_COPY_FIELDS = (
+    "item_code", "item_name", "material_spec", "material_grade", "parent_item_group",
+    "unit_weight", "thickness", "sec_uom", "uom", "return_reason", "return_warehouse",
+    "source_table", "source_row", "source_mip_raw_material_row",
+)
+
+
+def _split_extra_dimensions(mip, overrides):
+    """One off-cut can come back as several pieces of different sizes. Each extra
+    size typed in the Return Excess dialog becomes its own excess row, cloned from the
+    row it belongs to and placed right under it.
+
+    Its own row, rather than several sizes crammed onto one: every returned size is
+    received as a NEW batch, and each batch is traced back to exactly one excess row
+    (custom_source_mip_excess_row). One row per size keeps that one-to-one, so returned
+    totals, process loss and the batch trail all go on working unchanged.
+
+    In memory only. create_mip_excess_return_entry commits before it inserts the Stock
+    Entry, and its docstring forbids new writes above that commit; these rows reach
+    the database with the plan's own save at the end, with everything else.
+
+    Refused where a split would mean something else:
+      - a row claimed by another Material Planning must come back as what was claimed;
+      - a weight-only row (Nuts and Bolts, or "Enter Weight, Not Pieces") has no
+        dimensions to split.
+    """
+    rows = list(mip.excess_return_items or [])
+    for r in rows:
+        override = overrides.get(r.name) or {}
+        extra = [d for d in (override.get("extra_dimensions") or []) if d]
+        if not extra or r.get("stock_entry_created"):
+            continue
+        if r.get("mapped_material_planning"):
+            frappe.throw(
+                _("Row {0} ({1}) is claimed by {2} and must come back as it was claimed, "
+                  "so it cannot be split into several sizes.")
+                .format(r.idx, r.item_code, r.mapped_material_planning),
+                title=_("Cannot Split a Claimed Row"))
+        if (r.parent_item_group or "") not in _DIMENSION_DRIVEN_GROUPS or r.get("enter_weight_instead_of_pieces"):
+            frappe.throw(
+                _("Row {0} ({1}) is returned by weight, so it has no dimensions to split.")
+                .format(r.idx, r.item_code),
+                title=_("Cannot Split a Weight-Only Row"))
+
+        insert_at = mip.excess_return_items.index(r) + 1
+        for dims in extra:
+            clone = mip.append("excess_return_items", {f: r.get(f) for f in _SPLIT_COPY_FIELDS})
+            # Named AFTER append: append marks a nameless row as new, so the plan's
+            # save inserts it. Named before, it would be taken for an existing row --
+            # an UPDATE matching nothing, and the row silently never saved.
+            clone.name = frappe.generate_hash(length=10)
+            mip.excess_return_items.remove(clone)
+            mip.excess_return_items.insert(insert_at, clone)
+            insert_at += 1
+            # Priced by the same override path as the row it came from.
+            overrides[clone.name] = {
+                "name": clone.name,
+                "length": dims.get("length"), "width": dims.get("width"),
+                "sec_qty": dims.get("sec_qty"),
+                "return_reason": override.get("return_reason"),
+            }
+    for i, row in enumerate(mip.excess_return_items, start=1):
+        row.idx = i
+
+
 @frappe.whitelist()
 def create_mip_excess_return_entry(mip_name, rows_json=None):
     """Receive unconsumed/off-cut material back into stock as fresh Material
@@ -2215,6 +2304,9 @@ def create_mip_excess_return_entry(mip_name, rows_json=None):
         frappe.throw(_("Please set the Finished Goods Warehouse on this Material Issue Plan first."))
 
     overrides = {o.get("name"): o for o in _json.loads(rows_json)} if rows_json else {}
+    # Several sizes for one off-cut become several rows before anything else runs,
+    # so the loop below prices and receives each one exactly like any other row.
+    _split_extra_dimensions(mip, overrides)
 
     se_items = []
     new_row_names = []

@@ -303,7 +303,7 @@
    "label": "Excess Material Return"
   },
   {
-   "description": "Off-cut / balance material left after cutting the transferred raw material. Enter the items in their new dimensions and Sec Nos \u2014 weight (Kg) is auto-calculated.",
+   "description": "Off-cut / balance material left after cutting the transferred raw material. Enter the items in their new dimensions and NOS \u2014 weight (Kg) is auto-calculated.",
    "fieldname": "excess_return_items",
    "fieldtype": "Table",
    "label": "Excess Material Items",
@@ -326,7 +326,7 @@
   {
    "fieldname": "excess_return_total_nos",
    "fieldtype": "Float",
-   "label": "Total Return Sec Nos",
+   "label": "Total Return NOS",
    "read_only": 1
   }
  ],

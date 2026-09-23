@@ -51,7 +51,7 @@
    "fieldname": "qty_to_manufacture",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty to Mfg (Nos)",
+   "label": "To Manufacture NOS",
    "read_only": 1
   },
   {
@@ -85,14 +85,14 @@
    "fieldname": "available_to_consume_nos",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Available (Nos)",
+   "label": "Available NOS",
    "read_only": 1
   },
   {
    "fieldname": "completed_qty_nos",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Completed (Nos)",
+   "label": "Completed NOS",
    "read_only": 1
   }
  ],

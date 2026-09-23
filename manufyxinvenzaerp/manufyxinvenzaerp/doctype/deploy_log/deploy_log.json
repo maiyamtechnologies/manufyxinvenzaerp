@@ -1,0 +1,203 @@
+{
+ "actions": [],
+ "allow_copy": 1,
+ "autoname": "format:DEPLOY-{YYYY}-{MM}-{DD}-{#####}",
+ "creation": "2026-09-23 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "deploy_started",
+  "deploy_finished",
+  "duration_display",
+  "column_break_head",
+  "trigger_tag",
+  "tests_skipped",
+  "branch",
+  "commit_sha",
+  "section_break_failure",
+  "failed_step",
+  "error_summary",
+  "section_break_commit",
+  "commit_message",
+  "section_break_paths",
+  "site",
+  "log_file",
+  "column_break_paths",
+  "backup_file",
+  "rollback_commit",
+  "section_break_log",
+  "log"
+ ],
+ "fields": [
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "In Progress\nCompleted\nFailed\nRolled Back",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "deploy_started",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Started",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deploy_finished",
+   "fieldtype": "Datetime",
+   "label": "Finished",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duration_display",
+   "fieldtype": "Data",
+   "label": "Duration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Which tag on the commit started this deploy.",
+   "fieldname": "trigger_tag",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Triggered By",
+   "options": "\nautodeploy\nurgentfix\nmanual",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "An urgent fix skips the CI test suite. Recorded so a deploy that went out untested is identifiable afterwards.",
+   "fieldname": "tests_skipped",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Tests Skipped",
+   "read_only": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Data",
+   "label": "Branch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "commit_sha",
+   "fieldtype": "Data",
+   "label": "Commit",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status && doc.status != \"Completed\"",
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break",
+   "label": "Failure"
+  },
+  {
+   "description": "The step the deploy stopped on, e.g. Bench Migrate.",
+   "fieldname": "failed_step",
+   "fieldtype": "Data",
+   "label": "Failed Step",
+   "read_only": 1
+  },
+  {
+   "description": "The last lines of the log before it stopped. The whole log is below.",
+   "fieldname": "error_summary",
+   "fieldtype": "Small Text",
+   "label": "Error Summary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_commit",
+   "fieldtype": "Section Break",
+   "label": "Commit Message"
+  },
+  {
+   "fieldname": "commit_message",
+   "fieldtype": "Small Text",
+   "label": "Commit Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_paths",
+   "fieldtype": "Section Break",
+   "label": "Server Paths"
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site",
+   "read_only": 1
+  },
+  {
+   "description": "The same log on the server, if it is still within the last 20 deploys kept there.",
+   "fieldname": "log_file",
+   "fieldtype": "Data",
+   "label": "Log File (server)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_paths",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The pre-deploy database backup. Kept on the server for the last 10 deploys.",
+   "fieldname": "backup_file",
+   "fieldtype": "Data",
+   "label": "Backup File (server)",
+   "read_only": 1
+  },
+  {
+   "description": "The commit the server was on before this deploy — what a rollback returns to.",
+   "fieldname": "rollback_commit",
+   "fieldtype": "Data",
+   "label": "Rollback Point",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_log",
+   "fieldtype": "Section Break",
+   "label": "Full Log"
+  },
+  {
+   "fieldname": "log",
+   "fieldtype": "Code",
+   "label": "Log",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-09-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Manufyxinvenzaerp",
+ "name": "Deploy Log",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "search_fields": "status,commit_sha,failed_step",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "status",
+ "track_changes": 0
+}

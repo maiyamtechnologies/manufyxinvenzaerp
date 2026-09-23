@@ -1123,7 +1123,7 @@
    "insert_after": "uom",
    "is_system_generated": 1,
    "is_virtual": 0,
-   "label": "Sec Qty",
+   "label": "NOS",
    "length": 0,
    "link_filters": null,
    "mandatory_depends_on": null,
@@ -1181,7 +1181,7 @@
    "ignore_user_permissions": 0,
    "ignore_xss_filter": 0,
    "in_global_search": 0,
-   "in_list_view": 1,
+   "in_list_view": 0,
    "in_preview": 0,
    "in_standard_filter": 0,
    "insert_after": "custom_sec_qty",
@@ -2387,6 +2387,30 @@
    "property": "columns",
    "property_type": "Int",
    "value": "2"
+  },
+  {
+   "doctype_or_field": "DocField",
+   "doc_type": "Purchase Receipt Item",
+   "field_name": "storage_location",
+   "property": "in_list_view",
+   "property_type": "Check",
+   "value": "1",
+   "name": "Purchase Receipt Item-storage_location-in_list_view",
+   "row_name": null,
+   "creation": "2026-09-23 22:00:00.000000",
+   "modified": "2026-09-23 22:00:00.000000"
+  },
+  {
+   "doctype_or_field": "DocField",
+   "doc_type": "Purchase Receipt Item",
+   "field_name": "storage_location",
+   "property": "columns",
+   "property_type": "Int",
+   "value": "1",
+   "name": "Purchase Receipt Item-storage_location-columns",
+   "row_name": null,
+   "creation": "2026-09-23 22:00:00.000000",
+   "modified": "2026-09-23 22:00:00.000000"
   }
  ],
  "sync_on_migrate": 1

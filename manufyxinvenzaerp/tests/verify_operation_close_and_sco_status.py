@@ -184,6 +184,30 @@ def run():
           and soe_js.index("check_soe_completion_before_confirm")
               < soe_js.index("frappe.confirm"), True)
 
+    print()
+    print("=== The order's status is not set by hand ===")
+    sco_js = frappe.db.get_value(
+        "Client Script", "Subcontracting Order-soe-buttons", "script") or ""
+    # ERPNext's Status group offers Close / Re-open. On a PP-flow order the status is
+    # derived (update_status in overrides.py, re-run from the SOE hooks and from Stock
+    # Entry submit/cancel), so a hand-set value is overwritten by the next recompute
+    # without telling anybody. The standard controller adds whichever label fits the
+    # current status, so both have to go; an empty group is then dropped by Frappe.
+    for label in ("Close", "Re-open"):
+        check('  the "%s" button is removed from the Status group' % label,
+              'remove_custom_button(__("%s"), __("Status"))' % label in sco_js, True)
+
+    # Create -> Material Issue Plan is gone; Open MIP covers it, and the plan is made
+    # with the order. Checked on the CODE, not the source text -- the button is kept
+    # commented out so it can be restored, so a plain search still finds its name.
+    sco_code = "\n".join(line.split("//")[0] for line in sco_js.splitlines())
+    check("  Create no longer offers Material Issue Plan",
+          'add_custom_button(__("Material Issue Plan")' not in sco_code, True)
+    check("  but Open MIP still navigates to it",
+          '__("Open MIP")' in sco_code, True)
+    check("  and Supplier Operation Entries is untouched",
+          '__("Supplier Operation Entries")' in sco_code, True)
+
     frappe.db.rollback()
     print()
     print("  (rolled back -- this check leaves no trace)")

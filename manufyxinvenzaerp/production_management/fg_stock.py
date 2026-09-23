@@ -490,9 +490,9 @@ def validate_fg_stock_entry_rows(doc, method=None):
 
 def _require_whole_nos(label, nos):
 	if nos <= 0:
-		frappe.throw(_("{0}: enter the number of pieces (Qty (Nos)).").format(label), title=_("Nos Missing"))
+		frappe.throw(_("{0}: enter the number of pieces (NOS).").format(label), title=_("Nos Missing"))
 	if not _is_whole(nos):
-		frappe.throw(_("{0}: Qty (Nos) must be a whole number of pieces, not {1}.").format(label, nos))
+		frappe.throw(_("{0}: NOS must be a whole number of pieces, not {1}.").format(label, nos))
 
 
 def on_fg_stock_entry_change(doc, method=None):
@@ -531,6 +531,12 @@ def on_fg_stock_entry_change(doc, method=None):
 			)
 
 	_refresh_mip_loss(doc)
+
+	# The Sales Order's Delivery Plan tab lists what these batches completed and
+	# still hold. Cannot fail this entry: refresh_plans_for_batches catches and logs.
+	from manufyxinvenzaerp.selling_management.delivery_plan import refresh_plans_for_batches
+
+	refresh_plans_for_batches(batches)
 
 
 def _refresh_mip_loss(doc):

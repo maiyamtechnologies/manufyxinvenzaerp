@@ -217,7 +217,7 @@ def compute_fg_rows(doc, throw=True):
 
 		if nos <= 0 or nos != cint(nos):
 			fail(row, _(
-				"Row {0}: Qty (Nos) of {1} must be a whole number of pieces greater "
+				"Row {0}: NOS of {1} must be a whole number of pieces greater "
 				"than 0 (got {2})."
 			).format(row.idx, frappe.bold(row.item_code), flt(row.custom_sec_qty)))
 			continue

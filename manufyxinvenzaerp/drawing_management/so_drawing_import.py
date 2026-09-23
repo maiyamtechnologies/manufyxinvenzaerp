@@ -119,6 +119,8 @@ def _parse_excel(file_path):
             "customer_drawing_number": cdn,
             "item_no": _sstr(_get(row, "item no")),
             "material_code": mat_code,
+            # Optional column: sheets from before it existed simply leave it blank.
+            "material_spec": _sstr(_get(row, "material spec", "material_spec")),
             "grade": _sstr(_get(row, "grade")),
             "thickness": _sflt(_get(row, "thickness")),
             "width": _sflt(_get(row, "width")),
@@ -348,7 +350,10 @@ def parse_bom_excel(so_name):
                 idata.get("item_name") or item["material_code"],
                 idata.get("item_group") or "",
                 pig,
-                idata.get("custom_material_spec") or "",
+                # The sheet's spec, so Verify can compare it with the Item's; the
+                # Item's own only when the sheet leaves it blank, which is exactly what
+                # this column held before -- so an older sheet stages as it always did.
+                item.get("material_spec") or idata.get("custom_material_spec") or "",
                 item["grade"],
                 flt(item["thickness"], 3), flt(item["width"], 3), flt(item["length"], 3),
                 flt(sec_qty, 3),
@@ -826,6 +831,78 @@ def _check_raw_material_grades(so):
     return issues
 
 
+def _check_raw_material_specs(so):
+    """Material Spec on each imported row must exist in the Material Spec master.
+
+    The same rule, for the same reason, as _check_raw_material_grades above: the
+    staged rows are written by a raw SQL insert that bypasses Link validation, so a
+    spec the master does not have lands in the table regardless. Blank is allowed --
+    the column is new, and older sheets do not have it."""
+    rows = [r for r in (so.get("custom_so_raw_materials") or []) if not r.get("is_locked")]
+    wanted = {r.material_spec for r in rows if r.get("material_spec")}
+    if not wanted:
+        return []
+
+    existing = set(frappe.get_all(
+        "Material Spec", filters={"name": ["in", list(wanted)]}, pluck="name"))
+
+    issues = []
+    for r in rows:
+        if r.get("material_spec") and r.material_spec not in existing:
+            issues.append(_at(RAW_MATERIALS, r.idx,
+                _("{0} / {1}: Material Spec <b>{2}</b> is not in the Material Spec master. "
+                  "Correct it in the sheet (or create the spec) and import again.")
+                .format(r.customer_drawing_number or "?", r.material_code or "?", r.material_spec)))
+    return issues
+
+
+def _check_item_spec_grade(so):
+    """The sheet's Material Spec and Grade must be the ones on that Material Code's Item.
+
+    Spec and Grade are typed on the Item and carried from there onto every document
+    downstream -- Material Planning, Material Request, PO, PR -- by fetch_from. So if
+    the sheet asks for IS2062 E350 and the Item is E250, everything after this point
+    plans, buys and receives E250 without anyone having decided that. This is the one
+    place the two can be compared, before a Drawing is made from the row.
+
+    A mismatch blocks, naming the row. The fix is on the Item side -- the right Item
+    for that spec and grade, created and set as the Material Code -- because an Item
+    already in use cannot have its spec or grade changed (item._LOCKED_FIELDS).
+
+    A blank sheet value is not checked: the column is optional, and a sheet that says
+    nothing about spec is not contradicting the Item. A Material Code that is not an
+    Item is left to _check_drawing_masters, which already names it."""
+    rows = [r for r in (so.get("custom_so_raw_materials") or [])
+            if not r.get("is_locked") and r.get("material_code")
+            and (r.get("material_spec") or r.get("grade"))]
+    if not rows:
+        return []
+
+    items = {i.name: i for i in frappe.get_all(
+        "Item", filters={"name": ["in", list({r.material_code for r in rows})]},
+        fields=["name", "custom_material_spec", "custom_material_grade"])}
+
+    issues = []
+    for r in rows:
+        item = items.get(r.material_code)
+        if not item:
+            continue
+        wrong = []
+        if r.get("material_spec") and r.material_spec != (item.custom_material_spec or ""):
+            wrong.append(_("Spec <b>{0}</b> (Item has {1})").format(
+                r.material_spec, item.custom_material_spec or _("none")))
+        if r.get("grade") and r.grade != (item.custom_material_grade or ""):
+            wrong.append(_("Grade <b>{0}</b> (Item has {1})").format(
+                r.grade, item.custom_material_grade or _("none")))
+        if wrong:
+            issues.append(_at(RAW_MATERIALS, r.idx,
+                _("{0} / {1}: the sheet asks for {2}. This material spec or grade is not in "
+                  "the Item master for {1}. Create or correct the Item, set it as the "
+                  "Material Code, then Verify again.")
+                .format(r.customer_drawing_number or "?", r.material_code, ", ".join(wrong))))
+    return issues
+
+
 # Every dimension the weight formula reads, per group. A dimension NOT listed
 # for a group takes no part in that group's formula, so a value sitting in it
 # describes nothing -- see _check_unused_dimensions.
@@ -1039,6 +1116,7 @@ def verify_raw_materials(so_name):
     # longer applies to them.
     unlocked = [r for r in (so.custom_so_raw_materials or []) if not r.get("is_locked")]
     issues = (_check_drawing_masters(so) + _check_raw_material_grades(so)
+              + _check_raw_material_specs(so) + _check_item_spec_grade(so)
               + _check_drawing_headers(so) + _check_fg_weights(so))
     # Kept OUT of `issues` on purpose. `verified` is `not issues`, so anything added
     # there blocks drawing creation -- and a mark reused by an unrelated customer is
@@ -1167,7 +1245,7 @@ def download_bom_template():
         "Assembly Group", "Customer Drawing Number", "DUNO/Mark No",
         "FG Item", "Total Qty", "Cust Weight (per Nos)", "Cust Weight (Total)",
         "Nature of Work", "Rate Schedule",
-        "Item No", "Material Code", "Grade", "Thickness", "Width", "Length",
+        "Item No", "Material Code", "Material Spec", "Grade", "Thickness", "Width", "Length",
         "Reqd Raw Material Qty",
     ]
     ws.append(headers)
@@ -1188,13 +1266,13 @@ def download_bom_template():
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "1", "MAT-STRUCT-001", sample_grade, 0, 0, 3000, 2,
+        "1", "MAT-STRUCT-001", "", sample_grade, 0, 0, 3000, 2,
     ])
     # Sample row 2 — same drawing CDN-001, item 2 (same header columns repeated)
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "2", "MAT-PLATE-001", sample_grade, 10, 200, 1500, 1,
+        "2", "MAT-PLATE-001", "", sample_grade, 10, 200, 1500, 1,
     ])
 
     output = io.BytesIO()

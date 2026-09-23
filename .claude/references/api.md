@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-23 13:39:24_
+_Generated: 2026-09-23 23:32:22_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -48,18 +48,18 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `verify_raw_materials` | 1019 |
-| `download_bom_template` | 1146 |
-| `clear_drawing_import` | 1210 |
-| `get_cancelled_drawing_links` | 1245 |
-| `parse_bom_excel` | 137 |
-| `create_drawings_from_import` | 401 |
-| `process_drawings` | 601 |
+| `verify_raw_materials` | 1096 |
+| `download_bom_template` | 1224 |
+| `clear_drawing_import` | 1288 |
+| `get_cancelled_drawing_links` | 1323 |
+| `parse_bom_excel` | 139 |
+| `create_drawings_from_import` | 406 |
+| `process_drawings` | 606 |
 ## item_management/item.py
 
 | Method | Line |
 |--------|------|
-| `has_item_transactions` | 204 |
+| `has_item_transactions` | 228 |
 ## manufyxinvenzaerp/doctype/delivery_challan/delivery_challan.py
 
 | Method | Line |
@@ -133,15 +133,16 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `get_fg_settings` | 575 |
-| `get_fg_kg_for_nos` | 584 |
-| `get_fg_planned_kg` | 593 |
+| `get_fg_settings` | 581 |
+| `get_fg_kg_for_nos` | 590 |
+| `get_fg_planned_kg` | 599 |
 ## production_management/inspection.py
 
 | Method | Line |
 |--------|------|
 | `update_inspection_call_date` | 143 |
 | `create_inspection_entry` | 163 |
+| `create_soe_inspection` | 251 |
 | `add_inspection_call` | 96 |
 ## production_management/production_utils.py
 
@@ -185,8 +186,14 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `get_fg_rows_kg` | 415 |
-| `get_fg_batches` | 429 |
+| `get_fg_rows_kg` | 421 |
+| `get_fg_batches` | 435 |
+## selling_management/delivery_plan.py
+
+| Method | Line |
+|--------|------|
+| `refresh_delivery_plan` | 208 |
+| `create_delivery_from_plan` | 272 |
 ## selling_management/mapping.py
 
 | Method | Line |
@@ -237,38 +244,38 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `has_cnc_stock` | 1495 |
-| `get_mip_cnc_button_state` | 1515 |
-| `get_mip_readiness_check` | 1589 |
-| `create_mip_transfer_entry` | 1747 |
-| `create_mip_partial_transfer` | 1799 |
-| `get_mip_cnc_pending_items` | 1882 |
-| `create_mip_cnc_partial_forward` | 1939 |
-| `create_mip_cnc_forward_entry` | 2072 |
-| `create_mip_excess_return_entry` | 2180 |
+| `has_cnc_stock` | 1511 |
+| `get_mip_cnc_button_state` | 1531 |
+| `get_mip_readiness_check` | 1605 |
+| `create_mip_transfer_entry` | 1763 |
+| `create_mip_partial_transfer` | 1815 |
+| `get_mip_cnc_pending_items` | 1898 |
+| `create_mip_cnc_partial_forward` | 1960 |
+| `create_mip_cnc_forward_entry` | 2093 |
+| `create_mip_excess_return_entry` | 2269 |
 | `submit_mip_transfer_entry` | 249 |
 | `get_mip_process_loss_state` | 301 |
 | `create_mip_process_loss_entry` | 374 |
 | `get_mip_pending_items` | 600 |
-| `update_transfer_sec_qty` | 845 |
+| `update_transfer_sec_qty` | 846 |
 ## subcontracting_management/subcontracting.py
 
 | Method | Line |
 |--------|------|
-| `check_soe_completion_before_confirm` | 1242 |
-| `` | 2552 |
-| `` | 2555 |
-| `` | 2558 |
-| `` | 2561 |
-| `` | 2564 |
+| `check_soe_completion_before_confirm` | 1246 |
+| `` | 2573 |
+| `` | 2576 |
+| `` | 2579 |
+| `` | 2582 |
+| `` | 2585 |
 | `create_sco_from_production_plan` | 27 |
 | `create_sco_and_mip_from_production_plan` | 271 |
 | `delete_sco_and_mip_for_production_plan` | 296 |
 | `` | 376 |
 | `create_supplier_operation_entries` | 379 |
 | `get_soe_summary` | 401 |
-| `get_final_stock_entry_preview` | 839 |
-| `create_finished_goods_entry` | 937 |
+| `get_final_stock_entry_preview` | 843 |
+| `create_finished_goods_entry` | 941 |
 ## tests/test_whitelist_coverage.py
 
 | Method | Line |
@@ -294,4 +301,4 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 ## Total
 
-_162 whitelisted methods_
+_165 whitelisted methods_

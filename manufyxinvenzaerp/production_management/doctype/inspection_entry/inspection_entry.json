@@ -17,14 +17,18 @@
   "work_order",
   "subcontracting_order",
   "production_plan",
+  "column_break_party",
   "sales_order",
   "customer",
   "supplier",
+  "contractor",
   "section_break_status",
   "status",
-  "feedback",
-  "overall_remarks",
   "inspection_complete_date",
+  "column_break_status",
+  "overall_remarks",
+  "column_break_feedback",
+  "feedback",
   "section_break_remarks",
   "rework_remarks",
   "section_break_result",
@@ -125,6 +129,10 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_party",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "sales_order",
    "fieldtype": "Link",
    "label": "Sales Order",
@@ -143,7 +151,16 @@
    "fieldtype": "Link",
    "label": "Supplier",
    "options": "Supplier",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.supplier || !doc.contractor"
+  },
+  {
+   "fieldname": "contractor",
+   "fieldtype": "Link",
+   "label": "Contractor",
+   "options": "Contractor",
+   "read_only": 1,
+   "depends_on": "eval:doc.contractor"
   },
   {
    "fieldname": "section_break_status",
@@ -160,18 +177,6 @@
    "in_list_view": 1
   },
   {
-   "fieldname": "feedback",
-   "fieldtype": "Select",
-   "label": "Feedback",
-   "options": "\nOk\nNot Ok",
-   "mandatory_depends_on": "eval:doc.status==\"Completed\""
-  },
-  {
-   "fieldname": "overall_remarks",
-   "fieldtype": "Small Text",
-   "label": "Overall Remarks"
-  },
-  {
    "fieldname": "inspection_complete_date",
    "fieldtype": "Date",
    "label": "Inspection Complete Date",
@@ -180,15 +185,36 @@
    "description": "Set automatically when Status is changed to Completed and saved."
   },
   {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "overall_remarks",
+   "fieldtype": "Small Text",
+   "label": "Overall Remarks"
+  },
+  {
+   "fieldname": "column_break_feedback",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "feedback",
+   "fieldtype": "Select",
+   "label": "Feedback",
+   "options": "\nOk\nNot Ok",
+   "mandatory_depends_on": "eval:doc.status==\"Completed\" && doc.source_doctype==\"Job Card\"",
+   "depends_on": "eval:doc.source_doctype==\"Job Card\""
+  },
+  {
    "fieldname": "section_break_remarks",
    "fieldtype": "Section Break",
-   "depends_on": "eval:doc.source_doctype!=\"Purchase Receipt\""
+   "depends_on": "eval:doc.source_doctype==\"Job Card\""
   },
   {
    "fieldname": "rework_remarks",
    "fieldtype": "Small Text",
    "label": "Rework Remarks",
-   "mandatory_depends_on": "eval:doc.rework_qty>1"
+   "mandatory_depends_on": "eval:doc.source_doctype==\"Job Card\" && doc.rework_qty>1"
   },
   {
    "fieldname": "section_break_result",
@@ -258,7 +284,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-11 00:00:00.000000",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Production Management",
  "name": "Inspection Entry",

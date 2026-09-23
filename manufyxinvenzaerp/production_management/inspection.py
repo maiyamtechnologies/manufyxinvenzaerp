@@ -103,7 +103,7 @@ def add_inspection_call(source_doctype, source_name, call_date=None):
 	For Supplier Operation Entry, also blocked when nothing is actually pending
 	inspection yet (inspection_items all at qty_nos 0 -- e.g. everything already
 	accepted in a prior round, nothing new logged in the Consumption Log since).
-	Without this check, supplier_operation_entry.js's single "Create Inspection"
+	Without this check, the Operation Entry's "Create Inspection"
 	button would add a new Pending round here, then immediately fail in
 	create_inspection_entry's own identical check right after -- leaving an
 	orphan Pending round with no Inspection Entry that can never be completed
@@ -217,6 +217,9 @@ def create_inspection_entry(source_doctype, source_name):
 			"subcontracting_order": subcontracting_order,
 			"production_plan": production_plan,
 			"supplier": supplier,
+			# An internal operation has a Contractor instead of a Supplier; the entry
+			# shows whichever the Operation Entry has.
+			"contractor": doc.get("contractor") if source_doctype == "Supplier Operation Entry" else None,
 		})
 
 		if source_doctype == "Supplier Operation Entry":
@@ -242,6 +245,40 @@ def create_inspection_entry(source_doctype, source_name):
 	frappe.db.set_value("Inspection Call Log", pending_row.name, "inspection_entry", entry.name)
 
 	return entry.name
+
+
+@frappe.whitelist()
+def create_soe_inspection(soe_name, call_date):
+	"""The Operation Entry's Create Inspection popup: log the call round for
+	`call_date` and create its Inspection Entry, in the one request -- so a refusal
+	in the second step (nothing pending, say) rolls the round back with it and can
+	never leave an orphan Pending round behind.
+
+	A round already logged without an entry (from before this popup) is reused, with
+	the date picked here. A round that already has its entry is refused: that entry is
+	where the inspection is finished."""
+	if not call_date:
+		frappe.throw(_("Select an Inspection Call Date."))
+
+	soe = _get_source_doc("Supplier Operation Entry", soe_name)
+	if soe.docstatus != 0:
+		frappe.throw(_("Inspection is created while the Operation Entry is still a draft."))
+
+	open_rows = [r for r in (soe.get("custom_inspection_call_log") or []) if r.round_status != "Completed"]
+	with_entry = next((r for r in open_rows if r.inspection_entry), None)
+	if with_entry:
+		frappe.throw(
+			_("Inspection {0} is still open -- complete it before creating a new one.").format(
+				frappe.bold(with_entry.inspection_entry)),
+			title=_("Inspection In Progress"),
+		)
+
+	if open_rows:
+		frappe.db.set_value("Inspection Call Log", open_rows[-1].name, "call_date", call_date)
+	else:
+		add_inspection_call("Supplier Operation Entry", soe_name, call_date=call_date)
+
+	return create_inspection_entry("Supplier Operation Entry", soe_name)
 
 
 def on_submit_inspection_entry(doc, method):

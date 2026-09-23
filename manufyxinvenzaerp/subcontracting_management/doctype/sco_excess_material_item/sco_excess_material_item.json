@@ -118,7 +118,7 @@
   {
    "default": "0",
    "depends_on": "eval:['Structurals','Plates'].includes(doc.parent_item_group)",
-   "description": "Off: type the Length/Width and Sec Nos, and the weight follows. On: type the weight, and the Sec Nos follows. The same choice as \"Reserve stock without dimensions\" on a Material Planning row -- which of the two figures you know, and which one should be worked out for you. Only offered where a piece has dimensions to measure.",
+   "description": "Off: type the Length/Width and NOS, and the weight follows. On: type the weight, and the NOS follows. The same choice as \"Reserve stock without dimensions\" on a Material Planning row -- which of the two figures you know, and which one should be worked out for you. Only offered where a piece has dimensions to measure.",
    "fieldname": "enter_weight_instead_of_pieces",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -131,7 +131,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Nos",
+   "label": "NOS",
    "read_only_depends_on": "eval:doc.enter_weight_instead_of_pieces || doc.stock_entry_created"
   },
   {
@@ -145,7 +145,7 @@
   },
   {
    "allow_on_submit": 1,
-   "description": "Worked out from the dimensions and Sec Nos, unless \"Enter Weight, Not Pieces\" is ticked -- then this is what you type.",
+   "description": "Worked out from the dimensions and NOS, unless \"Enter Weight, Not Pieces\" is ticked -- then this is what you type.",
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -170,7 +170,7 @@
    "description": "Pieces of this off-cut already claimed by Material Plannings.",
    "fieldname": "allocated_sec_qty",
    "fieldtype": "Float",
-   "label": "Allocated Sec Nos",
+   "label": "Allocated NOS",
    "read_only": 1
   },
   {
@@ -188,7 +188,7 @@
    "fieldname": "available_sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Available Sec Nos",
+   "label": "Available NOS",
    "read_only": 1
   },
   {
@@ -222,7 +222,7 @@
   },
   {
    "allow_on_submit": 1,
-   "description": "Copied from the source raw_materials row's own source_table -- together with Source Row, this is the STABLE reference back to the underlying Material Planning row that survives a raw_materials rebuild (unlike Source MIP Raw Material Row below, which is this MIP's own row and gets a new name on every refresh). \"Round Up Sec Qty for Transfer\" is the one exception -- it has no single Material Planning source row, so Source Row there is a synthetic \"item_code|batch_no\" key instead, just used to find-and-accumulate the same rounding-surplus row across repeated transfers. \"Consolidated Excess Return Plan\" is the same shape: it comes from the transfer popup's consolidated tab, which is stated per ITEM with no batch, so Source Row there is the item code itself.",
+   "description": "Copied from the source raw_materials row's own source_table -- together with Source Row, this is the STABLE reference back to the underlying Material Planning row that survives a raw_materials rebuild (unlike Source MIP Raw Material Row below, which is this MIP's own row and gets a new name on every refresh). \"Round Up NOS for Transfer\" is the one exception -- it has no single Material Planning source row, so Source Row there is a synthetic \"item_code|batch_no\" key instead, just used to find-and-accumulate the same rounding-surplus row across repeated transfers. \"Consolidated Excess Return Plan\" is the same shape: it comes from the transfer popup's consolidated tab, which is stated per ITEM with no batch, so Source Row there is the item code itself.",
    "fieldname": "source_table",
    "fieldtype": "Select",
    "hidden": 1,

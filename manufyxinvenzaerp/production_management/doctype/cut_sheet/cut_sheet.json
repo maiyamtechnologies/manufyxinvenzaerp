@@ -175,7 +175,7 @@
   {
    "fieldname": "sheet_sec_qty",
    "fieldtype": "Float",
-   "label": "Sec Nos",
+   "label": "NOS",
    "read_only": 1
   },
   {
@@ -213,7 +213,7 @@
    "description": "How many of these pieces this sheet yields. Entered by hand — a suggestion is offered from the geometry, but the nesting is yours to decide.",
    "fieldname": "w1_sec_qty",
    "fieldtype": "Float",
-   "label": "W1 Sec Nos (available)",
+   "label": "W1 NOS",
    "reqd": 1
   },
   {
@@ -240,7 +240,7 @@
   {
    "fieldname": "allocated_sec_qty",
    "fieldtype": "Float",
-   "label": "Allocated Sec Nos",
+   "label": "Allocated NOS",
    "read_only": 1
   },
   {
@@ -258,7 +258,7 @@
    "fieldname": "available_sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Available Sec Nos",
+   "label": "Available NOS",
    "read_only": 1
   },
   {
@@ -290,7 +290,7 @@
   {
    "fieldname": "w2_sec_qty",
    "fieldtype": "Float",
-   "label": "W2 Sec Nos"
+   "label": "W2 NOS"
   },
   {
    "fieldname": "w2_calc_qty",

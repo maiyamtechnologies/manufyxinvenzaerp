@@ -181,7 +181,7 @@ def get_columns():
 			"width": 80,
 		},
 		{
-			"label": _("Available Sec Qty"),
+			"label": _("Available NOS"),
 			"fieldname": "available_sec_qty",
 			"fieldtype": "Float",
 			"width": 140,

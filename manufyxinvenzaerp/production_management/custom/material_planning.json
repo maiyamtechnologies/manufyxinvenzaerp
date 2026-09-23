@@ -270,7 +270,7 @@
    "creation": "2026-08-18 22:53:18.522022",
    "default": null,
    "depends_on": null,
-   "description": "Fills each Consolidate Item with the largest size among the requirements it covers, and the Sec Qty that matches the required weight. Edit and save afterwards.",
+   "description": "Fills each Consolidate Item with the largest size among the requirements it covers, and the NOS that matches the required weight. Edit and save afterwards.",
    "docstatus": 0,
    "dt": "Material Planning",
    "fetch_from": null,

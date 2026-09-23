@@ -89,7 +89,46 @@ def run():
                   per_pcs_sum != flt(soe.total_consumed_kg, 3), True)
 
     print()
-    print("=== 4. The drawings behind it carry usable weights ===")
+    print("=== 4. Per-piece weight is the drawing's own, not divided again ===")
+    # Drawing.total_weight IS the raw material for one piece -- it sums that drawing's
+    # own item rows, and the job requirement is built from it as total_weight x pieces
+    # (SCO Drawing Item total_weight_kg for 1B3 = 7,160.355 = 1,790.089 x 4). The calc
+    # used to divide it by no_of_qty_to_manufacture as well, halving/quartering every
+    # consumption row, so a fully finished operation reported 3,604.179 Kg against
+    # 10,788.533 planned.
+    soe_js = frappe.db.get_value(
+        "Client Script", "Supplier Operation Entry-consumption-logic", "script") or ""
+    # Comments stripped first. The comment above the fix explains the division it
+    # replaced, and naming the mistake is the point of it -- a plain search finds the
+    # warning as readily as the bug, which is how the previous version of this check
+    # failed against correct code.
+    soe_code = "\n".join(
+        line.split("//")[0] for line in soe_js.splitlines()
+    )
+    check("the calc no longer divides by no_of_qty_to_manufacture",
+          "no_of_qty_to_manufacture" not in soe_code, True)
+    check("  and takes Drawing.total_weight as the per-piece weight",
+          'get_value("Drawing", row.drawing, ["total_weight"])' in soe_js, True)
+
+    # Measured, not just grepped: what a row WOULD get now, against the drawing.
+    if parent:
+        soe = frappe.get_doc("Supplier Operation Entry", parent)
+        stale = 0
+        for c in (soe.consumption_log or [])[:5]:
+            if not c.drawing or not flt(c.qty_nos):
+                continue
+            drw = flt(frappe.db.get_value("Drawing", c.drawing, "total_weight"))
+            if abs(flt(c.wt_per_pcs_kg) - drw) > 0.001:
+                stale += 1
+        # Rows logged before the fix keep the understated figure -- they are on
+        # submitted entries and rewriting them moves total_consumed_kg, and with it
+        # the next operation's available_to_consume_kg. Reported, not asserted.
+        print("    rows still carrying the old divided weight: %d (of the 5 sampled)" % stale)
+        if stale:
+            print("    -> historical only; new rows use the drawing's own per-piece weight")
+
+    print()
+    print("=== 5. The drawings behind it carry usable weights ===")
     if parent:
         soe = frappe.get_doc("Supplier Operation Entry", parent)
         for r in (soe.drawing_details or [])[:5]:

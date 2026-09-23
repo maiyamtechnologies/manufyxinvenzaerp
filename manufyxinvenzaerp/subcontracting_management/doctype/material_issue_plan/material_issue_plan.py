@@ -1667,7 +1667,7 @@ def _render_mip_batch_plan_html(mip):
         supplier_label=_("Supplier"), supplier=frappe.utils.escape_html(supplier),
         col_duno=_("DUNO/Mark No"), col_cdn=_("Customer Drawing No"), col_item=_("Item"),
         col_planned=_("Planned Kg"), col_batch=_("Batch No"), col_dims=_("Dimensions (mm)"),
-        col_secqty=_("Sec Qty"), col_batchwt=_("Batch Weight (Kg)"),
+        col_secqty=_("NOS"), col_batchwt=_("Batch Weight (Kg)"),
         row_html=row_html,
     )
 
@@ -1842,7 +1842,7 @@ def _render_mip_consolidate_plan_html(mip):
         source_label=_("Source Warehouse"),
         source_warehouse=frappe.utils.escape_html(mip.source_warehouse or "-"),
         col_item=_("Item"), col_batch=_("Batch No"), col_dims=_("Dimensions (mm)"),
-        col_secqty=_("Sec Nos"), col_reqd=_("Reqd Kg"), col_issued=_("Issued Kg"),
+        col_secqty=_("NOS"), col_reqd=_("Reqd Kg"), col_issued=_("Issued Kg"),
         col_pending=_("Pending Kg"), col_merged=_("Merged Rows"), col_duno=_("DUNO/Mark No"),
         body_html=body_html,
         totals_html=totals_html,

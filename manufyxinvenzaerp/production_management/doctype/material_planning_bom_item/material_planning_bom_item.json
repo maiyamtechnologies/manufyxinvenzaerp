@@ -48,7 +48,7 @@
    "fieldname": "qty_to_manufacture",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty to Manufacture (Nos)",
+   "label": "To Manufacture NOS",
    "read_only": 1
   },
   {

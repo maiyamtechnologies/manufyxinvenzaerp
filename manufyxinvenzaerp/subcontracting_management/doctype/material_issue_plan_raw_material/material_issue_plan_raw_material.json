@@ -239,7 +239,7 @@
   {
    "fieldname": "sec_qty",
    "fieldtype": "Float",
-   "label": "Sec Qty",
+   "label": "NOS",
    "read_only": 1
   },
   {
@@ -322,7 +322,7 @@
    "fieldtype": "Float",
    "label": "Transfer Excess Kg",
    "read_only": 1,
-   "description": "Surplus created by rounding this row's Sec Nos up to whole pieces at transfer time \u2014 the difference between the whole pieces actually issued and the fractional Sec Nos planned. Accumulates across partial transfers, and is booked into the Excess Material Items table to be returned. Separate from Excess Qty, which measures the mapped batch against the drawing instead."
+   "description": "Surplus created by rounding this row's NOS up to whole pieces at transfer time \u2014 the difference between the whole pieces actually issued and the fractional NOS planned. Accumulates across partial transfers, and is booked into the Excess Material Items table to be returned. Separate from Excess Qty, which measures the mapped batch against the drawing instead."
   },
   {
    "fieldname": "drawing_planned_weight",
@@ -400,7 +400,7 @@
   {
    "fieldname": "use_sec_qty",
    "fieldtype": "Float",
-   "label": "To Use Sec Qty (Nos)",
+   "label": "To Use NOS",
    "read_only": 1
   },
   {
@@ -423,7 +423,7 @@
   {
    "fieldname": "balance_sec_qty",
    "fieldtype": "Float",
-   "label": "Balance Sec Qty (Nos)",
+   "label": "Balance NOS",
    "read_only": 1
   }
  ],

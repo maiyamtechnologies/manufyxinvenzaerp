@@ -10,6 +10,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Deploy flags ─────────────────────────────────────────────────────────────
+  # Read the commit tags ONCE, here, and let both jobs below branch on the answer.
+  # The alternative -- repeating a contains() expression in two `if:` conditions --
+  # has a failure mode worth avoiding: if the two ever disagree, the test job is
+  # skipped while the deploy job still waits for it, and the pipeline hangs on a
+  # job that will never run.
+  #
+  # Both the merge commit and every commit in the push are searched. The merge
+  # commit is the reliable one (auto-merge-devbranch.yml puts the tag there on
+  # purpose), and the rest covers a direct push to main that was never merged.
+  prepare:
+    name: Read deploy flags
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      urgent: ${{ steps.flags.outputs.urgent }}
+      tag: ${{ steps.flags.outputs.tag }}
+    steps:
+      - name: Detect [urgentfix]
+        id: flags
+        env:
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+          ALL_MSGS: ${{ toJson(github.event.commits.*.message) }}
+        run: |
+          set -e
+          if printf '%s\n%s' "$HEAD_MSG" "$ALL_MSGS" | grep -qF '[urgentfix]'; then
+            echo "urgent=true" >> "$GITHUB_OUTPUT"
+            echo "tag=urgentfix" >> "$GITHUB_OUTPUT"
+            echo "[urgentfix] found — the test suite will be SKIPPED for this deploy."
+          else
+            echo "urgent=false" >> "$GITHUB_OUTPUT"
+            echo "tag=autodeploy" >> "$GITHUB_OUTPUT"
+            echo "No [urgentfix] tag — the test suite runs as usual."
+          fi
+
   # ── Test gate ────────────────────────────────────────────────────────────────
   # Runs the app's full pytest/unittest suite (tests/) against a throwaway site
   # before the deploy job below is allowed to run. This is a new addition
@@ -21,6 +56,12 @@ jobs:
   test:
     name: Run App Test Suite
     runs-on: ubuntu-latest
+    needs: prepare
+    # [urgentfix] skips the gate. Everything after it is unchanged -- same backup,
+    # same rollback, same log -- so what is being traded away is the warning, not
+    # the safety net. The Deploy Log record is stamped Tests Skipped so a deploy
+    # that went out untested stays identifiable long after the run has scrolled by.
+    if: needs.prepare.outputs.urgent != 'true'
     # A whole-job cap. Individual steps carry their own where they are known to
     # be able to hang; this is the backstop so a run can never sit for an hour.
     timeout-minutes: 30
@@ -193,13 +234,25 @@ jobs:
   deploy:
     name: SSH Deploy
     runs-on: ubuntu-latest
-    needs: test
+    needs: [prepare, test]
     timeout-minutes: 30
     # The live server is only touched when the repository variable LIVE_DEPLOY is
     # set to "true" (Settings → Secrets and variables → Actions → Variables).
     # With it unset the test gate still runs on every push, so the pipeline can be
     # exercised and watched without deploying anything.
-    if: vars.LIVE_DEPLOY == 'true'
+    #
+    # The rest of this condition is what lets [urgentfix] through. A skipped `needs`
+    # job normally skips everything downstream, so a plain `needs: test` would mean
+    # an urgent fix merged and then deployed nothing at all -- the quietest possible
+    # way to fail. !cancelled() lifts that, and the explicit result check puts the
+    # gate back: success or skipped may deploy, FAILED may not. Spelling out the two
+    # allowed results rather than writing `!= 'failure'` also covers a test job that
+    # ends up cancelled or timed out.
+    if: >-
+      !cancelled()
+      && vars.LIVE_DEPLOY == 'true'
+      && needs.prepare.result == 'success'
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
 
     steps:
       - name: Checkout code
@@ -209,7 +262,16 @@ jobs:
       - name: Deploy to Frappe Server
         id: ssh-deploy
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_TAG: ${{ needs.prepare.outputs.tag }}
+          TESTS_SKIPPED: ${{ needs.prepare.outputs.urgent == 'true' && '1' || '0' }}
         with:
+          # Forwarded into the remote shell so the Deploy Log record can say how
+          # this deploy was started and whether the suite ran. Only these two --
+          # the commit sha, message and branch are read from git on the server,
+          # because a commit message with a quote in it would otherwise have to
+          # survive a round trip through two shells.
+          envs: DEPLOY_TAG,TESTS_SKIPPED
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
@@ -222,8 +284,44 @@ jobs:
             LOG_DIR="$BENCH_PATH/Auto-deploy-logs"
             LOG_FILE="$LOG_DIR/deploy_$(date +'%Y-%m-%d_%H-%M-%S').log"
             SITE="erp.manufyx.co.in"
+            DEPLOY_STARTED="$(date +'%Y-%m-%d %H:%M:%S')"
+            DEPLOY_TAG="${DEPLOY_TAG:-autodeploy}"
+            TESTS_SKIPPED="${TESTS_SKIPPED:-0}"
+            BACKUP_FILE=""
+            ROLLBACK_COMMIT=""
 
             mkdir -p "$LOG_DIR"
+
+            # ── Deploy Log → ERP ─────────────────────────────────────────────
+            # The log this script writes lives on the server, readable only over
+            # SSH -- which is exactly the person who cannot read it when a deploy
+            # fails out of hours. This copies the same log into a Deploy Log record
+            # so it can be read, and its status seen, from the ERP itself.
+            #
+            # Every call is swallowed. A deploy that actually worked must never be
+            # reported as failed because recording it failed: `|| true` here, and
+            # the Python side catches everything as well. It is also why this is
+            # never called before Step 1 -- on a server mid-upgrade the function may
+            # not exist yet, and a missing function is not a reason to stop.
+            # Built up in one variable rather than a multi-line command: every line
+            # of this script sits inside a YAML block scalar, and a backslash
+            # continuation that starts at column 0 ends the block early and breaks
+            # the whole workflow file.
+            record_deploy_log() {
+              STATUS="$1"
+              FAILED_STEP="${2:-}"
+              cd "$BENCH_PATH" 2>/dev/null || return 0
+              KW="{'status': '$STATUS'"
+              KW="$KW, 'log_file': '$LOG_FILE'"
+              KW="$KW, 'started': '$DEPLOY_STARTED'"
+              KW="$KW, 'site': '$SITE'"
+              KW="$KW, 'backup_file': '$BACKUP_FILE'"
+              KW="$KW, 'rollback_commit': '$ROLLBACK_COMMIT'"
+              KW="$KW, 'failed_step': '$FAILED_STEP'"
+              KW="$KW, 'trigger_tag': '$DEPLOY_TAG'"
+              KW="$KW, 'tests_skipped': '$TESTS_SKIPPED'}"
+              bench --site "$SITE" execute manufyxinvenzaerp.deploy_log.record --kwargs "$KW" >/dev/null 2>&1 || true
+            }
 
             echo "============================================" | tee -a "$LOG_FILE"
             echo " AUTO DEPLOY STARTED"                        | tee -a "$LOG_FILE"
@@ -347,6 +445,13 @@ jobs:
               echo "  bench --site $SITE restore $BACKUP_FILE" | tee -a "$LOG_FILE"
               echo "" | tee -a "$LOG_FILE"
               echo "That discards anything done on the site since the backup, so check first." | tee -a "$LOG_FILE"
+
+              # Recorded AFTER the code has been reset and the site restarted, so
+              # the app is back on a known-good commit and can be asked to write
+              # the record. Doing it before the reset would ask a half-deployed
+              # app to log its own failure.
+              record_deploy_log "Rolled Back" "$REASON"
+
               exit 1
             }
 
@@ -433,6 +538,12 @@ jobs:
             echo " Backup   : $BACKUP_FILE"                    | tee -a "$LOG_FILE"
             echo " (kept, in case something surfaces later)"   | tee -a "$LOG_FILE"
             echo "============================================" | tee -a "$LOG_FILE"
+
+            # ── Record it in the ERP ─────────────────────────────────────────
+            # Last, so the record covers the whole run including the restart. The
+            # Python side prunes its own old records to the same count the server
+            # keeps below, so a Deploy Log never outlives the file it points at.
+            record_deploy_log "Completed" ""
 
             # ── Old log cleanup (keep last 20 deploys only) ──────────────────
             cd "$LOG_DIR" && ls -t | tail -n +21 | xargs -r rm --

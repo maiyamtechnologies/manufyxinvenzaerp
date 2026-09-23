@@ -43,7 +43,7 @@
   },
   {
    "default": "0",
-   "description": "Off: the sheet's own batch is rewritten to the Balance (W2) dimensions once the cut has been transferred -- same batch, same name, new size. On: the batch is never rewritten -- a Repack Stock Entry empties it and creates a NEW batch carrying the W2 dimensions, Sec Qty and Kg, so documents already issued against the original still read true.",
+   "description": "Off: the sheet's own batch is rewritten to the Balance (W2) dimensions once the cut has been transferred -- same batch, same name, new size. On: the batch is never rewritten -- a Repack Stock Entry empties it and creates a NEW batch carrying the W2 dimensions, NOS and Kg, so documents already issued against the original still read true.",
    "fieldname": "create_new_batch_for_cut_sheet_stock_entry",
    "fieldtype": "Check",
    "label": "Create New Batch for Cut Sheet Stock Entry"

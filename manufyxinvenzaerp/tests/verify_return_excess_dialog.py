@@ -51,7 +51,7 @@ def run():
 
     print("=== one column per dimension, as on the transfer popup ===")
     for column in ("Item Code", "Length (mm)", "Width (mm)", "Thickness (mm)",
-                   "Sec Qty", "Qty (Kg)", "Return Reason"):
+                   "NOS", "Qty (Kg)", "Return Reason"):
         check("column: %s" % column, '__("%s")' % column in js, True)
     check("the old stacked cell is gone", "Length / Width / Sec Qty" in js, False)
 
@@ -69,7 +69,7 @@ def run():
     check("Length is required", 'if (!entry.length) need.push(__("Length"))' in js, True)
     check("Width only where the formula reads it",
           'if (g === "Plates" && !entry.width)' in js, True)
-    check("Sec Qty is required", 'if (!entry.sec_qty) need.push(__("Sec Qty"))' in js, True)
+    check("NOS is required", 'if (!entry.sec_qty) need.push(__("NOS"))' in js, True)
     check("a typed weight must be above zero", "if (entry.qty <= 0)" in js, True)
     check("the message names the rows", "Measurements Incomplete" in js, True)
     check("a reason is still mandatory", "Reason Required" in js, True)
@@ -96,8 +96,9 @@ def run():
 
     print()
     print("=== the live preview still recalculates as figures are typed ===")
+    # Delegated, so the extra size lines added by the duplicate icon recalculate too.
     check("bound to all three boxes",
-          '$tr.find("._rex_length, ._rex_width, ._rex_sec_qty").on("input", _refresh)' in js, True)
+          'dialog.$wrapper.on("input", "._rex_length, ._rex_width, ._rex_sec_qty"' in js, True)
 
     print()
     print("=== SUMMARY ===")

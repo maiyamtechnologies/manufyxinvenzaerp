@@ -1,5 +1,45 @@
+// ── Process Planning: Supplier/Contractor per operation ─────────────────────
+// Work Type decides which master the row's party comes from; the server derives
+// the same mapping (production_plan.PARTY_TYPE_BY_WORK_TYPE) and is the backstop.
+const MFX_PARTY_TYPE_BY_WORK_TYPE = { "Subcontractor": "Supplier", "Internal Jobcard": "Contractor" };
+
+function mfx_setup_process_planning_party(frm) {
+	let grid = frm.fields_dict.custom_process_planning && frm.fields_dict.custom_process_planning.grid;
+	if (!grid) return;
+	// Mandatory on a DRAFT plan only. The table cannot be edited once submitted, so a
+	// plan submitted before this column existed would otherwise be refused every later
+	// Update with a field nobody can fill. The server enforces it at submit.
+	grid.update_docfield_property("party", "reqd", frm.doc.docstatus === 0 ? 1 : 0);
+	frm.set_query("party", "custom_process_planning", function(doc, cdt, cdn) {
+		let row = locals[cdt][cdn];
+		return row.party_type === "Supplier" ? { filters: { disabled: 0 } } : {};
+	});
+	// Rows created before the column existed, or by the server from the BOM routing,
+	// may not carry a party type yet. Set straight on the row rather than through
+	// set_value, so opening a plan does not mark it as changed.
+	(frm.doc.custom_process_planning || []).forEach(function(row) {
+		let expected = MFX_PARTY_TYPE_BY_WORK_TYPE[row.work_type] || "";
+		if (row.party_type !== expected && !row.party) row.party_type = expected;
+	});
+}
+
+frappe.ui.form.on("Process Planning", {
+	work_type(frm, cdt, cdn) {
+		// A party chosen under the other Work Type is the wrong kind of party, so it is
+		// cleared rather than carried across -- a Supplier cannot do an internal job.
+		let row = locals[cdt][cdn];
+		let expected = MFX_PARTY_TYPE_BY_WORK_TYPE[row.work_type] || "";
+		if (row.party_type !== expected) {
+			frappe.model.set_value(cdt, cdn, "party", "");
+			frappe.model.set_value(cdt, cdn, "party_type", expected);
+		}
+	},
+});
+
 frappe.ui.form.on("Production Plan", {
 	refresh(frm) {
+		mfx_setup_process_planning_party(frm);
+
 		// ── Hide all standard filter / MRP sections not used in this workflow ──
 		frm.toggle_display([
 			// Get items filter section

@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-23 13:39:24_
+_Generated: 2026-09-23 23:32:22_
 
 ## drawing
 
@@ -122,6 +122,17 @@ _Generated: 2026-09-23 13:39:24_
 
 ---
 
+## sales_order_delivery_plan
+
+| Key | Value |
+|-----|-------|
+| Module | drawing_management |
+| Path | `drawing_management/doctype/sales_order_delivery_plan` |
+| Controller | `drawing_management/doctype/sales_order_delivery_plan/sales_order_delivery_plan.py` |
+| Client script | none |
+
+---
+
 ## sales_order_drawing_raw_material
 
 | Key | Value |
@@ -204,6 +215,24 @@ _Generated: 2026-09-23 13:39:24_
 
 ---
 
+## deploy_log
+
+| Key | Value |
+|-----|-------|
+| Module | manufyxinvenzaerp |
+| Path | `manufyxinvenzaerp/doctype/deploy_log` |
+| Controller | `manufyxinvenzaerp/doctype/deploy_log/deploy_log.py` |
+| Client script | none |
+
+### Methods
+
+| Method | Whitelisted |
+|--------|-------------|
+| ` validate` | no |
+| ` _set_duration` | no |
+
+---
+
 ## gate_pass_purpose
 
 | Key | Value |
@@ -244,6 +273,17 @@ _Generated: 2026-09-23 13:39:24_
 | Module | manufyxinvenzaerp |
 | Path | `manufyxinvenzaerp/doctype/material_spec` |
 | Controller | `manufyxinvenzaerp/doctype/material_spec/material_spec.py` |
+| Client script | none |
+
+---
+
+## contractor
+
+| Key | Value |
+|-----|-------|
+| Module | production_management |
+| Path | `production_management/doctype/contractor` |
+| Controller | `production_management/doctype/contractor/contractor.py` |
 | Client script | none |
 
 ---
@@ -327,6 +367,10 @@ _Generated: 2026-09-23 13:39:24_
 | ` _autofill_total_qty_to_check` | no |
 | ` _set_inspection_complete_date` | no |
 | ` before_submit` | no |
+| ` _result_rows` | no |
+| ` _row_label` | no |
+| ` _validate_row_feedback` | no |
+| ` _derive_header_result` | no |
 | ` _validate_scalar_result` | no |
 | ` _validate_soe_items` | no |
 | ` _validate_pr_items` | no |

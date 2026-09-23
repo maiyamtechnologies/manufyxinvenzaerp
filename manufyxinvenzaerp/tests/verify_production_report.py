@@ -59,13 +59,13 @@ def run():
     ])
     tail = labels[-17:]
     check("weights, costs and completion last", tail, [
-        "Cust Weight (Total)", "Planned Weight (Kg)", "Planned Sec Nos", "Waste %",
-        "Transferred Weight (Kg)", "Transferred Sec Nos", "Consumed RM Cost",
-        "Rate Schedule", "Rate / Kg", "Job Work Amount", "Consumables (Nos)", "Consumable Cost",
+        "Cust Weight (Total)", "Planned Weight (Kg)", "Planned NOS", "Waste %",
+        "Transferred Weight (Kg)", "Transferred NOS", "Consumed RM Cost",
+        "Rate Schedule", "Rate / Kg", "Job Work Amount", "Consumables NOS", "Consumable Cost",
         "Excess Weight (Kg)", "Returned Excess Weight (Kg)", "Difference (Kg)",
-        "Completed Drawing Weight (Kg)", "Completed Drawing (Nos)",
+        "Completed Drawing Weight (Kg)", "Completed Drawing NOS",
     ])
-    check("and the piece count closes it", labels[-1], "Completed Drawing (Nos)")
+    check("and the piece count closes it", labels[-1], "Completed Drawing NOS")
     check("Operation and Seq are gone -- they are columns now, not rows",
           [l for l in labels if l in ("Operation", "Seq")], [])
 
@@ -124,8 +124,11 @@ def run():
               all("%s %s" % (operation, suffix) in labels
                   for suffix in ("Status", "Inspection Rounds", "Last Inspection Status")),
               True)
+        # A pieces operation is headed "Welding NOS", like every other pieces heading;
+        # a Kg one keeps "Fit-up (Kg)".
         check("  and a quantity in %s" % unit,
-              "%s (%s)" % (operation, unit) in labels, True)
+              ("%s (%s)" % (operation, unit) if unit == "Kg" else "%s NOS" % operation) in labels,
+              True)
         check("  and a gap of its own", "%s Gap (Days, approx.)" % operation in labels, True)
         # The status a row shows for an operation must be that operation's status on
         # that job -- the check that the pivot put the values where the labels say.
@@ -184,7 +187,7 @@ def run():
             after_labels = _labels(execute({})[0])
             check("%s at sequence 1 here and 2 elsewhere" % operation,
                   ("%s (Kg)" % operation in after_labels,
-                   "%s (Nos)" % operation in after_labels),
+                   "%s NOS" % operation in after_labels),
                   (False, True))
         finally:
             frappe.db.rollback()
@@ -212,7 +215,7 @@ def run():
     )
     check("it sits between the planned figures and the transferred ones",
           (labels[labels.index("Waste %") - 1], labels[labels.index("Waste %") + 1]),
-          ("Planned Sec Nos", "Transferred Weight (Kg)"))
+          ("Planned NOS", "Transferred Weight (Kg)"))
     check("no customer weight leaves it blank, not zero", _waste_pct(0, 1814.089), None)
     check("and it is planned over customer", _waste_pct(1780.16, 1814.089), 1.91)
     check("negative when the plan holds less than the part weighs",

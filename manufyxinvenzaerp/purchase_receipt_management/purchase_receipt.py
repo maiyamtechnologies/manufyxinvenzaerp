@@ -133,7 +133,7 @@ def _setup_batch_from_purchase_receipt(doc):
     if pr_item.custom_parent_item_group in ("Structurals", "Plates") and not flt(pr_item.custom_sec_qty):
         frappe.throw(
             _(
-                "Cannot create batch {0} for item {1}: Sec Qty (Nos) resolved to 0 while "
+                "Cannot create batch {0} for item {1}: NOS resolved to 0 while "
                 "matching Purchase Receipt {2}. This usually means two or more rows for this "
                 "item share identical Length/Width/Thickness — give them distinct dimensions "
                 "(or split the receipt) so each batch can be matched to the correct row."
@@ -1106,7 +1106,7 @@ def _archive_consolidate_items(mp_name, pr_name):
 
     header = "".join("<th style='padding:4px 8px'>%s</th>" % h for h in (
         _("Item"), _("Alternate Item"), _("Required Kg"), _("Length"), _("Width"),
-        _("Thickness"), _("Sec Qty"), _("Purchase Kg"), _("Difference Kg")))
+        _("Thickness"), _("NOS"), _("Purchase Kg"), _("Difference Kg")))
     body = ""
     for c in mp.consolidate_items:
         body += "<tr>" + "".join("<td style='padding:4px 8px'>%s</td>" % v for v in (

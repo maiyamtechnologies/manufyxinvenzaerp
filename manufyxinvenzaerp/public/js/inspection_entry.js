@@ -24,8 +24,15 @@ frappe.ui.form.on("Inspection Entry", {
 		if (frm.doc.docstatus !== 0) return;
 
 		if (frm.doc.status === "Completed") {
-			if (!frm.doc.feedback) {
-				frappe.msgprint(__("Enter Feedback to complete it."));
+			// Operation and receipt inspections carry Feedback per row; a Job Card
+			// inspection has no rows and keeps it on the header.
+			const rows = frm.doc.source_doctype === "Supplier Operation Entry" ? frm.doc.soe_items
+				: frm.doc.source_doctype === "Purchase Receipt" ? frm.doc.items : null;
+			const missing = rows ? (rows || []).filter((r) => !r.feedback).map((r) => r.idx) : [];
+			if (rows ? missing.length : !frm.doc.feedback) {
+				frappe.msgprint(rows
+					? __("Enter Feedback on every row to complete it (rows {0}).", [missing.join(", ")])
+					: __("Enter Feedback to complete it."));
 				frm.set_value("status", frm.__insp_prev_status || "Working");
 				return;
 			}

@@ -80,13 +80,13 @@
   {
    "fieldname": "old_sec_qty",
    "fieldtype": "Float",
-   "label": "Old Sec Qty (Nos)",
+   "label": "Old NOS",
    "read_only": 1
   },
   {
    "fieldname": "new_sec_qty",
    "fieldtype": "Float",
-   "label": "New Sec Qty (Nos)",
+   "label": "New NOS",
    "read_only": 1
   },
   {

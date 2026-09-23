@@ -164,13 +164,13 @@ function warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -270,13 +270,13 @@ function pr_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -386,13 +386,13 @@ function mr_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -524,13 +524,13 @@ function sq_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -1531,9 +1531,9 @@ const _SO_TABLE_VIEW_CONFIG = {
 			{ fieldname: "thickness",               label: "Thickness" },
 			{ fieldname: "width",                   label: "Width" },
 			{ fieldname: "length",                  label: "Length" },
-			{ fieldname: "sec_qty",                 label: "Reqd Sec Qty" },
+			{ fieldname: "sec_qty",                 label: "Reqd NOS" },
 			{ fieldname: "sec_uom",                 label: "Sec UOM" },
-			{ fieldname: "total_sec_qty",            label: "Total Sec Qty" },
+			{ fieldname: "total_sec_qty",            label: "Total NOS" },
 			{ fieldname: "unit_weight",              label: "Unit Weight" },
 			{ fieldname: "qty",                     label: "Weight (Primary UOM)" },
 			{ fieldname: "uom",                     label: "UOM" },
@@ -1633,6 +1633,7 @@ def after_install():
     create_purchase_order_client_script()
     create_purchase_receipt_custom_fields()
     layout_purchase_receipt_item_grid()
+    layout_stock_entry_detail_grid()
     create_batch_custom_fields()
     create_purchase_receipt_client_script()
     create_material_request_custom_fields()
@@ -1643,6 +1644,8 @@ def after_install():
     create_sq_client_script()
     create_so_custom_fields()
     create_so_client_script()
+    create_so_delivery_plan_fields()
+    create_so_delivery_plan_script()
     create_bom_custom_fields()
     create_bom_client_script()
     create_production_plan_custom_fields()
@@ -1699,6 +1702,7 @@ def after_migrate():
     create_purchase_order_client_script()
     create_purchase_receipt_custom_fields()
     layout_purchase_receipt_item_grid()
+    layout_stock_entry_detail_grid()
     create_batch_custom_fields()
     create_purchase_receipt_client_script()
     create_material_request_custom_fields()
@@ -1709,6 +1713,8 @@ def after_migrate():
     create_sq_client_script()
     create_so_custom_fields()
     create_so_client_script()
+    create_so_delivery_plan_fields()
+    create_so_delivery_plan_script()
     create_bom_custom_fields()
     create_bom_client_script()
     create_production_plan_custom_fields()
@@ -2027,7 +2033,7 @@ def create_purchase_order_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2040,7 +2046,7 @@ def create_purchase_order_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -2181,7 +2187,7 @@ def create_purchase_receipt_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2195,7 +2201,7 @@ def create_purchase_receipt_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
                 "columns": 1,
             },
             {
@@ -2357,10 +2363,19 @@ def layout_purchase_receipt_item_grid():
     like a field that needed enabling; it was already enabled and had simply run off
     the end of the budget.
 
-    The layout below is the client's, and totals exactly 10:
+    The layout below is the client's. It totalled exactly 10 until Sec UOM left every
+    grid (2026-09-23, when the pieces column became plain "NOS" -- the unit is in the
+    heading, so a column repeating "Nos" on every row told nobody anything). It is now
+    9, with one column spare -- which Target Storage Location (the bin) now takes, so
+    it is back to exactly 10:
 
-        item_code 2 + qty 1 + custom_sec_qty 1 + custom_sec_uom 1
+        item_code 2 + qty 1 + custom_sec_qty 1
         + custom_thickness 1 + custom_length 1 + custom_width 1 + warehouse 2
+        + storage_location 1
+
+    storage_location is an ERPNext Inventory Dimension field. Its Custom Field is
+    generated by the Inventory Dimension and can be regenerated from it, so it is put
+    in the grid by Property Setter here rather than by editing that field.
 
     Rejected Qty, Unit Weight, Rate, Amount and Net Amount come out of the grid to
     pay for it. They are only dropped from the ROW VIEW — every one stays on the
@@ -2371,7 +2386,16 @@ def layout_purchase_receipt_item_grid():
     more in_list_view field without taking width back from another does not push a
     column off the right-hand edge — it silently blanks everything after it.
     """
-    widths = {"item_code": 2, "qty": 1, "warehouse": 2}
+    widths = {"item_code": 2, "qty": 1, "warehouse": 2, "storage_location": 1}
+    frappe.make_property_setter(
+        {
+            "doctype": "Purchase Receipt Item",
+            "fieldname": "storage_location",
+            "property": "in_list_view",
+            "value": 1,
+            "property_type": "Check",
+        }
+    )
     for fieldname, columns in widths.items():
         frappe.make_property_setter(
             {
@@ -2391,6 +2415,41 @@ def layout_purchase_receipt_item_grid():
                 "property": "in_list_view",
                 "value": 0,
                 "property_type": "Check",
+            }
+        )
+    frappe.db.commit()
+
+
+def layout_stock_entry_detail_grid():
+    """Put Stock UOM in the Stock Entry item grid, paying for it with Basic Rate.
+
+    Same hard budget as layout_purchase_receipt_item_grid above: the grid walks its
+    fields adding up `columns` and silently drops every column after the one that
+    takes the total past 11. It was at exactly 11:
+
+        s_warehouse 2 + t_warehouse 2 + item_code 2 + custom_sec_qty 1
+        + custom_is_consumable 1 + qty 1 + basic_rate 1          = 10 (+1 start)
+
+    so adding Stock UOM without taking a column back would have blanked Basic Rate
+    and anything after it, with no error. Basic Rate leaves the grid -- valuation fills
+    it on these entries and it is rarely typed -- and stays on the row, editable, and
+    driving valuation exactly as before. Stock UOM takes its place at 1 column.
+
+    Qty is Kg (the stock UOM) and NOS is pieces; showing Stock UOM beside them is what
+    makes the two numbers on one row readable without opening it.
+    """
+    for fieldname, prop, value, ptype in (
+        ("stock_uom", "in_list_view", 1, "Check"),
+        ("stock_uom", "columns", 1, "Int"),
+        ("basic_rate", "in_list_view", 0, "Check"),
+    ):
+        frappe.make_property_setter(
+            {
+                "doctype": "Stock Entry Detail",
+                "fieldname": fieldname,
+                "property": prop,
+                "value": value,
+                "property_type": ptype,
             }
         )
     frappe.db.commit()
@@ -2556,7 +2615,7 @@ def create_batch_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "read_only": 1,
                 "insert_after": "custom_width",
@@ -2774,7 +2833,7 @@ def create_material_request_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2787,7 +2846,7 @@ def create_material_request_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -2915,7 +2974,7 @@ def create_rfq_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "read_only": 1,
                 "insert_after": "qty",
@@ -2928,7 +2987,7 @@ def create_rfq_custom_fields():
                 "options": "UOM",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -3027,7 +3086,7 @@ def create_sq_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -3040,7 +3099,7 @@ def create_sq_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -3147,7 +3206,7 @@ def create_bom_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "quantity",
                     "read_only": 1,
                     "no_copy": 1,
@@ -3239,7 +3298,7 @@ def create_bom_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Sec Qty",
+                    "label": "NOS",
                     "insert_after": "uom",
                     "read_only": 1,
                 },
@@ -3354,7 +3413,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,
@@ -3372,7 +3431,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_delivered_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Delivered (Nos)",
+                    "label": "Delivered NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "delivered_qty",
@@ -3381,7 +3440,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_billed_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Billed (Nos)",
+                    "label": "Billed NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "billed_amt",
@@ -3405,6 +3464,236 @@ def create_so_client_script():
             "view": "Form",
             "enabled": 1,
             "script": SO_CLIENT_SCRIPT,
+        }).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+# ── Sales Order: Delivery Plan tab ────────────────────────────────────────────
+# See selling_management/delivery_plan.py for what the tab is and why its rows are
+# derived. A separate function and Client Script from the Drawing Import ones above,
+# so this feature can be found, read and switched off on its own.
+
+def create_so_delivery_plan_fields():
+    create_custom_fields(
+        {
+            "Sales Order": [
+                {
+                    "fieldname": "custom_tab_delivery_plan",
+                    "fieldtype": "Tab Break",
+                    "label": "Delivery Plan",
+                    "insert_after": "custom_so_raw_materials",
+                    # Nothing can be delivered from a draft order, and an empty tab
+                    # on every new order would only raise the question of why.
+                    "depends_on": "eval:doc.docstatus==1",
+                },
+                # Buttons first, table below: on an order with forty drawings the
+                # buttons would otherwise sit a long scroll away from the top of the
+                # tab, below the very rows they act on.
+                {
+                    "fieldname": "custom_delivery_plan_actions",
+                    "fieldtype": "Section Break",
+                    "insert_after": "custom_tab_delivery_plan",
+                },
+                {
+                    "fieldname": "custom_create_delivery",
+                    "fieldtype": "Button",
+                    "label": "Create Delivery",
+                    "insert_after": "custom_delivery_plan_actions",
+                    "allow_on_submit": 1,
+                },
+                {
+                    "fieldname": "custom_delivery_plan_col",
+                    "fieldtype": "Column Break",
+                    "insert_after": "custom_create_delivery",
+                },
+                {
+                    "fieldname": "custom_refresh_delivery_plan",
+                    "fieldtype": "Button",
+                    "label": "Refresh Delivery Plan",
+                    "insert_after": "custom_delivery_plan_col",
+                    "allow_on_submit": 1,
+                },
+                {
+                    "fieldname": "custom_delivery_plan_section",
+                    "fieldtype": "Section Break",
+                    "label": "Finished Drawings",
+                    "insert_after": "custom_refresh_delivery_plan",
+                },
+                {
+                    "fieldname": "custom_delivery_plan",
+                    "fieldtype": "Table",
+                    "label": "Delivery Plan",
+                    "options": "Sales Order Delivery Plan",
+                    "insert_after": "custom_delivery_plan_section",
+                    # Delivery Plan (Nos) is typed on a submitted order.
+                    "allow_on_submit": 1,
+                    # Derived rows. A duplicated or amended order must rebuild its
+                    # own from its own batches, never inherit another order's.
+                    "no_copy": 1,
+                    "description": "Every drawing with pieces booked into finished goods. "
+                                   "Type Delivery Plan NOS on the drawings to send, "
+                                   "then Create Delivery.",
+                },
+            ]
+        },
+        update=True,
+    )
+    frappe.db.commit()
+
+
+SO_DELIVERY_PLAN_SCRIPT_NAME = "Sales Order-delivery-plan"
+
+SO_DELIVERY_PLAN_SCRIPT = """
+frappe.ui.form.on("Sales Order", {
+    refresh(frm) {
+        // The rows are derived from the ledger (delivery_plan.py) -- one per finished
+        // drawing. Adding or deleting one by hand would describe pieces that do not
+        // exist. cannot_add_rows is a runtime grid flag, not a DocField property, so
+        // it has to be set here rather than in the doctype JSON.
+        var grid = frm.fields_dict.custom_delivery_plan && frm.fields_dict.custom_delivery_plan.grid;
+        if (grid) {
+            grid.cannot_add_rows = true;
+            grid.cannot_delete_rows = true;
+            grid.wrapper.find(".grid-add-row, .grid-remove-rows, .grid-remove-all-rows").hide();
+        }
+
+        // Through the app's shared button system (public/js/mfx_buttons.js) rather
+        // than local CSS, so the tones match every other form. Orange for Create
+        // Delivery, light/outlined for Refresh, which reads and rebuilds a view but
+        // decides nothing. Guarded: the painter comes from the app bundle, and a form
+        // opened before the bundle has loaded should still work, just in grey.
+        if (window.mfx_paint_field) {
+            window.mfx_paint_field(frm, "custom_create_delivery", "alt", "add", "Create Delivery");
+            window.mfx_paint_field(frm, "custom_refresh_delivery_plan", "info", "refresh", "Refresh Delivery Plan");
+        }
+    },
+
+    custom_refresh_delivery_plan(frm) {
+        if (frm.is_dirty()) {
+            // A Refresh reloads the form, which would drop the plan being typed.
+            frappe.msgprint(__("Save or discard the Delivery Plan you have typed before refreshing."));
+            return;
+        }
+        frappe.call({
+            method: "manufyxinvenzaerp.selling_management.delivery_plan.refresh_delivery_plan",
+            args: { sales_order: frm.doc.name },
+            freeze: true,
+            freeze_message: __("Reading finished goods..."),
+            callback() { frm.reload_doc(); },
+        });
+    },
+
+    custom_create_delivery(frm) {
+        var rows = (frm.doc.custom_delivery_plan || []).filter(function(r) {
+            return flt(r.delivery_plan_qty) > 0;
+        });
+        if (!rows.length) {
+            frappe.msgprint({
+                title: __("Nothing Planned"),
+                message: __("Enter a Delivery Plan NOS on at least one drawing first."),
+                indicator: "orange",
+            });
+            return;
+        }
+        var total = rows.reduce(function(a, r) { return a + flt(r.delivery_plan_qty); }, 0);
+        var total_kg = rows.reduce(function(a, r) { return a + flt(r.delivery_weight); }, 0);
+        var lines = rows.map(function(r) {
+            return "<li>" + frappe.utils.escape_html(r.duno_mark_no || r.drawing)
+                + " &mdash; " + flt(r.delivery_plan_qty) + " " + __("Nos")
+                + ", " + format_number(flt(r.delivery_weight), null, 3) + " " + __("Kg")
+                + " <span class='text-muted'>(" + frappe.utils.escape_html(r.fg_batch) + ")</span></li>";
+        }).join("");
+        frappe.confirm(
+            __("Create a draft Delivery Note for {0} Nos, {1} Kg, across {2} drawing(s)?",
+               [total, format_number(total_kg, null, 3), rows.length])
+                + "<ul style='margin-top:8px'>" + lines + "</ul>",
+            function() {
+                frappe.call({
+                    method: "manufyxinvenzaerp.selling_management.delivery_plan.create_delivery_from_plan",
+                    args: {
+                        sales_order: frm.doc.name,
+                        // Sent from the form, not read back from the saved rows: the
+                        // plan is typed on a submitted order and need not be saved
+                        // first. The server re-checks all of it against the ledger.
+                        plan: rows.map(function(r) {
+                            return { fg_batch: r.fg_batch, warehouse: r.warehouse,
+                                     delivery_plan_qty: r.delivery_plan_qty };
+                        }),
+                    },
+                    freeze: true,
+                    freeze_message: __("Creating Delivery Note..."),
+                    callback(r) {
+                        if (!r.message) return;
+                        // Reload first: the server has moved these pieces to In Draft DN
+                        // and cleared the plan, and the typed values would otherwise sit
+                        // on the form as unsaved changes.
+                        frm.reload_doc().then(function() {
+                            frappe.set_route("Form", "Delivery Note", r.message);
+                        });
+                    },
+                });
+            }
+        );
+    },
+});
+
+// The Kg for `nos` pieces out of a warehouse holding stock_nos / stock_kg -- a copy of
+// fg_stock._price_nos, which is what the Delivery Note prices its rows with. Kept
+// line for line the same so the Delivery Weight shown while typing is the weight the
+// note will carry: the ratio is NOT rounded before multiplying, and taking every piece
+// in the warehouse takes its exact Kg (the last-piece rule). The server re-prices the
+// note anyway; this is so the preview does not disagree with it.
+function mfx_price_nos(stock_nos, stock_kg, nos) {
+    stock_nos = flt(stock_nos, 3);
+    stock_kg = flt(stock_kg, 3);
+    nos = flt(nos, 3);
+    if (nos <= 0 || stock_nos <= 0) return 0;
+    if (nos === stock_nos) return stock_kg;
+    return flt(nos * stock_kg / stock_nos, 3);
+}
+
+frappe.ui.form.on("Sales Order Delivery Plan", {
+    delivery_plan_qty(frm, cdt, cdn) {
+        // A hint while typing; the server is what refuses. Whole pieces only, and no
+        // more than is available -- the same two rules create_delivery_from_plan checks.
+        // Each branch prices the quantity it settles on, rather than relying on the
+        // set_value to fire this handler again: it does not fire when the corrected
+        // value happens to equal the old one, and the weight would be left stale.
+        var row = locals[cdt][cdn];
+        var qty = flt(row.delivery_plan_qty);
+        if (qty < 0) {
+            qty = 0;
+        } else if (qty !== Math.floor(qty)) {
+            frappe.show_alert({ message: __("Delivery Plan is whole pieces."), indicator: "orange" });
+            qty = Math.floor(qty);
+        } else if (qty > flt(row.available_qty)) {
+            frappe.show_alert({
+                message: __("{0}: only {1} Nos available.", [row.duno_mark_no || row.drawing, flt(row.available_qty)]),
+                indicator: "orange",
+            });
+            qty = flt(row.available_qty);
+        }
+        if (qty !== flt(row.delivery_plan_qty)) {
+            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", qty);
+        }
+        frappe.model.set_value(cdt, cdn, "delivery_weight", mfx_price_nos(row.stock_nos, row.stock_kg, qty));
+    },
+});
+""".strip()
+
+
+def create_so_delivery_plan_script():
+    if frappe.db.exists("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME):
+        frappe.db.set_value("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME, "script", SO_DELIVERY_PLAN_SCRIPT)
+        frappe.db.set_value("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME, "enabled", 1)
+    else:
+        frappe.get_doc({
+            "doctype": "Client Script",
+            "name": SO_DELIVERY_PLAN_SCRIPT_NAME,
+            "dt": "Sales Order",
+            "view": "Form",
+            "enabled": 1,
+            "script": SO_DELIVERY_PLAN_SCRIPT,
         }).insert(ignore_permissions=True)
     frappe.db.commit()
 
@@ -3494,7 +3783,7 @@ def create_production_plan_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "custom_duno_mark_no",
                     "in_list_view": 1,
                     "columns": 1,
@@ -4064,13 +4353,13 @@ function se_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -4123,7 +4412,7 @@ def create_stock_entry_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Sec Qty (Nos)",
+                    "label": "NOS",
                     "in_list_view": 1,
                     "insert_after": "custom_unit_weight",
                 },
@@ -4765,7 +5054,7 @@ def create_sco_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "read_only": 1,
                     "insert_after": "qty",
                 },
@@ -4806,6 +5095,19 @@ frappe.ui.form.on("Subcontracting Order", {
 \t\t// refresh, which is what added it.
 \t\tfrm.remove_custom_button(__("Subcontracting Receipt"), __("Create"));
 
+\t\t// The Status group (Close / Re-open) goes for a stronger reason than tidiness:
+\t\t// on a PP-flow order the status is DERIVED, not stored. update_status in
+\t\t// overrides.py recomputes Open -> Working -> Completed from the operations and
+\t\t// the final Stock Entry, and it is re-run from the SOE hooks and from Stock
+\t\t// Entry submit/cancel -- so closing an order by hand sets a value the next
+\t\t// recompute overwrites without telling anybody. A button whose effect quietly
+\t\t// undoes itself is worse than no button. Removing both leaves the group empty,
+\t\t// and Frappe drops an empty group, so the dropdown disappears with them.
+\t\t// Both labels are removed because the standard controller adds whichever one
+\t\t// fits the current status, never both.
+\t\tfrm.remove_custom_button(__("Close"), __("Status"));
+\t\tfrm.remove_custom_button(__("Re-open"), __("Status"));
+
 \t\tif (frm.doc.docstatus === 1 && frm.doc.custom_production_plan) {
 
 \t\t\t// Straight to the Material Issue Plan for this order -- the two documents
@@ -4821,19 +5123,27 @@ frappe.ui.form.on("Subcontracting Order", {
 \t\t\t\t\t});
 \t\t\t\t});
 
-\t\t\tfrm.add_custom_button(__("Material Issue Plan"), function() {
-\t\t\t\tfrappe.call({
-\t\t\t\t\tmethod: "manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan.create_from_subcontracting_order",
-\t\t\t\t\targs: { sco_name: frm.doc.name },
-\t\t\t\t\tfreeze: true,
-\t\t\t\t\tfreeze_message: __("Creating Material Issue Plan…"),
-\t\t\t\t\tcallback: function(r) {
-\t\t\t\t\t\tif (r.message) {
-\t\t\t\t\t\t\tfrappe.set_route("Form", "Material Issue Plan", r.message);
-\t\t\t\t\t\t}
-\t\t\t\t\t}
-\t\t\t\t});
-\t\t\t}, __("Create"));
+\t\t\t// Create -> Material Issue Plan is no longer offered. The plan is made with
+\t\t\t// the order, by "Job work order & MIP" on the Production Plan, so by the time
+\t\t\t// anyone is looking at this toolbar there is already one to open -- which is
+\t\t\t// what Open MIP above does. The two sat next to each other doing almost the
+\t\t\t// same thing, and the one that could CREATE was the one that looked like a
+\t\t\t// fresh start. create_from_subcontracting_order is kept and still returns the
+\t\t\t// existing plan rather than a second one; only the button is gone, so this can
+\t\t\t// be brought back by uncommenting it.
+\t\t\t// frm.add_custom_button(__("Material Issue Plan"), function() {
+\t\t\t// \tfrappe.call({
+\t\t\t// \t\tmethod: "manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan.create_from_subcontracting_order",
+\t\t\t// \t\targs: { sco_name: frm.doc.name },
+\t\t\t// \t\tfreeze: true,
+\t\t\t// \t\tfreeze_message: __("Creating Material Issue Plan…"),
+\t\t\t// \t\tcallback: function(r) {
+\t\t\t// \t\t\tif (r.message) {
+\t\t\t// \t\t\t\tfrappe.set_route("Form", "Material Issue Plan", r.message);
+\t\t\t// \t\t\t}
+\t\t\t// \t\t}
+\t\t\t// \t});
+\t\t\t// }, __("Create"));
 
 \t\t\t// "Make Final Stock Entry" moved to Material Issue Plan (see
 \t\t\t// material_issue_plan.js's _add_final_stock_entry_button) -- the Return
@@ -4972,6 +5282,9 @@ function render_soe_summary(frm) {
                     + "<td class='text-center'>" + (d.sequence_id || "") + "</td>"
                     + "<td><a href='/app/supplier-operation-entry/" + encodeURIComponent(d.name) + "' style='color:#0ea5e9;text-decoration:underline;'>"
                         + frappe.utils.escape_html(d.operation || "") + "</a></td>"
+                    // Who carries this operation out -- a Supplier or a Contractor,
+                    // copied from the Production Plan's Process Planning row.
+                    + "<td>" + frappe.utils.escape_html(d.supplier || d.contractor || "") + "</td>"
                     + "<td><span class='indicator " + color + "'>" + (d.status || "") + "</span></td>"
                     + "<td class='text-right'>" + format_number(mfg, null, 3) + "</td>"
                     + "<td class='text-right'>" + avail_cell + "</td>"
@@ -4987,11 +5300,12 @@ function render_soe_summary(frm) {
                 + "<thead><tr>"
                 + "<th class='text-center' style='width:60px'>Seq</th>"
                 + "<th>Operation</th>"
+                + "<th>Supplier/Contractor</th>"
                 + "<th style='width:130px'>Status</th>"
-                + "<th class='text-right'>Overall Qty (Nos)</th>"
-                + "<th class='text-right'>Available to Consume (Nos)</th>"
-                + "<th class='text-right'>Total Consumed (Nos)</th>"
-                + "<th class='text-right'>Difference (Nos)</th>"
+                + "<th class='text-right'>Overall NOS</th>"
+                + "<th class='text-right'>Available to Consume NOS</th>"
+                + "<th class='text-right'>Total Consumed NOS</th>"
+                + "<th class='text-right'>Difference NOS</th>"
                 + "<th class='text-center' style='width:110px'>Entry</th>"
                 + "<th class='text-center' style='width:70px'>Drawings</th>"
                 + "</tr></thead><tbody>" + body + "</tbody></table>"
@@ -5034,9 +5348,9 @@ function show_drawing_popup(soe) {
             + "<td style='white-space:nowrap'>" + frappe.utils.escape_html(d.drawing || "") + "</td>"
             + "<td>" + frappe.utils.escape_html(d.customer_drawing_number || "") + "</td>"
             + num(d.qty_to_manufacture)
+            + num(d.completed_qty_nos)
             + num(d.planned_weight_kg, true)
             + num(d.transferred_weight_kg, true)
-            + num(d.completed_qty_nos)
             + num(d.consumed_kg, true)
             + "</tr>";
     }).join("");
@@ -5049,9 +5363,9 @@ function show_drawing_popup(soe) {
     var foot = !drawings.length ? "" : "<tfoot><tr style='font-weight:600;background:#f8fafc'>"
         + "<td colspan='2'>Total</td>"
         + num(sum("qty_to_manufacture"))
+        + num(sum("completed_qty_nos"))
         + num(sum("planned_weight_kg"))
         + num(sum("transferred_weight_kg"))
-        + num(sum("completed_qty_nos"))
         + num(sum("consumed_kg"))
         + "</tr></tfoot>";
     var th = function(label, w) {
@@ -5062,17 +5376,34 @@ function show_drawing_popup(soe) {
         ? "<div class='text-muted' style='padding:12px'>No drawings attached to this operation.</div>"
         : "<div style='overflow-x:auto'>"
             + "<table class='table table-bordered table-condensed' style='margin:0;width:100%'>"
-            + "<thead><tr>"
-            + "<th style='white-space:nowrap'>Drawing</th>"
-            + "<th>Cust Drawing No</th>"
-            + th("Qty to Mfg (Nos)", "1%")
-            + th("Planned (Kg)", "1%")
-            + th("Transferred (Kg)", "1%")
-            + th("Completed (Nos)", "1%")
-            + th("Consumed (Kg)", "1%")
-            + "</tr></thead>"
+            // Two banded header rows: pieces and raw material are different questions
+            // and were being read as one. "8 of 8 done, so why is Consumed (Kg) not
+            // the Transferred (Kg)?" is the reasonable reading of a flat row of seven
+            // headings -- the counts and the weights do not answer each other, and
+            // grouping them says so before the numbers do.
+            + "<thead>"
+            + "<tr>"
+            + "<th rowspan='2' style='white-space:nowrap;vertical-align:bottom'>Drawing</th>"
+            + "<th rowspan='2' style='vertical-align:bottom'>Cust Drawing No</th>"
+            + "<th colspan='2' class='text-center' style='white-space:nowrap;background:#f8fafc'>Pieces NOS</th>"
+            + "<th colspan='3' class='text-center' style='white-space:nowrap;background:#f8fafc'>Raw Material (Kg)</th>"
+            + "</tr>"
+            + "<tr>"
+            + th("To Make", "1%") + th("Done", "1%")
+            + th("Planned", "1%") + th("Sent to Supplier", "1%") + th("Consumed", "1%")
+            + "</tr>"
+            + "</thead>"
             + "<tbody>" + drw_rows + "</tbody>" + foot
-            + "</table></div>";
+            + "</table></div>"
+            + "<div class='text-muted' style='margin-top:8px;font-size:11px;line-height:1.6'>"
+            + "<b>Pieces and weight answer different questions.</b> Done NOS is how many "
+            + "pieces this operation finished. Consumed (Kg) is the raw material those "
+            + "pieces used, at the drawing's own weight per piece &mdash; so finishing every "
+            + "piece consumes the <b>Planned</b> weight, not the <b>Sent</b> weight. "
+            + "Consumed above Sent means more was worked than reached the supplier; below "
+            + "Planned with every piece done means the drawing's weight per piece disagrees "
+            + "with what the job was planned at."
+            + "</div>";
     var dlg = new frappe.ui.Dialog({
         // Seven columns need the room. On the default width the headings wrapped to
         // three lines and the last column was cut off at the edge of the dialog.
@@ -5254,7 +5585,7 @@ function _sync_drawing_nos(frm) {
 }
 
 function _calc_consumption_weight_kg(frm, cdt, cdn) {
-\t// Total Weight (Kg) for a consumption log row = Qty (Nos) x the linked Drawing's
+\t// Total Weight (Kg) for a consumption log row = NOS x the linked Drawing's
 \t// per-piece weight (Drawing.total_weight / Drawing.no_of_qty_to_manufacture).
 \t// This feeds total_consumed_kg (see subcontracting.py's Op-1 over-consume
 \t// guard), which in turn seeds the NEXT operation's available_to_consume_kg --
@@ -5271,13 +5602,23 @@ function _calc_consumption_weight_kg(frm, cdt, cdn) {
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", 0);
 \t\treturn;
 \t}
-\tfrappe.db.get_value("Drawing", row.drawing, ["total_weight", "no_of_qty_to_manufacture"]).then(function(r) {
-\t\tvar d = r.message || {};
-\t\tvar total_qty = flt(d.no_of_qty_to_manufacture);
-\t\tvar weight_per_nos = total_qty ? flt(d.total_weight) / total_qty : 0;
+\tfrappe.db.get_value("Drawing", row.drawing, ["total_weight"]).then(function(r) {
+\t\t// Drawing.total_weight is ALREADY the raw material for ONE piece -- it is the
+\t\t// sum of that drawing's own item rows, and the job's requirement is built from
+\t\t// it as total_weight x pieces (see subcontracting.py, where SCO Drawing Item
+\t\t// total_weight_kg for 1B3 is 7,160.355 against a drawing total_weight of
+\t\t// 1,790.089 over 4 pieces). Dividing by no_of_qty_to_manufacture, as this did,
+\t\t// divided a per-piece figure by the piece count a second time and understated
+\t\t// every consumption row by exactly that factor: 1B3 logged 447.522 Kg a piece
+\t\t// against a real 1,790.089, so a fully finished operation reported 3,604.179 Kg
+\t\t// consumed against 10,788.533 planned. The giveaway is physical -- 447.522 Kg
+\t\t// of steel cannot yield a 1,756.160 Kg finished piece.
+\t\t//
+\t\t// It understated total_consumed_kg, which seeds the next operation's
+\t\t// available_to_consume_kg, and left the Op-1 over-consume guard measuring
+\t\t// against a figure too small to ever trip.
+\t\tvar weight_per_nos = flt((r.message || {}).total_weight);
 \t\tfrappe.model.set_value(cdt, cdn, "wt_per_pcs_kg", flt(weight_per_nos, 3));
-\t\t// Off the unrounded per-piece weight, not the rounded display value: rounding
-\t\t// first and multiplying by the count carries the error up by that many pieces.
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", flt(weight_per_nos * flt(row.qty_nos), 3));
 \t});
 }
@@ -5409,7 +5750,7 @@ def create_material_planning_auto_purchase_fields():
                     "hidden": 1,
                     "description": (
                         "Fills each Consolidate Item with the largest size among the "
-                        "requirements it covers, and the Sec Qty that matches the "
+                        "requirements it covers, and the NOS that matches the "
                         "required weight. Edit and save afterwards."
                     ),
                 },
@@ -5543,7 +5884,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,
@@ -5560,7 +5901,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_billed_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Billed (Nos)",
+                    "label": "Billed NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "billed_amt",
@@ -5586,7 +5927,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,
