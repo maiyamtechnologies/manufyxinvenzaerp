@@ -87,6 +87,18 @@ def _run():
     check("  Create Delivery is a button usable after submit",
           bool(meta.get_field("custom_create_delivery")
                and meta.get_field("custom_create_delivery").allow_on_submit), True)
+    # Above the table, not below it: on a forty-drawing order the buttons would
+    # otherwise be a long scroll away from the top of the tab.
+    order = [f.fieldname for f in meta.fields]
+    check("  both buttons sit above the table",
+          order.index("custom_create_delivery") < order.index("custom_delivery_plan")
+          and order.index("custom_refresh_delivery_plan") < order.index("custom_delivery_plan"),
+          True)
+    script = frappe.db.get_value("Client Script", "Sales Order-delivery-plan", "script") or ""
+    check("  Create Delivery painted orange (alt), Refresh light (info)",
+          ('mfx_paint_field(frm, "custom_create_delivery", "alt"' in script,
+           'mfx_paint_field(frm, "custom_refresh_delivery_plan", "info"' in script),
+          (True, True))
 
     child = frappe.get_meta("Sales Order Delivery Plan")
     total, shown = 1, []

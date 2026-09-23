@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 19:59:10_
+_Generated: 2026-09-23 20:07:19_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 19:59:10_
 
 ## Python files
 
-_Total: 383_
+_Total: 385_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -98,6 +98,7 @@ _Total: 383_
 - patches/v1/backfill_payment_entry_created_flag.py
 - patches/v1/backfill_production_plan_status.py
 - patches/v1/backfill_sco_status.py
+- patches/v1/backfill_so_delivery_plan.py
 - patches/v1/backfill_soe_wt_per_pcs.py
 - patches/v1/convert_item_material_spec_to_link.py
 - patches/v1/fg_nos_kg_on_drawing_rows.py
@@ -231,6 +232,7 @@ _Total: 383_
 - tests/_dp_apply_tmp.py
 - tests/_dp_grid_tmp.py
 - tests/_dp_hook_tmp.py
+- tests/_dp_order_tmp.py
 - tests/_dp_try_tmp.py
 - tests/_drw2_tmp.py
 - tests/_drw_tmp.py
@@ -1552,31 +1554,31 @@ Functions:
   - 3264:create_so_custom_fields:
   - 3400:create_so_client_script:
   - 3421:create_so_delivery_plan_fields:
-  - 3596:create_so_delivery_plan_script:
-  - 3612:create_bom_client_script:
-  - 3632:create_production_plan_custom_fields:
-  - 3950:layout_production_plan_item_grid:
-  - 4012:create_production_plan_client_script:
-  - 4285:create_stock_entry_custom_fields:
-  - 4546:hide_duplicate_sco_field:
-  - 4573:create_stock_entry_client_script:
-  - 4610:create_doctype_label_translations:
-  - 4633:remove_sco_purchase_order_mandatory:
-  - 4644:add_sco_working_status:
-  - 4682:hide_sco_job_worker_warehouse:
-  - 4711:hide_sco_unused_tabs:
-  - 4737:hide_sco_amount_fields:
-  - 4765:make_sco_job_worker_conditional:
-  - 4800:create_sco_custom_fields:
-  - 5535:create_sco_client_script:
-  - 5551:create_sco_ops_client_script:
-  - 5567:create_soe_client_script:
-  - 5583:create_manufacturing_settings_custom_fields:
-  - 5622:create_material_planning_auto_purchase_fields:
-  - 5685:create_payment_request_custom_fields:
-  - 5767:create_fg_sales_custom_fields:
-  - 5872:create_fg_property_setters:
-  - 5911:set_fg_settings_defaults:
+  - 3609:create_so_delivery_plan_script:
+  - 3625:create_bom_client_script:
+  - 3645:create_production_plan_custom_fields:
+  - 3963:layout_production_plan_item_grid:
+  - 4025:create_production_plan_client_script:
+  - 4298:create_stock_entry_custom_fields:
+  - 4559:hide_duplicate_sco_field:
+  - 4586:create_stock_entry_client_script:
+  - 4623:create_doctype_label_translations:
+  - 4646:remove_sco_purchase_order_mandatory:
+  - 4657:add_sco_working_status:
+  - 4695:hide_sco_job_worker_warehouse:
+  - 4724:hide_sco_unused_tabs:
+  - 4750:hide_sco_amount_fields:
+  - 4778:make_sco_job_worker_conditional:
+  - 4813:create_sco_custom_fields:
+  - 5548:create_sco_client_script:
+  - 5564:create_sco_ops_client_script:
+  - 5580:create_soe_client_script:
+  - 5596:create_manufacturing_settings_custom_fields:
+  - 5635:create_material_planning_auto_purchase_fields:
+  - 5698:create_payment_request_custom_fields:
+  - 5780:create_fg_sales_custom_fields:
+  - 5885:create_fg_property_setters:
+  - 5924:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -1773,6 +1775,10 @@ Functions:
 Functions:
   - 9:stored:
   - 15:run:
+
+### tests/_dp_order_tmp.py
+Functions:
+  - 2:run:
 
 ### tests/_dp_try_tmp.py
 Functions:
@@ -2199,7 +2205,7 @@ Functions:
   - 59:_stored:
   - 65:run:
   - 75:_run:
-  - 196:_summary:
+  - 208:_summary:
 
 ### tests/verify_deploy_log.py
 Functions:

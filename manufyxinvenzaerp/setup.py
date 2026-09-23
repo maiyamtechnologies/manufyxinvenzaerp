@@ -3431,31 +3431,13 @@ def create_so_delivery_plan_fields():
                     # on every new order would only raise the question of why.
                     "depends_on": "eval:doc.docstatus==1",
                 },
-                {
-                    "fieldname": "custom_delivery_plan_section",
-                    "fieldtype": "Section Break",
-                    "label": "Finished Drawings",
-                    "insert_after": "custom_tab_delivery_plan",
-                },
-                {
-                    "fieldname": "custom_delivery_plan",
-                    "fieldtype": "Table",
-                    "label": "Delivery Plan",
-                    "options": "Sales Order Delivery Plan",
-                    "insert_after": "custom_delivery_plan_section",
-                    # Delivery Plan (Nos) is typed on a submitted order.
-                    "allow_on_submit": 1,
-                    # Derived rows. A duplicated or amended order must rebuild its
-                    # own from its own batches, never inherit another order's.
-                    "no_copy": 1,
-                    "description": "Every drawing with pieces booked into finished goods. "
-                                   "Type Delivery Plan (Nos) on the drawings to send, "
-                                   "then Create Delivery.",
-                },
+                # Buttons first, table below: on an order with forty drawings the
+                # buttons would otherwise sit a long scroll away from the top of the
+                # tab, below the very rows they act on.
                 {
                     "fieldname": "custom_delivery_plan_actions",
                     "fieldtype": "Section Break",
-                    "insert_after": "custom_delivery_plan",
+                    "insert_after": "custom_tab_delivery_plan",
                 },
                 {
                     "fieldname": "custom_create_delivery",
@@ -3475,6 +3457,27 @@ def create_so_delivery_plan_fields():
                     "label": "Refresh Delivery Plan",
                     "insert_after": "custom_delivery_plan_col",
                     "allow_on_submit": 1,
+                },
+                {
+                    "fieldname": "custom_delivery_plan_section",
+                    "fieldtype": "Section Break",
+                    "label": "Finished Drawings",
+                    "insert_after": "custom_refresh_delivery_plan",
+                },
+                {
+                    "fieldname": "custom_delivery_plan",
+                    "fieldtype": "Table",
+                    "label": "Delivery Plan",
+                    "options": "Sales Order Delivery Plan",
+                    "insert_after": "custom_delivery_plan_section",
+                    # Delivery Plan (Nos) is typed on a submitted order.
+                    "allow_on_submit": 1,
+                    # Derived rows. A duplicated or amended order must rebuild its
+                    # own from its own batches, never inherit another order's.
+                    "no_copy": 1,
+                    "description": "Every drawing with pieces booked into finished goods. "
+                                   "Type Delivery Plan (Nos) on the drawings to send, "
+                                   "then Create Delivery.",
                 },
             ]
         },
@@ -3497,6 +3500,16 @@ frappe.ui.form.on("Sales Order", {
             grid.cannot_add_rows = true;
             grid.cannot_delete_rows = true;
             grid.wrapper.find(".grid-add-row, .grid-remove-rows, .grid-remove-all-rows").hide();
+        }
+
+        // Through the app's shared button system (public/js/mfx_buttons.js) rather
+        // than local CSS, so the tones match every other form. Orange for Create
+        // Delivery, light/outlined for Refresh, which reads and rebuilds a view but
+        // decides nothing. Guarded: the painter comes from the app bundle, and a form
+        // opened before the bundle has loaded should still work, just in grey.
+        if (window.mfx_paint_field) {
+            window.mfx_paint_field(frm, "custom_create_delivery", "alt", "add", "Create Delivery");
+            window.mfx_paint_field(frm, "custom_refresh_delivery_plan", "info", "refresh", "Refresh Delivery Plan");
         }
     },
 
