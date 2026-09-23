@@ -427,7 +427,7 @@ function render_items_summary(frm) {
 		["Item No", "item_number"], ["Material Code", "material_code"], ["Material Name", "material_name"],
 		["Item Group", "item_group"], ["Material Spec", "material_spec"],
 		["Thickness", "thickness"], ["Length", "length"], ["Width", "width"],
-		["Sec Qty", "sec_qty"], ["Sec UOM", "sec_uom"],
+		["NOS", "sec_qty"], ["Sec UOM", "sec_uom"],
 		["Qty ", "qty"], ["UOM", "uom"]
 	];
 	var html = '<div style="overflow-x:auto;overflow-y:auto;max-height:320px;width:100%;">';
@@ -453,13 +453,13 @@ function drawing_warn_missing_fields(row, group) {
 	if (group === "Structurals") {
 		if (!row.length) missing.push("Length");
 		if (!row.unit_weight) missing.push("Unit Weight");
-		if (!row.sec_qty) missing.push("Sec Qty");
+		if (!row.sec_qty) missing.push("NOS");
 	} else if (group === "Plates") {
 		if (!row.length) missing.push("Length");
 		if (!row.width) missing.push("Width");
 		if (!row.thickness) missing.push("Thickness");
 		if (!row.unit_weight) missing.push("Unit Weight");
-		if (!row.sec_qty) missing.push("Sec Qty");
+		if (!row.sec_qty) missing.push("NOS");
 	}
 	if (missing.length) {
 		frappe.show_alert({
@@ -479,7 +479,7 @@ function drawing_warn_missing_fields(row, group) {
  */
 function drawing_download_csv_template() {
 	var HEADERS = ["item_number", "material_code", "sec_qty", "thickness", "length", "width"];
-	var LABELS  = ["Item Number", "Item Code",     "Sec Qty", "Thickness (mm)", "Length (mm)", "Width (mm)"];
+	var LABELS  = ["Item Number", "Item Code",     "NOS", "Thickness (mm)", "Length (mm)", "Width (mm)"];
 	var SAMPLES = [
 		["1", "ISMBX250X125", "2", "",   "1500", ""],
 		["2", "PLATE12",      "1", "12", "1500", "2000"],

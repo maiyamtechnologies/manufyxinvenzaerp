@@ -1349,13 +1349,13 @@ def apply_fg_nos(doc, method=None):
 			if not info.has_per_nos:
 				continue  # legacy row (D13): planned_qty stays as it was entered
 			frappe.throw(
-				_("Row {0}: enter Qty (Nos) for drawing {1} (DUNO {2}). Planned Qty (Kg) is "
+				_("Row {0}: enter NOS for drawing {1} (DUNO {2}). Planned Qty (Kg) is "
 				  "calculated from it.").format(row.idx, row.custom_drawing, info.duno_mark_no),
-				title=_("Qty (Nos) Required"),
+				title=_("NOS Required"),
 			)
 		if nos != int(nos):
 			frappe.throw(
-				_("Row {0}: Qty (Nos) must be a whole number of pieces, not {1}.").format(row.idx, nos),
+				_("Row {0}: NOS must be a whole number of pieces, not {1}.").format(row.idx, nos),
 				title=_("Whole Pieces Only"),
 			)
 		if not info.nos or not info.total:

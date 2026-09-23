@@ -192,7 +192,7 @@ def _validate_selected_against_stock(mip, selected):
     if problems:
         frappe.throw(
             _("Stock validation failed — nothing has been transferred:<br><br>{0}<br><br>"
-              "Lower the Sec Nos on the line(s) above, or transfer what is available now and the "
+              "Lower the NOS on the line(s) above, or transfer what is available now and the "
               "rest later. Reopen <b>Select Materials to Transfer</b> to see the current figures.")
             .format("<hr style='margin:8px 0'>".join(problems)),
             title=_("Cannot Transfer"),
@@ -864,7 +864,7 @@ def update_transfer_sec_qty(mip_name, item_code, batch_no, planned_sec_qty=None,
     mip = frappe.get_doc("Material Issue Plan", mip_name)
     new_sec = flt(new_sec_qty)
     if new_sec <= 0:
-        frappe.throw(_("Sec Qty must be greater than zero."))
+        frappe.throw(_("NOS must be greater than zero."))
 
     if transfer_type == "cnc_forward":
         return _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec)
@@ -882,7 +882,7 @@ def update_transfer_sec_qty(mip_name, item_code, batch_no, planned_sec_qty=None,
 
     planned_qty, planned_sec = flt(line["qty"], 3), flt(line["custom_sec_qty"], 3)
     if planned_sec <= 0 or planned_qty <= 0:
-        frappe.throw(_("This row has no planned Sec Qty to recalculate from."))
+        frappe.throw(_("This row has no planned NOS to recalculate from."))
 
     new_qty, kg_per_piece = _qty_for_sec(line, new_sec)
     excess_kg = flt(max(0.0, new_qty - planned_qty), 3)
@@ -935,7 +935,7 @@ def _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec):
                      .format(item_code, batch_no or "-"))
     planned_qty, planned_sec = flt(line["qty"], 3), flt(line["custom_sec_qty"], 3)
     if planned_sec <= 0 or planned_qty <= 0:
-        frappe.throw(_("This row has no planned Sec Qty to recalculate from."))
+        frappe.throw(_("This row has no planned NOS to recalculate from."))
 
     new_qty, kg_per_piece = _qty_for_sec(line, new_sec)
     at_cnc = flt(min(planned_qty, flt(line.get("available_qty"))), 3)
@@ -949,7 +949,7 @@ def _update_cnc_forward_sec_qty(mip, item_code, batch_no, new_sec):
                 _num(new_sec), _num(kg_per_piece), _num(new_qty)),
             _("Waiting at CNC for this plan: {0} Kg ({1} Nos)").format(_num(planned_qty), _num(planned_sec)),
             _("In the CNC warehouse: {0} Kg").format(_num(line.get("available_qty"))),
-            _("<b>Short by: {0} Kg</b>. Only what has arrived at CNC can be forwarded — lower the Sec Nos to {1} or less.")
+            _("<b>Short by: {0} Kg</b>. Only what has arrived at CNC can be forwarded — lower the NOS to {1} or less.")
             .format(_num(new_qty - at_cnc), _num(planned_sec)),
         ])
     return {
@@ -1287,7 +1287,7 @@ def _log_round_up_excess(mip, items, excess_plan=None):
     Return Warehouse defaults to the plan's raw-material warehouse, which is where an
     off-cut normally goes back to; the popup lets it be pointed at a scrap warehouse
     instead, per row."""
-    SOURCE_TABLE = "Round Up Sec Qty for Transfer"
+    SOURCE_TABLE = "Round Up NOS for Transfer"
     by_key = {
         (r.source_table, r.source_row): r
         for r in (mip.excess_return_items or [])
@@ -1370,7 +1370,7 @@ def _log_round_up_excess(mip, items, excess_plan=None):
                 "qty": excess_kg,
                 "return_warehouse": return_warehouse,
                 "return_reason": _(
-                    "Rounding surplus from \"Round Up Sec Qty for Transfer\" -- placeholder "
+                    "Rounding surplus from \"Round Up NOS for Transfer\" -- placeholder "
                     "dimensions (standard piece size); confirm the exact leftover once "
                     "this material is cut."
                 ),

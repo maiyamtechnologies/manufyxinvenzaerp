@@ -31,7 +31,7 @@
    "fieldname": "qty_nos",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Completed Qty",
+   "label": "Completed NOS",
    "read_only": 1,
    "description": "Nos logged as completed and awaiting inspection."
   },

@@ -2506,7 +2506,7 @@ def _get_supplier_wh_consumption_items(sco, supplier_warehouse=None):
                         WHEN sed.s_warehouse = %(wh)s THEN -sed.qty
                         ELSE 0 END) AS qty,
                -- Netted exactly as the Kg are. Every transfer into the supplier
-               -- warehouse carried its Sec Nos; without this the finished-goods entry
+               -- warehouse carried its NOS; without this the finished-goods entry
                -- was the one document in the chain that dropped them, and the pieces
                -- stopped being countable at the last step.
                SUM(CASE WHEN sed.t_warehouse = %(wh)s THEN IFNULL(sed.custom_sec_qty, 0)

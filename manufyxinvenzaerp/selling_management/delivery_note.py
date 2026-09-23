@@ -172,7 +172,7 @@ def compute_fg_rows(doc, throw=True, fit_returns=False):
 		label = _("Row {0} ({1})").format(row.idx, frappe.bold(row.item_code))
 		nos = abs(flt(row.custom_sec_qty, 3))
 		if nos <= 0 or not _is_whole(nos):
-			fail(row, _("{0}: Qty (Nos) must be a whole number of pieces greater than 0 (got {1}).")
+			fail(row, _("{0}: NOS must be a whole number of pieces greater than 0 (got {1}).")
 				.format(label, flt(row.custom_sec_qty)))
 			continue
 
@@ -297,7 +297,7 @@ def _price_return_row(doc, row, nos, label, exclude, left_on_dn_row, fail, fit=F
 		as_dict=True,
 	)
 	if not orig or not flt(orig.custom_sec_qty):
-		fail(row, _("{0}: the Delivery Note row it returns has no Qty (Nos) to return.").format(label))
+		fail(row, _("{0}: the Delivery Note row it returns has no NOS to return.").format(label))
 		return None, nos
 
 	orig_batch = row_batch(orig, orig.parent)

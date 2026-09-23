@@ -865,12 +865,12 @@ class MaterialPlanning(Document):
                     # On a cut row Sec Nos is a count of W1 pieces, not a weight in
                     # disguise -- say so, and say how many are there to take.
                     frappe.throw(
-                        _("Row {0}: Enter Sec Qty (NOS) as the number of pieces to cut from "
+                        _("Row {0}: Enter NOS as the number of pieces to cut from "
                           "Cut Sheet {1}. {2} piece(s) are free.")
                         .format(row.idx, row.cut_sheet_ref, flt(row.cut_sheet_avail_sec_qty, 3))
                     )
                 frappe.throw(
-                    _("Row {0}: Enter Sec Qty (NOS) for batch {1} to calculate the required weight "
+                    _("Row {0}: Enter NOS for batch {1} to calculate the required weight "
                       "before saving.").format(row.idx, row.batch)
                 )
 
@@ -3556,7 +3556,7 @@ def reserve_batches(material_planning_name):
             if batch_calc_qty < required_qty:
                 frappe.throw(
                     _("Row {0}: Calculated Qty ({1} Kg) is less than Required Qty ({2} Kg) for item {3}. "
-                      "Increase Sec Qty so the allocated batch material covers the requirement.").format(
+                      "Increase NOS so the allocated batch material covers the requirement.").format(
                         row.idx, flt(batch_calc_qty, 3), required_qty, row.item_code
                     )
                 )
@@ -3757,7 +3757,7 @@ def add_excess_material_mapping(mp_name, batch_no, sec_qty, unavailable_item_row
 
     sec_qty = flt(sec_qty)
     if sec_qty <= 0:
-        frappe.throw(_("Enter a Sec Qty greater than 0."))
+        frappe.throw(_("Enter a NOS greater than 0."))
 
     batch = frappe.db.get_value(
         "Batch", batch_no,
@@ -3778,13 +3778,13 @@ def add_excess_material_mapping(mp_name, batch_no, sec_qty, unavailable_item_row
 
     calc_qty = _calc_batch_qty(group, batch.custom_length, batch.custom_width, batch.custom_thickness, sec_qty, unit_weight)
     if not calc_qty:
-        frappe.throw(_("Could not calculate a Kg quantity for this Sec Qty — check the item's Unit Weight and the batch's dimensions."))
+        frappe.throw(_("Could not calculate a Kg quantity for this NOS — check the item's Unit Weight and the batch's dimensions."))
 
     free_qty = flt(get_batch_stock_summary(batch_no, mp.for_warehouse, mp_name).get("free_qty"))
     free_qty = flt(max(0.0, free_qty - _get_batch_reserved_by_self(batch_no, mp_name)), 3)
     if calc_qty > free_qty:
         frappe.throw(
-            _("Requested Sec Qty needs {0} Kg, but only {1} Kg is free in batch {2}.")
+            _("Requested NOS needs {0} Kg, but only {1} Kg is free in batch {2}.")
             .format(flt(calc_qty, 3), free_qty, batch_no)
         )
 
@@ -3982,7 +3982,7 @@ def claim_virtual_excess_mapping(mp_name, excess_row_name, row_name=None, unavai
     avail = excess_row_availability(excess_row_name, exclude_row=row_name)
     claim_sec_qty = flt(sec_qty) if sec_qty not in (None, "") else flt(avail["available_sec_qty"])
     if claim_sec_qty <= 0:
-        frappe.throw(_("Enter how many pieces to claim (Sec Nos greater than 0)."))
+        frappe.throw(_("Enter how many pieces to claim (NOS greater than 0)."))
     if claim_sec_qty - flt(avail["available_sec_qty"]) > 0.001:
         frappe.throw(
             _("Only {0} piece(s) of this excess item are still free — {1} requested.")
@@ -5137,7 +5137,7 @@ def make_material_request(material_planning_name, selected_items):
         if group == "Structurals":
             missing = []
             if not use_length:      missing.append("Length")
-            if not use_sec_qty:     missing.append("Sec Qty")
+            if not use_sec_qty:     missing.append("NOS")
             if not use_unit_weight: missing.append("Unit Weight")
             if missing:
                 frappe.throw(
@@ -5150,7 +5150,7 @@ def make_material_request(material_planning_name, selected_items):
             if not use_length:      missing.append("Length")
             if not use_width:       missing.append("Width")
             if not use_thickness:   missing.append("Thickness")
-            if not use_sec_qty:     missing.append("Sec Qty")
+            if not use_sec_qty:     missing.append("NOS")
             if not use_unit_weight: missing.append("Unit Weight")
             if missing:
                 frappe.throw(
@@ -5695,7 +5695,7 @@ def _collect_batch_mapping_issues(mp):
                 seen_zero.add(batch_no)
                 issues.append(
                     _("Batch <b>{0}</b> ({1}) holds {2} Kg but reports 0 Nos, so no "
-                      "pieces can be issued from it. Correct the batch's Sec Qty (Nos) "
+                      "pieces can be issued from it. Correct the batch's NOS "
                       "before transferring.").format(
                         batch_no, r.get("item_code") or "",
                         flt(b.get("batch_qty"), 3)

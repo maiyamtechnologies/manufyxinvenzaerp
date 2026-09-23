@@ -128,7 +128,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty",
+   "label": "NOS",
    "read_only": 1
   },
   {

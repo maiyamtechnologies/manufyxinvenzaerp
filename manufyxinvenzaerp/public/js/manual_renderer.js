@@ -304,7 +304,7 @@ function _mfx_render_calc(c) {
 	if (c.length !== undefined) dim_rows.push(["Length", c.length + " mm"]);
 	if (c.width !== undefined) dim_rows.push(["Width", c.width + " mm"]);
 	if (c.thickness !== undefined) dim_rows.push(["Thickness", c.thickness + " mm"]);
-	dim_rows.push(["Sec Qty", c.sec_qty]);
+	dim_rows.push(["NOS", c.sec_qty]);
 	dim_rows.push(["Unit Weight", c.unit_weight]);
 
 	return `

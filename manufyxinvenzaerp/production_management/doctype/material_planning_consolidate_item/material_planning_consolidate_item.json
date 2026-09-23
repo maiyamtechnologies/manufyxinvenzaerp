@@ -69,7 +69,7 @@
    "read_only": 1
   },
   {
-   "description": "From the Item master (custom_unit_weight) -- used together with Length/Width/Thickness/Sec Qty to compute Purchase Kg for the original item (ignored once an Alternate Item is set below, which uses its own Unit Weight instead).",
+   "description": "From the Item master (custom_unit_weight) -- used together with Length/Width/Thickness/NOS to compute Purchase Kg for the original item (ignored once an Alternate Item is set below, which uses its own Unit Weight instead).",
    "fetch_from": "item_code.custom_unit_weight",
    "fieldname": "unit_weight",
    "fieldtype": "Float",
@@ -118,7 +118,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty"
+   "label": "NOS"
   },
   {
    "fetch_from": "item_code.custom_secondary_uom",
@@ -134,7 +134,7 @@
   },
   {
    "columns": 1,
-   "description": "Auto-calculated from Length/Width/Thickness/Sec Qty and Unit Weight \u2014 the Alternate Item's when one is set, otherwise the original item's",
+   "description": "Auto-calculated from Length/Width/Thickness/NOS and Unit Weight \u2014 the Alternate Item's when one is set, otherwise the original item's",
    "fieldname": "purchase_kg",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -155,7 +155,7 @@
    "label": "Alternate Item"
   },
   {
-   "description": "Set once for the whole consolidated (deduped-by-item_code) purchase line to substitute a different item. Once set, the Length/Width/Thickness/Sec Qty fields above describe THIS item (not the original) and Purchase/Difference Kg recalculate using its Unit Weight \u2014 no separate dimension fields needed. When the Material Request created from this row is fulfilled, the purchased batch is allocated into Material Mapping against every original Unavailable Item row this line was consolidated from -- same mechanism as Unavailable Item's own Alternate Item field.",
+   "description": "Set once for the whole consolidated (deduped-by-item_code) purchase line to substitute a different item. Once set, the Length/Width/Thickness/NOS fields above describe THIS item (not the original) and Purchase/Difference Kg recalculate using its Unit Weight \u2014 no separate dimension fields needed. When the Material Request created from this row is fulfilled, the purchased batch is allocated into Material Mapping against every original Unavailable Item row this line was consolidated from -- same mechanism as Unavailable Item's own Alternate Item field.",
    "fieldname": "alternate_item",
    "fieldtype": "Link",
    "in_list_view": 1,

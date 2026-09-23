@@ -180,7 +180,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Required Sec Qty",
+   "label": "Required NOS",
    "read_only": 1
   },
   {
@@ -247,7 +247,7 @@
   },
   {
    "default": "0",
-   "description": "One batch shared across several rows. Reserves the exact Required Qty in Kg, and Sec Nos becomes that weight expressed in pieces — fractional (e.g. 2.5). On a Cut Sheet row the piece is W1, so the fraction is of the CUT piece, not the whole plate. Untick it to enter a whole piece count yourself; the weight then follows, and anything above the Required Qty is excess.",
+   "description": "One batch shared across several rows. Reserves the exact Required Qty in Kg, and NOS becomes that weight expressed in pieces — fractional (e.g. 2.5). On a Cut Sheet row the piece is W1, so the fraction is of the CUT piece, not the whole plate. Untick it to enter a whole piece count yourself; the weight then follows, and anything above the Required Qty is excess.",
    "fieldname": "reserve_without_dimensions",
    "fieldtype": "Check",
    "label": "Reserve stock without dimensions"
@@ -313,7 +313,7 @@
    "fieldname": "batch_sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty (NOS)",
+   "label": "NOS",
    "read_only_depends_on": "eval:doc.reserve_without_dimensions"
   },
   {
@@ -447,7 +447,7 @@
   {
    "fieldname": "cut_sheet_avail_sec_qty",
    "fieldtype": "Float",
-   "label": "Pieces Free on the Sheet",
+   "label": "Free on Sheet NOS",
    "read_only": 1,
    "depends_on": "eval:doc.cut_sheet",
    "description": "Pieces still unclaimed on that Cut Sheet, counting this row's own claim."
@@ -484,7 +484,7 @@
   {
    "fieldname": "use_sec_qty",
    "fieldtype": "Float",
-   "label": "To Use Sec Qty (Nos)",
+   "label": "To Use NOS",
    "hidden": 1,
    "read_only": 1
   },
@@ -518,7 +518,7 @@
   {
    "fieldname": "balance_sec_qty",
    "fieldtype": "Float",
-   "label": "Balance Sec Qty (Nos)",
+   "label": "Balance NOS",
    "hidden": 1,
    "read_only": 1
   },

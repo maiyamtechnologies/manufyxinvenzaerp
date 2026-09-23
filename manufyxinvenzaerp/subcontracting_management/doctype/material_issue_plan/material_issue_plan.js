@@ -483,7 +483,7 @@ const _MIP_RAW_MATERIAL_COLS = [
 	{ fieldname: "length",                  label: "Length (mm)" },
 	{ fieldname: "width",                   label: "Width (mm)" },
 	{ fieldname: "thickness",               label: "Thickness" },
-	{ fieldname: "sec_qty",                 label: "Sec Qty" },
+	{ fieldname: "sec_qty",                 label: "NOS" },
 	{ fieldname: "qty",                     label: "Weight (Kg)" },
 	{ fieldname: "transferred_qty",          label: "Transferred Qty" },
 	{ fieldname: "is_reserved",              label: "Reserved" },
@@ -1042,7 +1042,7 @@ function _show_mip_stock_validation(rows) {
 	let html = '<table class="table table-bordered table-condensed" style="font-size:12px;width:100%;table-layout:auto;margin-bottom:0;">';
 	html += "<thead><tr>" + [
 		[__("Item"), ""], [__("Batch"), ""], [__("DUNO/Mark No"), ""],
-		[__("Planned Kg"), num], [__("Planned Sec Nos"), num],
+		[__("Planned Kg"), num], [__("Planned NOS"), num],
 	].map(([h, st]) => '<th style="' + st + '">' + h + "</th>").join("") + "</tr></thead><tbody>";
 
 	let fractional = 0;
@@ -1065,7 +1065,7 @@ function _show_mip_stock_validation(rows) {
 
 	if (fractional) {
 		html += '<p class="text-muted" style="margin-top:10px;">' +
-			__("{0} row(s) have a fractional Sec Nos — one batch shared across several drawings. You can raise it to a whole number in the transfer popup; the extra weight is then recorded as excess to return.", [fractional]) +
+			__("{0} row(s) have a fractional NOS — one batch shared across several drawings. You can raise it to a whole number in the transfer popup; the extra weight is then recorded as excess to return.", [fractional]) +
 			"</p>";
 	}
 
@@ -1294,10 +1294,10 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Planned") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Transferred") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("In Stock") + "</th>"
-		+ "<th class='text-right' style='white-space:nowrap'>" + __("Sec Nos")
+		+ "<th class='text-right' style='white-space:nowrap'>" + __("NOS")
 			+ "<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("edit to transfer part") + "</div></th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Transfer Qty (Kg)")
-			+ "<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("from Sec Nos") + "</div></th>"
+			+ "<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("from NOS") + "</div></th>"
 		+ "</tr></thead><tbody></tbody></table>");
 
 	var $tbody = $table.find("tbody");
@@ -1462,7 +1462,7 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 		var new_sec = flt($input.val());
 
 		if (new_sec <= 0) {
-			frappe.show_alert({ message: __("Sec Nos must be greater than zero."), indicator: "red" }, 5);
+			frappe.show_alert({ message: __("NOS must be greater than zero."), indicator: "red" }, 5);
 			$input.val(flt(d.custom_sec_qty, 3));
 			return;
 		}
@@ -1702,7 +1702,7 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				"<th style='" + th + "'>" + __("Length (mm)") + "</th>" +
 				"<th style='" + th + "'>" + __("Width (mm)") + "</th>" +
 				"<th style='" + th + "'>" + __("Thickness (mm)") + "</th>" +
-				"<th style='" + th + "'>" + __("Sec Qty") + "</th>" +
+				"<th style='" + th + "'>" + __("NOS") + "</th>" +
 				"<th style='" + th + "text-align:right'>" + __("Excess Kg") +
 					"<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("entered") + "</div></th>" +
 				"<th style='" + th + "text-align:right'>" + __("Difference") + "</th>" +
@@ -2092,7 +2092,7 @@ function _show_return_excess_dialog(frm) {
 			<th style="${th}">${__("Length (mm)")}</th>
 			<th style="${th}">${__("Width (mm)")}</th>
 			<th style="${th}text-align:right">${__("Thickness (mm)")}</th>
-			<th style="${th}">${__("Sec Qty")}</th>
+			<th style="${th}">${__("NOS")}</th>
 			<th style="${th}text-align:right">${__("Qty (Kg)")}</th>
 			<th style="${th}min-width:240px">${__("Return Reason")}</th>
 		</tr></thead>
@@ -2124,7 +2124,7 @@ function _show_return_excess_dialog(frm) {
 					let need = [];
 					if (!entry.length) need.push(__("Length"));
 					if (g === "Plates" && !entry.width) need.push(__("Width"));
-					if (!entry.sec_qty) need.push(__("Sec Qty"));
+					if (!entry.sec_qty) need.push(__("NOS"));
 					if (!flt($tr.data("thickness")) && g === "Plates") need.push(__("Thickness (on the batch)"));
 					if (need.length) incomplete.push(item + " — " + need.join(", "));
 				} else {
@@ -2392,7 +2392,7 @@ function _mip_build_picker(dialog, all_rows, on_select) {
 		["customer_drawing_number", __("Cust Drawing No")],
 		["sales_order", __("Sales Order")],
 		["_batch", __("Batch / Purchase Ref")],
-		["sec_qty", __("Sec Qty")],
+		["sec_qty", __("NOS")],
 		["reqd_kg", __("Reqd Kg")],
 		["qty", __("Qty (Kg)")],
 	];
@@ -2508,11 +2508,11 @@ function _show_update_batch_dialog(frm, preselect_row_name) {
 			{ fieldtype: "HTML", fieldname: "no_selection_html" },
 			{ fieldtype: "Section Break", label: __("Current Allocation") },
 			{ fieldname: "current_batch", fieldtype: "Data", label: __("Current Batch / Purchase Ref"), read_only: 1 },
-			{ fieldname: "current_sec_qty", fieldtype: "Float", label: __("Current Sec Qty (Nos)"), read_only: 1 },
+			{ fieldname: "current_sec_qty", fieldtype: "Float", label: __("Current NOS"), read_only: 1 },
 			{ fieldtype: "Column Break" },
 			{ fieldname: "current_qty", fieldtype: "Float", label: __("Current Qty (Kg)"), read_only: 1 },
 			{ fieldname: "reqd_kg", fieldtype: "Float", label: __("Reqd Kg"), read_only: 1,
-				description: __("The drawing's own planned/required weight -- fixed, does not change no matter which batch/Sec Qty is picked below.") },
+				description: __("The drawing's own planned/required weight -- fixed, does not change no matter which batch/NOS is picked below.") },
 			{ fieldtype: "HTML", fieldname: "transferred_notice_html" },
 			{ fieldtype: "Section Break", label: __("New Allocation"), fieldname: "new_alloc_section" },
 			{ fieldname: "new_batch_no", fieldtype: "Link", options: "Batch", label: __("New Batch"), reqd: 1,
@@ -2521,7 +2521,7 @@ function _show_update_batch_dialog(frm, preselect_row_name) {
 			{ fieldtype: "Column Break" },
 			{ fieldname: "width", fieldtype: "Float", label: __("Width (mm)"), read_only: 1 },
 			{ fieldname: "thickness", fieldtype: "Float", label: __("Thickness (mm)"), read_only: 1 },
-			{ fieldname: "sec_qty", fieldtype: "Float", label: __("Sec Qty (Nos)") },
+			{ fieldname: "sec_qty", fieldtype: "Float", label: __("NOS") },
 			{ fieldname: "calculated_qty", fieldtype: "Float", label: __("Calculated Qty (Kg)"), read_only: 1 },
 			{ fieldname: "reserve_without_dimensions", fieldtype: "Check", label: __("Reserve Without Dimensions") },
 		],
@@ -2735,7 +2735,7 @@ function _show_update_batch_dialog(frm, preselect_row_name) {
 		dialog.fields_dict.sec_qty.refresh();
 		dialog.fields_dict.calculated_qty.df.description = checked
 			? __("The row's own Required Qty. This is what gets reserved.")
-			: __("Worked out from Sec Qty (Nos) and the batch's dimensions.");
+			: __("Worked out from NOS and the batch's dimensions.");
 		dialog.fields_dict.calculated_qty.refresh();
 		if (!checked) dialog.set_value("sec_qty", 0);
 		_refresh_alloc_figures();

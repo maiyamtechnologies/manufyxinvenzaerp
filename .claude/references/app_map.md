@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 20:17:25_
+_Generated: 2026-09-23 21:37:09_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 20:17:25_
 
 ## Python files
 
-_Total: 387_
+_Total: 390_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -241,12 +241,14 @@ _Total: 387_
 - tests/find_cascade_fixture.py
 - tests/find_clean_mp.py
 - tests/_find_mip_excess.py
+- tests/_grid_before_after_tmp.py
 - tests/__init__.py
 - tests/_mfx_probe.py
 - tests/move_fixtures_to_custom_json.py
 - tests/_probe_ab.py
 - tests/_probe_tmp.py
 - tests/_render_challan.py
+- tests/_rep_tmp.py
 - tests/reset_transactions.py
 - tests/revert_wo_jc_cleanup.py
 - tests/_showmsg.py
@@ -357,6 +359,7 @@ _Total: 387_
 - tests/verify_mp_warehouse_company_filter.py
 - tests/verify_no_create_production_plan_button.py
 - tests/verify_no_item_default_bom.py
+- tests/verify_nos_labels.py
 - tests/verify_no_zero_qty_exact_match.py
 - tests/verify_operation_close_and_sco_status.py
 - tests/verify_partial_final_stock_entry.py
@@ -1533,56 +1536,57 @@ Functions:
 Functions:
   - 1612:create_default_warehouse_types:
   - 1626:after_install:
-  - 1688:after_migrate:
-  - 1758:clear_item_default_boms:
-  - 1784:setup_storage_location:
-  - 1806:seed_material_grades:
-  - 1841:prepare_material_spec_link:
-  - 1875:create_item_client_script:
-  - 1891:create_item_custom_fields:
-  - 1993:create_purchase_order_custom_fields:
-  - 2117:hide_purchase_order_weight_fields:
-  - 2131:create_purchase_order_client_script:
-  - 2147:create_purchase_receipt_custom_fields:
-  - 2349:layout_purchase_receipt_item_grid:
-  - 2403:create_rate_schedule_sync_fields:
-  - 2519:create_batch_custom_fields:
-  - 2708:create_purchase_receipt_client_script:
-  - 2724:create_material_request_custom_fields:
-  - 2867:create_material_request_client_script:
-  - 2883:create_rfq_custom_fields:
-  - 2977:create_rfq_client_script:
-  - 2993:create_sq_custom_fields:
-  - 3090:create_sq_client_script:
-  - 3106:create_bom_custom_fields:
-  - 3264:create_so_custom_fields:
-  - 3400:create_so_client_script:
-  - 3421:create_so_delivery_plan_fields:
-  - 3630:create_so_delivery_plan_script:
-  - 3646:create_bom_client_script:
-  - 3666:create_production_plan_custom_fields:
-  - 3984:layout_production_plan_item_grid:
-  - 4046:create_production_plan_client_script:
-  - 4319:create_stock_entry_custom_fields:
-  - 4580:hide_duplicate_sco_field:
-  - 4607:create_stock_entry_client_script:
-  - 4644:create_doctype_label_translations:
-  - 4667:remove_sco_purchase_order_mandatory:
-  - 4678:add_sco_working_status:
-  - 4716:hide_sco_job_worker_warehouse:
-  - 4745:hide_sco_unused_tabs:
-  - 4771:hide_sco_amount_fields:
-  - 4799:make_sco_job_worker_conditional:
-  - 4834:create_sco_custom_fields:
-  - 5569:create_sco_client_script:
-  - 5585:create_sco_ops_client_script:
-  - 5601:create_soe_client_script:
-  - 5617:create_manufacturing_settings_custom_fields:
-  - 5656:create_material_planning_auto_purchase_fields:
-  - 5719:create_payment_request_custom_fields:
-  - 5801:create_fg_sales_custom_fields:
-  - 5906:create_fg_property_setters:
-  - 5945:set_fg_settings_defaults:
+  - 1689:after_migrate:
+  - 1760:clear_item_default_boms:
+  - 1786:setup_storage_location:
+  - 1808:seed_material_grades:
+  - 1843:prepare_material_spec_link:
+  - 1877:create_item_client_script:
+  - 1893:create_item_custom_fields:
+  - 1995:create_purchase_order_custom_fields:
+  - 2119:hide_purchase_order_weight_fields:
+  - 2133:create_purchase_order_client_script:
+  - 2149:create_purchase_receipt_custom_fields:
+  - 2351:layout_purchase_receipt_item_grid:
+  - 2408:layout_stock_entry_detail_grid:
+  - 2443:create_rate_schedule_sync_fields:
+  - 2559:create_batch_custom_fields:
+  - 2748:create_purchase_receipt_client_script:
+  - 2764:create_material_request_custom_fields:
+  - 2907:create_material_request_client_script:
+  - 2923:create_rfq_custom_fields:
+  - 3017:create_rfq_client_script:
+  - 3033:create_sq_custom_fields:
+  - 3130:create_sq_client_script:
+  - 3146:create_bom_custom_fields:
+  - 3304:create_so_custom_fields:
+  - 3440:create_so_client_script:
+  - 3461:create_so_delivery_plan_fields:
+  - 3670:create_so_delivery_plan_script:
+  - 3686:create_bom_client_script:
+  - 3706:create_production_plan_custom_fields:
+  - 4024:layout_production_plan_item_grid:
+  - 4086:create_production_plan_client_script:
+  - 4359:create_stock_entry_custom_fields:
+  - 4620:hide_duplicate_sco_field:
+  - 4647:create_stock_entry_client_script:
+  - 4684:create_doctype_label_translations:
+  - 4707:remove_sco_purchase_order_mandatory:
+  - 4718:add_sco_working_status:
+  - 4756:hide_sco_job_worker_warehouse:
+  - 4785:hide_sco_unused_tabs:
+  - 4811:hide_sco_amount_fields:
+  - 4839:make_sco_job_worker_conditional:
+  - 4874:create_sco_custom_fields:
+  - 5609:create_sco_client_script:
+  - 5625:create_sco_ops_client_script:
+  - 5641:create_soe_client_script:
+  - 5657:create_manufacturing_settings_custom_fields:
+  - 5696:create_material_planning_auto_purchase_fields:
+  - 5759:create_payment_request_custom_fields:
+  - 5841:create_fg_sales_custom_fields:
+  - 5946:create_fg_property_setters:
+  - 5985:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -1817,6 +1821,12 @@ Functions:
 Functions:
   - 4:run:
 
+### tests/_grid_before_after_tmp.py
+Functions:
+  - 4:colsize:
+  - 14:grid:
+  - 24:run:
+
 ### tests/_mfx_probe.py
 Functions:
   - 4:run:
@@ -1837,6 +1847,10 @@ Functions:
 ### tests/_render_challan.py
 Functions:
   - 7:run:
+
+### tests/_rep_tmp.py
+Functions:
+  - 2:run:
 
 ### tests/reset_transactions.py
 Functions:
@@ -2634,6 +2648,14 @@ Functions:
   - 36:run:
   - 110:_item_with_a_bom:
 
+### tests/verify_nos_labels.py
+Functions:
+  - 108:check:
+  - 114:_colsize:
+  - 123:_grid:
+  - 137:run:
+  - 242:_summary:
+
 ### tests/verify_no_zero_qty_exact_match.py
 Functions:
   - 26:check:
@@ -2708,11 +2730,11 @@ Functions:
   - 38:_labels:
   - 42:_drawing_rows:
   - 47:run:
-  - 420:_taken_by_drawing:
-  - 444:_row_for:
-  - 449:_old_shape:
-  - 457:_excess_rows:
-  - 466:_summary:
+  - 423:_taken_by_drawing:
+  - 447:_row_for:
+  - 452:_old_shape:
+  - 460:_excess_rows:
+  - 469:_summary:
 
 ### tests/verify_pr_partial_receipt_allocation.py
 Functions:

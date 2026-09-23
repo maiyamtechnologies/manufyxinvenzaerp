@@ -384,7 +384,7 @@ def plan_member_writes(fill, targets):
         unit_weight = flt(target.get("unit_weight"))
         if not unit_weight:
             blockers.append(
-                _("Batch {0} is {1}, whose Sec Nos must be counted rather than derived, "
+                _("Batch {0} is {1}, whose NOS must be counted rather than derived, "
                   "but its item has no Unit Weight set. Set it on the Item first.")
                 .format(target["batch_no"], group or _("an unsupported item group"))
             )

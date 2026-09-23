@@ -757,7 +757,11 @@ def get_columns(operations):
 	for op in operations:
 		label = op["operation"]
 		columns += [
-			{"label": "%s (%s)" % (label, op["unit"]), "fieldname": "op_%s_qty" % op["slug"],
+			# A pieces column reads "Welding NOS", like every other pieces heading; a Kg
+			# one keeps "Fit-up (Kg)". Only the label is formatted differently -- op["unit"]
+			# itself is untouched, because kg_operations above selects on it.
+			{"label": "%s (%s)" % (label, op["unit"]) if op["unit"] == _("Kg") else "%s NOS" % label,
+			 "fieldname": "op_%s_qty" % op["slug"],
 			 "fieldtype": "Float", "precision": 3, "width": 140,
 			 "description": _("Kg issued at this operation.") if op["unit"] == _("Kg")
 			 else _("Pieces completed at this operation.")},
@@ -780,14 +784,14 @@ def get_columns(operations):
 		{"label": _("Cust Weight (Total)"), "fieldname": "customer_weight_kg", "fieldtype": "Float", "precision": 3, "width": 130,
 		 "description": _("Customer weight in Kg for all the pieces of this drawing on this Job Work Order.")},
 		{"label": _("Planned Weight (Kg)"), "fieldname": "planned_weight_kg", "fieldtype": "Float", "width": 130},
-		{"label": _("Planned Sec Nos"), "fieldname": "planned_sec_nos", "fieldtype": "Float", "precision": 3, "width": 120},
+		{"label": _("Planned NOS"), "fieldname": "planned_sec_nos", "fieldtype": "Float", "precision": 3, "width": 120},
 		# Closes the planned block: the one number that says whether the plan is sane
 		# before anybody looks at what was actually transferred.
 		{"label": _("Waste %"), "fieldname": "waste_pct", "fieldtype": "Float", "precision": 2, "width": 90,
 		 "description": _("Planned Weight over Cust Weight (Total). A few percent is the off-cut; "
 						  "negative means the plan holds less material than the part weighs.")},
 		{"label": _("Transferred Weight (Kg)"), "fieldname": "transferred_weight_kg", "fieldtype": "Float", "width": 145},
-		{"label": _("Transferred Sec Nos"), "fieldname": "transferred_sec_nos", "fieldtype": "Float", "precision": 3, "width": 140},
+		{"label": _("Transferred NOS"), "fieldname": "transferred_sec_nos", "fieldtype": "Float", "precision": 3, "width": 140},
 		{"label": _("Consumed RM Cost"), "fieldname": "consumed_rm_cost", "fieldtype": "Currency", "width": 140,
 		 "description": _("Value of the raw material issued to this drawing, from the Stock Entries that issued it.")},
 		{"label": _("Rate Schedule"), "fieldname": "rate_schedule", "fieldtype": "Link", "options": "Rate Schedule", "width": 130},
@@ -797,7 +801,7 @@ def get_columns(operations):
 		# Sits right after the rate it is priced at, so the pair reads as one sum.
 		{"label": _("Job Work Amount"), "fieldname": "job_work_amount", "fieldtype": "Currency", "width": 130,
 		 "description": _("Cust Weight (Total) × Rate / Kg.")},
-		{"label": _("Consumables (Nos)"), "fieldname": "consumables_nos", "fieldtype": "Float", "precision": 3, "width": 130,
+		{"label": _("Consumables NOS"), "fieldname": "consumables_nos", "fieldtype": "Float", "precision": 3, "width": 130,
 		 "description": _("Job-level. From Material Consumption for Manufacture Stock Entries, repeated on every drawing row of the job.")},
 		{"label": _("Consumable Cost"), "fieldname": "consumable_cost", "fieldtype": "Currency", "width": 130,
 		 "description": _("Job-level. Value of those same consumable rows.")},
@@ -809,6 +813,6 @@ def get_columns(operations):
 		 "description": _("Excess less what has come back -- what is still out there, waiting to return or to be written off as process loss.")},
 		{"label": _("Completed Drawing Weight (Kg)"), "fieldname": "completed_drawing_weight_kg", "fieldtype": "Float", "precision": 3, "width": 175,
 		 "description": _("Completed pieces valued at the drawing's own weight per piece.")},
-		{"label": _("Completed Drawing (Nos)"), "fieldname": "completed_nos", "fieldtype": "Float", "precision": 3, "width": 150},
+		{"label": _("Completed Drawing NOS"), "fieldname": "completed_nos", "fieldtype": "Float", "precision": 3, "width": 150},
 	]
 	return columns

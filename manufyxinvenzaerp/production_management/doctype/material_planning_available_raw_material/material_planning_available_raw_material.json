@@ -140,7 +140,7 @@
   },
   {
    "default": "0",
-   "description": "The assigned batch no longer matches the dimensions this row was planned against. An exact-match row already reserves its Allocated Qty in Kg verbatim, so that figure is unchanged \u2014 what changes is Sec Qty (NOS), which becomes that weight expressed as a fraction of one piece of the assigned batch (e.g. 2.5) instead of a whole-piece allocation. Set automatically when a batch is reassigned from the Material Issue Plan; tick it by hand when mapping a batch of a different size during planning.",
+   "description": "The assigned batch no longer matches the dimensions this row was planned against. An exact-match row already reserves its Allocated Qty in Kg verbatim, so that figure is unchanged \u2014 what changes is NOS, which becomes that weight expressed as a fraction of one piece of the assigned batch (e.g. 2.5) instead of a whole-piece allocation. Set automatically when a batch is reassigned from the Material Issue Plan; tick it by hand when mapping a batch of a different size during planning.",
    "fieldname": "reserve_without_dimensions",
    "fieldtype": "Check",
    "label": "Reserve stock without dimensions"
@@ -211,7 +211,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty (NOS)",
+   "label": "NOS",
    "read_only": 1
   },
   {
@@ -365,7 +365,7 @@
   {
    "fieldname": "use_sec_qty",
    "fieldtype": "Float",
-   "label": "To Use Sec Qty (Nos)",
+   "label": "To Use NOS",
    "hidden": 1,
    "read_only": 1
   },
@@ -399,7 +399,7 @@
   {
    "fieldname": "balance_sec_qty",
    "fieldtype": "Float",
-   "label": "Balance Sec Qty (Nos)",
+   "label": "Balance NOS",
    "hidden": 1,
    "read_only": 1
   },

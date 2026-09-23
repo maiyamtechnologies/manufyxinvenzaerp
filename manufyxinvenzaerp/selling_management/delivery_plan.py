@@ -295,7 +295,7 @@ def create_delivery_from_plan(sales_order, plan):
         if qty:
             wanted.append((p.get("fg_batch") or "", p.get("warehouse") or "", qty))
     if not wanted:
-        frappe.throw(_("Enter a Delivery Plan (Nos) on at least one drawing first."),
+        frappe.throw(_("Enter a Delivery Plan NOS on at least one drawing first."),
                      title=_("Nothing Planned"))
 
     live = {_key(r): r for r in build_plan_rows(sales_order)}

@@ -118,7 +118,7 @@
   {
    "fieldname": "transferred_sec_qty",
    "fieldtype": "Float",
-   "label": "Transferred Sec Qty (Nos)",
+   "label": "Transferred NOS",
    "read_only": 1
   },
   {
@@ -134,7 +134,7 @@
   {
    "fieldname": "prev_operation_sec_qty",
    "fieldtype": "Float",
-   "label": "Prev Op Sec Qty (Nos)",
+   "label": "Prev Op NOS",
    "read_only": 1
   },
   {
@@ -153,7 +153,7 @@
    "fieldname": "current_sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Current Sec Qty (Nos)"
+   "label": "NOS"
   },
   {
    "fieldname": "current_stock_qty",

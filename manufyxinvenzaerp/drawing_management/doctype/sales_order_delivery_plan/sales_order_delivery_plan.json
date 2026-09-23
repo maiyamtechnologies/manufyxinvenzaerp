@@ -79,7 +79,7 @@
    "fieldname": "completed_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Completed (Nos)",
+   "label": "Completed NOS",
    "read_only": 1
   },
   {
@@ -88,7 +88,7 @@
    "fieldname": "delivered_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Delivered (Nos)",
+   "label": "Delivered NOS",
    "read_only": 1
   },
   {
@@ -97,7 +97,7 @@
    "fieldname": "draft_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "In Draft DN (Nos)",
+   "label": "In Draft DN NOS",
    "read_only": 1
   },
   {
@@ -106,7 +106,7 @@
    "fieldname": "available_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Available (Nos)",
+   "label": "Available NOS",
    "read_only": 1
   },
   {
@@ -116,11 +116,11 @@
    "fieldname": "delivery_plan_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Delivery Plan (Nos)"
+   "label": "Delivery Plan NOS"
   },
   {
    "columns": 1,
-   "description": "Kg of the Delivery Plan (Nos), priced exactly as the Delivery Note will price it: pieces x this warehouse's Kg per piece, and all the pieces here take the exact Kg here (last-piece rule).",
+   "description": "Kg of the Delivery Plan NOS, priced exactly as the Delivery Note will price it: pieces x this warehouse's Kg per piece, and all the pieces here take the exact Kg here (last-piece rule).",
    "fieldname": "delivery_weight",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -148,7 +148,7 @@
    "label": "Total Cust Wt (Kg)",
    "precision": "3",
    "read_only": 1,
-   "description": "Cust Wt per Pcs x Completed (Nos)."
+   "description": "Cust Wt per Pcs x Completed NOS."
   },
   {
    "fieldname": "column_break_weight",
@@ -160,7 +160,7 @@
    "label": "Stock Wt per Pcs (Kg)",
    "precision": "3",
    "read_only": 1,
-   "description": "Total Stock Wt / Completed (Nos). Differs from Cust Wt per Pcs only where the Final Stock Entry booked the pieces at an edited weight."
+   "description": "Total Stock Wt / Completed NOS. Differs from Cust Wt per Pcs only where the Final Stock Entry booked the pieces at an edited weight."
   },
   {
    "fieldname": "total_stock_weight",
@@ -173,7 +173,7 @@
   {
    "fieldname": "stock_nos",
    "fieldtype": "Float",
-   "label": "Stock (Nos)",
+   "label": "Stock NOS",
    "hidden": 1,
    "read_only": 1
   },

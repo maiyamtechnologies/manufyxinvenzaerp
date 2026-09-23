@@ -96,13 +96,13 @@
   {
    "fieldname": "previous_sec_qty",
    "fieldtype": "Float",
-   "label": "Previous Sec Qty (Nos)",
+   "label": "Previous NOS",
    "precision": "3"
   },
   {
    "fieldname": "sec_qty",
    "fieldtype": "Float",
-   "label": "Sec Qty (Nos)",
+   "label": "NOS",
    "precision": "3"
   },
   {

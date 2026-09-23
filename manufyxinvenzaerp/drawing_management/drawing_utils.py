@@ -265,7 +265,7 @@ def create_production_plan_from_bom(bom_name):
     nos_left = fg_nos_remaining(bom.custom_drawing)
     if nos_left <= 0:
         frappe.throw(
-            _("Every piece of drawing {0} is already on a Production Plan. Reduce the Qty (Nos) "
+            _("Every piece of drawing {0} is already on a Production Plan. Reduce the NOS "
               "on one of those plans, or cancel it, to plan pieces here.").format(bom.custom_drawing),
             title=_("Nothing Left to Plan"),
         )

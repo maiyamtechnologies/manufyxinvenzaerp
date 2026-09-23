@@ -139,7 +139,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Nos",
+   "label": "NOS",
    "precision": "3",
    "read_only": 1,
    "columns": 1
@@ -220,7 +220,7 @@
   {
    "fieldname": "draft_sec_qty",
    "fieldtype": "Float",
-   "label": "Draft Sec Nos",
+   "label": "Draft NOS",
    "precision": "3",
    "read_only": 1
   },
@@ -243,7 +243,7 @@
   {
    "fieldname": "draft_excess_sec_qty",
    "fieldtype": "Float",
-   "label": "Draft Excess Sec Nos",
+   "label": "Draft Excess NOS",
    "precision": "3",
    "read_only": 1
   },

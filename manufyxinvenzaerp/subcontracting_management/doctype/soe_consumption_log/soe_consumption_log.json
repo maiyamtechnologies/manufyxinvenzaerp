@@ -32,7 +32,7 @@
    "fieldname": "qty_nos",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty (Nos)",
+   "label": "NOS",
    "reqd": 1
   },
   {
@@ -53,7 +53,7 @@
    "precision": "3",
    "read_only": 1,
    "label": "Total Weight (Kg)",
-   "description": "Auto-calculated: Qty (Nos) x Wt per Pcs (Kg). This is the figure that adds up into Total Consumed (Kg), which in turn seeds the next operation's Available to Consume (Kg) -- so it stays the row TOTAL and must not be repurposed to hold the per-piece weight."
+   "description": "Auto-calculated: NOS x Wt per Pcs (Kg). This is the figure that adds up into Total Consumed (Kg), which in turn seeds the next operation's Available to Consume (Kg) -- so it stays the row TOTAL and must not be repurposed to hold the per-piece weight."
   },
   {
    "fieldname": "remark",

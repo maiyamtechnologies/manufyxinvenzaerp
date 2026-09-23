@@ -137,13 +137,13 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty (NOS)",
+   "label": "NOS",
    "read_only": 1
   },
   {
    "fieldname": "sec_uom",
    "fieldtype": "Link",
-   "in_list_view": 1,
+   "in_list_view": 0,
    "label": "Sec UOM",
    "options": "UOM",
    "read_only": 1
@@ -221,7 +221,7 @@
   {
    "fieldname": "alternate_sec_qty",
    "fieldtype": "Float",
-   "label": "Sec Qty (NOS)"
+   "label": "Alternate NOS"
   },
   {
    "fieldname": "alternate_unit_weight",

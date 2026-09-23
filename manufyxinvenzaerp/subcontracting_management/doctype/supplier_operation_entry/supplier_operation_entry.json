@@ -134,13 +134,13 @@
   {
    "fieldname": "total_available_nos",
    "fieldtype": "Float",
-   "label": "Available to Consume (Nos)",
+   "label": "Available to Consume NOS",
    "read_only": 1
   },
   {
    "fieldname": "total_completed_nos",
    "fieldtype": "Float",
-   "label": "Total Consumed (Nos)",
+   "label": "Total Consumed NOS",
    "read_only": 1
   },
   {

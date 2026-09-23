@@ -155,7 +155,7 @@
    "fieldname": "sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Sec Qty",
+   "label": "NOS",
    "read_only_depends_on": "eval:doc.parent_item_group === 'Nuts and Bolts'"
   },
   {
@@ -186,11 +186,11 @@
   },
   {
    "columns": 1,
-   "description": "Sec Qty \u00d7 No of Qty to Manufacture",
+   "description": "NOS \u00d7 No of Qty to Manufacture",
    "fieldname": "total_sec_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Total Sec Qty",
+   "label": "Total NOS",
    "read_only": 1
   },
   {

@@ -257,7 +257,7 @@
    "options": "Material Planning Unavailable Item"
   },
   {
-   "description": "One consolidated line per raw material item, deduped by Item Code across all Unavailable Items rows (regardless of drawing/sales order) \u2014 used to purchase in bulk. Enter Length/Width/Thickness/Sec Qty to auto-calculate Purchase Kg. Fully editable.",
+   "description": "One consolidated line per raw material item, deduped by Item Code across all Unavailable Items rows (regardless of drawing/sales order) \u2014 used to purchase in bulk. Enter Length/Width/Thickness/NOS to auto-calculate Purchase Kg. Fully editable.",
    "fieldname": "section_consolidate_items",
    "fieldtype": "Section Break",
    "label": "Consolidate Item"

@@ -41,10 +41,10 @@ class CutSheet(Document):
     CUT_FIELDS = (
         ("w1_length", "W1 Length"),
         ("w1_width", "W1 Width"),
-        ("w1_sec_qty", "W1 Sec Nos"),
+        ("w1_sec_qty", "W1 NOS"),
         ("w2_length", "W2 Length"),
         ("w2_width", "W2 Width"),
-        ("w2_sec_qty", "W2 Sec Nos"),
+        ("w2_sec_qty", "W2 NOS"),
     )
 
     # What this sheet IS: the company, the material, the physical batch and where
@@ -363,7 +363,7 @@ class CutSheet(Document):
         oversubscribe the sheet."""
         if self.allocated_sec_qty - flt(self.w1_sec_qty) > QTY_EPSILON:
             frappe.throw(
-                _("{0} pieces are already allocated to other jobs, so W1 Sec Nos cannot be set to {1}. "
+                _("{0} pieces are already allocated to other jobs, so W1 NOS cannot be set to {1}. "
                   "Release an allocation first.")
                 .format(flt(self.allocated_sec_qty, 3), flt(self.w1_sec_qty, 3))
             )
@@ -505,7 +505,7 @@ def allocate_cut_sheet(mp_name, cut_sheet_name, sec_qty, row_name=None, unavaila
 
     sec_qty = flt(sec_qty)
     if sec_qty <= 0:
-        frappe.throw(_("Enter how many pieces to take (Sec Nos greater than 0)."))
+        frappe.throw(_("Enter how many pieces to take (NOS greater than 0)."))
 
     cs = frappe.get_doc("Cut Sheet", cut_sheet_name)
     if cs.w2_applied:

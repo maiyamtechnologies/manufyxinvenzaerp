@@ -35,11 +35,11 @@ EXPECTED_LABELS = {
     "cut_sheet_ref":    "Cut Sheet",
     "use_length":       "To Use Length (mm)",
     "use_width":        "To Use Width (mm)",
-    "use_sec_qty":      "To Use Sec Qty (Nos)",
+    "use_sec_qty":      "To Use NOS",
     "use_calc_qty":     "To Use Weight (Kg)",
     "balance_length":   "Balance Length (mm)",
     "balance_width":    "Balance Width (mm)",
-    "balance_sec_qty":  "Balance Sec Qty (Nos)",
+    "balance_sec_qty":  "Balance NOS",
     "balance_calc_qty": "Balance Weight (Kg)",
 }
 

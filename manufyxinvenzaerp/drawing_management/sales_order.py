@@ -153,7 +153,7 @@ def fg_line_mismatch_text(t):
         "FG Item <b>{0}</b>: the order is for <b>{1} Kg / {2} Nos</b> but the Drawing List "
         "adds up to <b>{3} Kg / {4} Nos</b> — difference {5} Kg / {6} Nos. "
         "The Cust Weight (Total) of its drawings must add up to the line Quantity, and their "
-        "Total Quantity to the line Qty (Nos)."
+        "Total Quantity to the line NOS."
     ).format(
         t.item_code, fmt_qty(t.ordered_kg), fmt_qty(t.ordered_nos),
         fmt_qty(t.drawing_kg), fmt_qty(t.drawing_nos),
@@ -264,7 +264,7 @@ def _fg_line_changes(doc, before):
         if a and b and snap(a) == snap(b):
             continue
         d = b or a
-        reasons.append(_("Items row {0} ({1}): Item, Quantity or Qty (Nos) changed").format(
+        reasons.append(_("Items row {0} ({1}): Item, Quantity or NOS changed").format(
             d.idx, d.get("item_code") or "?"))
     return reasons
 

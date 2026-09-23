@@ -147,7 +147,7 @@ function a5_get_fg_batches(frm) {
 							{ fieldname: "batch_no", label: __("Batch"), fieldtype: "Link", options: "Batch", read_only: 1, in_list_view: 1, columns: 2 },
 							{ fieldname: "drawing", label: __("Drawing"), fieldtype: "Link", options: "Drawing", read_only: 1, in_list_view: 1, columns: 2 },
 							{ fieldname: "duno", label: __("DUNO/Mark No"), fieldtype: "Data", read_only: 1, in_list_view: 1, columns: 1 },
-							{ fieldname: "available_nos", label: __("Available (Nos)"), fieldtype: "Float", read_only: 1, in_list_view: 1, columns: 1 },
+							{ fieldname: "available_nos", label: __("Available NOS"), fieldtype: "Float", read_only: 1, in_list_view: 1, columns: 1 },
 							{ fieldname: "available_kg", label: __("Available (Kg)"), fieldtype: "Float", precision: 3, read_only: 1, in_list_view: 1, columns: 1 },
 							{ fieldname: "kg_per_nos", label: __("Kg per Nos"), fieldtype: "Float", precision: 3, read_only: 1, in_list_view: 1, columns: 1 },
 							{ fieldname: "nos", label: __("Nos to Deliver"), fieldtype: "Int", in_list_view: 1, columns: 1 },
@@ -170,7 +170,7 @@ function a5_get_fg_batches(frm) {
 					const bad = picked.filter((p) => cint(p.nos) <= 0 || cint(p.nos) > flt(p.available_nos));
 					if (bad.length) {
 						frappe.msgprint(
-							__("Nos to Deliver must be a whole number between 1 and the Available (Nos): {0}",
+							__("Nos to Deliver must be a whole number between 1 and the Available NOS: {0}",
 								[bad.map((p) => p.batch_no).join(", ")])
 						);
 						return;

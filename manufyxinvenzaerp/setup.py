@@ -164,13 +164,13 @@ function warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -270,13 +270,13 @@ function pr_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -386,13 +386,13 @@ function mr_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -524,13 +524,13 @@ function sq_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -1531,9 +1531,9 @@ const _SO_TABLE_VIEW_CONFIG = {
 			{ fieldname: "thickness",               label: "Thickness" },
 			{ fieldname: "width",                   label: "Width" },
 			{ fieldname: "length",                  label: "Length" },
-			{ fieldname: "sec_qty",                 label: "Reqd Sec Qty" },
+			{ fieldname: "sec_qty",                 label: "Reqd NOS" },
 			{ fieldname: "sec_uom",                 label: "Sec UOM" },
-			{ fieldname: "total_sec_qty",            label: "Total Sec Qty" },
+			{ fieldname: "total_sec_qty",            label: "Total NOS" },
 			{ fieldname: "unit_weight",              label: "Unit Weight" },
 			{ fieldname: "qty",                     label: "Weight (Primary UOM)" },
 			{ fieldname: "uom",                     label: "UOM" },
@@ -1633,6 +1633,7 @@ def after_install():
     create_purchase_order_client_script()
     create_purchase_receipt_custom_fields()
     layout_purchase_receipt_item_grid()
+    layout_stock_entry_detail_grid()
     create_batch_custom_fields()
     create_purchase_receipt_client_script()
     create_material_request_custom_fields()
@@ -1701,6 +1702,7 @@ def after_migrate():
     create_purchase_order_client_script()
     create_purchase_receipt_custom_fields()
     layout_purchase_receipt_item_grid()
+    layout_stock_entry_detail_grid()
     create_batch_custom_fields()
     create_purchase_receipt_client_script()
     create_material_request_custom_fields()
@@ -2031,7 +2033,7 @@ def create_purchase_order_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2044,7 +2046,7 @@ def create_purchase_order_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -2185,7 +2187,7 @@ def create_purchase_receipt_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2199,7 +2201,7 @@ def create_purchase_receipt_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
                 "columns": 1,
             },
             {
@@ -2361,9 +2363,12 @@ def layout_purchase_receipt_item_grid():
     like a field that needed enabling; it was already enabled and had simply run off
     the end of the budget.
 
-    The layout below is the client's, and totals exactly 10:
+    The layout below is the client's. It totalled exactly 10 until Sec UOM left every
+    grid (2026-09-23, when the pieces column became plain "NOS" -- the unit is in the
+    heading, so a column repeating "Nos" on every row told nobody anything). It is now
+    9, with one column spare:
 
-        item_code 2 + qty 1 + custom_sec_qty 1 + custom_sec_uom 1
+        item_code 2 + qty 1 + custom_sec_qty 1
         + custom_thickness 1 + custom_length 1 + custom_width 1 + warehouse 2
 
     Rejected Qty, Unit Weight, Rate, Amount and Net Amount come out of the grid to
@@ -2395,6 +2400,41 @@ def layout_purchase_receipt_item_grid():
                 "property": "in_list_view",
                 "value": 0,
                 "property_type": "Check",
+            }
+        )
+    frappe.db.commit()
+
+
+def layout_stock_entry_detail_grid():
+    """Put Stock UOM in the Stock Entry item grid, paying for it with Basic Rate.
+
+    Same hard budget as layout_purchase_receipt_item_grid above: the grid walks its
+    fields adding up `columns` and silently drops every column after the one that
+    takes the total past 11. It was at exactly 11:
+
+        s_warehouse 2 + t_warehouse 2 + item_code 2 + custom_sec_qty 1
+        + custom_is_consumable 1 + qty 1 + basic_rate 1          = 10 (+1 start)
+
+    so adding Stock UOM without taking a column back would have blanked Basic Rate
+    and anything after it, with no error. Basic Rate leaves the grid -- valuation fills
+    it on these entries and it is rarely typed -- and stays on the row, editable, and
+    driving valuation exactly as before. Stock UOM takes its place at 1 column.
+
+    Qty is Kg (the stock UOM) and NOS is pieces; showing Stock UOM beside them is what
+    makes the two numbers on one row readable without opening it.
+    """
+    for fieldname, prop, value, ptype in (
+        ("stock_uom", "in_list_view", 1, "Check"),
+        ("stock_uom", "columns", 1, "Int"),
+        ("basic_rate", "in_list_view", 0, "Check"),
+    ):
+        frappe.make_property_setter(
+            {
+                "doctype": "Stock Entry Detail",
+                "fieldname": fieldname,
+                "property": prop,
+                "value": value,
+                "property_type": ptype,
             }
         )
     frappe.db.commit()
@@ -2560,7 +2600,7 @@ def create_batch_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "read_only": 1,
                 "insert_after": "custom_width",
@@ -2778,7 +2818,7 @@ def create_material_request_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -2791,7 +2831,7 @@ def create_material_request_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -2919,7 +2959,7 @@ def create_rfq_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "read_only": 1,
                 "insert_after": "qty",
@@ -2932,7 +2972,7 @@ def create_rfq_custom_fields():
                 "options": "UOM",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -3031,7 +3071,7 @@ def create_sq_custom_fields():
             },
             {
                 "fieldname": "custom_sec_qty",
-                "label": "Sec Qty",
+                "label": "NOS",
                 "fieldtype": "Float",
                 "insert_after": "uom",
                 "in_list_view": 1,
@@ -3044,7 +3084,7 @@ def create_sq_custom_fields():
                 "fetch_from": "item_code.custom_secondary_uom",
                 "read_only": 1,
                 "insert_after": "custom_sec_qty",
-                "in_list_view": 1,
+                "in_list_view": 0,
             },
             {
                 "fieldname": "custom_unit_weight",
@@ -3151,7 +3191,7 @@ def create_bom_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "quantity",
                     "read_only": 1,
                     "no_copy": 1,
@@ -3243,7 +3283,7 @@ def create_bom_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Sec Qty",
+                    "label": "NOS",
                     "insert_after": "uom",
                     "read_only": 1,
                 },
@@ -3358,7 +3398,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,
@@ -3376,7 +3416,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_delivered_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Delivered (Nos)",
+                    "label": "Delivered NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "delivered_qty",
@@ -3385,7 +3425,7 @@ def create_so_custom_fields():
                 {
                     "fieldname": "custom_billed_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Billed (Nos)",
+                    "label": "Billed NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "billed_amt",
@@ -3476,7 +3516,7 @@ def create_so_delivery_plan_fields():
                     # own from its own batches, never inherit another order's.
                     "no_copy": 1,
                     "description": "Every drawing with pieces booked into finished goods. "
-                                   "Type Delivery Plan (Nos) on the drawings to send, "
+                                   "Type Delivery Plan NOS on the drawings to send, "
                                    "then Create Delivery.",
                 },
             ]
@@ -3535,7 +3575,7 @@ frappe.ui.form.on("Sales Order", {
         if (!rows.length) {
             frappe.msgprint({
                 title: __("Nothing Planned"),
-                message: __("Enter a Delivery Plan (Nos) on at least one drawing first."),
+                message: __("Enter a Delivery Plan NOS on at least one drawing first."),
                 indicator: "orange",
             });
             return;
@@ -3728,7 +3768,7 @@ def create_production_plan_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "custom_duno_mark_no",
                     "in_list_view": 1,
                     "columns": 1,
@@ -4298,13 +4338,13 @@ function se_warn_missing_fields(row, group) {
 \tif (group === "Structurals") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t} else if (group === "Plates") {
 \t\tif (!row.custom_length) missing.push("Length");
 \t\tif (!row.custom_width) missing.push("Width");
 \t\tif (!row.custom_thickness) missing.push("Thickness");
 \t\tif (!row.custom_unit_weight) missing.push("Unit Weight");
-\t\tif (!row.custom_sec_qty) missing.push("Sec Qty");
+\t\tif (!row.custom_sec_qty) missing.push("NOS");
 \t}
 \tif (missing.length) {
 \t\tfrappe.show_alert({
@@ -4357,7 +4397,7 @@ def create_stock_entry_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Sec Qty (Nos)",
+                    "label": "NOS",
                     "in_list_view": 1,
                     "insert_after": "custom_unit_weight",
                 },
@@ -4999,7 +5039,7 @@ def create_sco_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "read_only": 1,
                     "insert_after": "qty",
                 },
@@ -5243,10 +5283,10 @@ function render_soe_summary(frm) {
                 + "<th class='text-center' style='width:60px'>Seq</th>"
                 + "<th>Operation</th>"
                 + "<th style='width:130px'>Status</th>"
-                + "<th class='text-right'>Overall Qty (Nos)</th>"
-                + "<th class='text-right'>Available to Consume (Nos)</th>"
-                + "<th class='text-right'>Total Consumed (Nos)</th>"
-                + "<th class='text-right'>Difference (Nos)</th>"
+                + "<th class='text-right'>Overall NOS</th>"
+                + "<th class='text-right'>Available to Consume NOS</th>"
+                + "<th class='text-right'>Total Consumed NOS</th>"
+                + "<th class='text-right'>Difference NOS</th>"
                 + "<th class='text-center' style='width:110px'>Entry</th>"
                 + "<th class='text-center' style='width:70px'>Drawings</th>"
                 + "</tr></thead><tbody>" + body + "</tbody></table>"
@@ -5326,7 +5366,7 @@ function show_drawing_popup(soe) {
             + "<tr>"
             + "<th rowspan='2' style='white-space:nowrap;vertical-align:bottom'>Drawing</th>"
             + "<th rowspan='2' style='vertical-align:bottom'>Cust Drawing No</th>"
-            + "<th colspan='2' class='text-center' style='white-space:nowrap;background:#f8fafc'>Pieces (Nos)</th>"
+            + "<th colspan='2' class='text-center' style='white-space:nowrap;background:#f8fafc'>Pieces NOS</th>"
             + "<th colspan='3' class='text-center' style='white-space:nowrap;background:#f8fafc'>Raw Material (Kg)</th>"
             + "</tr>"
             + "<tr>"
@@ -5337,7 +5377,7 @@ function show_drawing_popup(soe) {
             + "<tbody>" + drw_rows + "</tbody>" + foot
             + "</table></div>"
             + "<div class='text-muted' style='margin-top:8px;font-size:11px;line-height:1.6'>"
-            + "<b>Pieces and weight answer different questions.</b> Done (Nos) is how many "
+            + "<b>Pieces and weight answer different questions.</b> Done NOS is how many "
             + "pieces this operation finished. Consumed (Kg) is the raw material those "
             + "pieces used, at the drawing's own weight per piece &mdash; so finishing every "
             + "piece consumes the <b>Planned</b> weight, not the <b>Sent</b> weight. "
@@ -5526,7 +5566,7 @@ function _sync_drawing_nos(frm) {
 }
 
 function _calc_consumption_weight_kg(frm, cdt, cdn) {
-\t// Total Weight (Kg) for a consumption log row = Qty (Nos) x the linked Drawing's
+\t// Total Weight (Kg) for a consumption log row = NOS x the linked Drawing's
 \t// per-piece weight (Drawing.total_weight / Drawing.no_of_qty_to_manufacture).
 \t// This feeds total_consumed_kg (see subcontracting.py's Op-1 over-consume
 \t// guard), which in turn seeds the NEXT operation's available_to_consume_kg --
@@ -5691,7 +5731,7 @@ def create_material_planning_auto_purchase_fields():
                     "hidden": 1,
                     "description": (
                         "Fills each Consolidate Item with the largest size among the "
-                        "requirements it covers, and the Sec Qty that matches the "
+                        "requirements it covers, and the NOS that matches the "
                         "required weight. Edit and save afterwards."
                     ),
                 },
@@ -5825,7 +5865,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,
@@ -5842,7 +5882,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_billed_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Billed (Nos)",
+                    "label": "Billed NOS",
                     "read_only": 1,
                     "no_copy": 1,
                     "insert_after": "billed_amt",
@@ -5868,7 +5908,7 @@ def create_fg_sales_custom_fields():
                 {
                     "fieldname": "custom_sec_qty",
                     "fieldtype": "Float",
-                    "label": "Qty (Nos)",
+                    "label": "NOS",
                     "insert_after": "qty",
                     "in_list_view": 1,
                     "columns": 1,

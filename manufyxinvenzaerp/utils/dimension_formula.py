@@ -29,7 +29,7 @@ FIELD_LABELS = {
     "custom_width": "Width",
     "custom_thickness": "Thickness",
     "custom_unit_weight": "Unit Weight",
-    "custom_sec_qty": "Sec Qty",
+    "custom_sec_qty": "NOS",
 }
 
 
