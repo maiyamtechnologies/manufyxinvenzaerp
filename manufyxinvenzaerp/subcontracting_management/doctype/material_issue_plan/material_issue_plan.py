@@ -1289,7 +1289,50 @@ def _maybe_mark_completed(mip):
     if _unaccounted_weight(mip) > 0.001:
         return
 
+    # And nothing may still be waiting to go OUT. _unaccounted_weight above watches
+    # one end of the journey -- steel that reached the supplier and never came home.
+    # It is blind to the other end by construction: _job_stock_at_supplier nets
+    # movements ACROSS the supplier warehouse boundary, so material that never left
+    # stores never appears in it at all. MIP-2026-00004 completed itself six minutes
+    # after its first transfer with 472.615 Kg of CNC material still sitting in
+    # stores, because the four batches that did travel netted to exactly zero. The
+    # Completed lock then hid the "To CNC Warehouse" button that would have sent it,
+    # and the job was closed with a whole routing leg unperformed.
+    if _pending_transfer(mip):
+        return
+
     mip.status = "Completed"
+
+
+def _pending_transfer(mip):
+    """Is any raw material still waiting to leave the source warehouse?
+
+    Asked of get_mip_pending_items -- the same source the transfer buttons derive
+    from (see get_mip_cnc_button_state) -- so a plan can never lock itself while a
+    button would still offer work to do. Two answers to one question is what caused
+    the bug this guards: the completion gate said finished while the CNC button's
+    own API still said show_to_cnc.
+
+    Deliberately NOT (qty - transferred_qty) off the rows, cheap though that is: a
+    row cutting W1 from a plate is capped at the cut plan's To Use weight, so the
+    arithmetic reads the W2 balance that is never meant to move as a permanent
+    shortfall and no plan cutting a sheet could ever complete.
+
+    A failure here means the question could not be answered, which is not the same
+    as "nothing is pending" -- so it counts as pending and the plan stays open,
+    matching how get_mip_cnc_button_state fails safe on the same call.
+
+    Only reached once finished goods are booked and every excess row is resolved,
+    so this lands once at the end of a plan's life, not on every save.
+    """
+    from manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer import (
+        get_mip_pending_items,
+    )
+
+    try:
+        return bool(get_mip_pending_items(mip.name))
+    except Exception:
+        return True
 
 
 def _unaccounted_weight(mip):

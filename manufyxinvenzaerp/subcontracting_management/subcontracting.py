@@ -769,6 +769,52 @@ def _excess_booked_to_return(mip_name):
     return {k: flt(v, 3) for k, v in out.items() if flt(v, 3) > 0}
 
 
+def _pending_transfer_block(sco_name):
+    """Why finished goods cannot be booked yet, or "" when they may be.
+
+    Booking finished goods while raw material is still in stores writes a product
+    heavier than the steel that made it. MAT-STE-00010 consumed 10,315.918 Kg and
+    produced 10,584.96 Kg of fabricated structures, because the 472.615 Kg of CNC
+    material feeding those same drawings had never been sent -- the Loss (Kg) on all
+    three finished rows came out NEGATIVE, which is not a loss but an impossibility.
+    Nothing downstream re-checks the order of the legs (stores -> CNC -> supplier ->
+    finished goods), so this is where that sequence is enforced.
+
+    Unanswerable counts as allowed here, the opposite of _pending_transfer in
+    material_issue_plan.py. The safe direction differs by what the answer gates: a
+    plan left open can still be worked on, whereas a job that cannot book its
+    finished goods at all is stuck with no way forward.
+    """
+    mip_name = frappe.db.get_value(
+        "Material Issue Plan", {"subcontracting_order": sco_name}, "name")
+    if not mip_name:
+        return ""
+
+    from manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer import (
+        get_mip_pending_items,
+    )
+
+    try:
+        pending = get_mip_pending_items(mip_name)
+    except Exception:
+        return ""
+    if not pending:
+        return ""
+
+    cnc = [p for p in pending if p.get("cnc_process")]
+    total = flt(sum(flt(p.get("qty")) for p in pending), 3)
+    detail = _("{0} Kg across {1} item(s)").format(total, len(pending))
+    if cnc:
+        detail += _(", of which {0} Kg is CNC Process material that has not reached "
+                    "the CNC warehouse").format(
+            flt(sum(flt(p.get("qty")) for p in cnc), 3))
+    return _(
+        "Raw material for this job is still waiting to be transferred: {0}. "
+        "Book finished goods only once it has been sent, or the entry produces more "
+        "weight than it consumes. Use the Transfer buttons on {1} first."
+    ).format(detail, mip_name)
+
+
 @frappe.whitelist()
 def get_final_stock_entry_preview(sco_name):
     """What the final stock entry would book right now, without booking it.
@@ -821,6 +867,10 @@ def get_final_stock_entry_preview(sco_name):
 
     total_ready = flt(total_ready, 3)
 
+    # Asked once, before the consumption preview below: a job that may not book yet
+    # still shows its piece counts and its steel, it just cannot press the button.
+    pending_block = _pending_transfer_block(sco_name)
+
     # What the entry would consume for each drawing, so the popup can put the finished
     # weight beside the steel that made it. Read-only and best-effort: a job whose
     # supplier warehouse or Material Issue Plan cannot be resolved still previews its
@@ -854,12 +904,12 @@ def get_final_stock_entry_preview(sco_name):
         "total_ready": total_ready,
         "total_planned": flt(sum(d["qty_to_manufacture"] for d in drawings), 3),
         "total_completed": flt(sum(d["completed_qty_nos"] for d in drawings), 3),
-        "can_create": total_ready > 0,
-        "reason": "" if total_ready > 0 else _(
+        "can_create": total_ready > 0 and not pending_block,
+        "reason": pending_block if pending_block else ("" if total_ready > 0 else _(
             "Nothing is waiting to be booked. The last operation ({0}) has completed "
             "{1} of {2} pieces, and all of them are already in finished goods."
         ).format(final["operation"], flt(sum(d["completed_qty_nos"] for d in drawings), 3),
-                 flt(sum(d["qty_to_manufacture"] for d in drawings), 3)),
+                 flt(sum(d["qty_to_manufacture"] for d in drawings), 3))),
     }
 
 
@@ -892,6 +942,13 @@ def create_finished_goods_entry(sco_name, fg_weights_json=None):
     sco = frappe.get_doc("Subcontracting Order", sco_name)
     if sco.docstatus != 1:
         frappe.throw(_("Subcontracting Order must be submitted first."))
+
+    # The real enforcement of the leg order. get_final_stock_entry_preview greys the
+    # button out with the same message, but that is the popup being helpful; this is
+    # what a direct or scripted call meets.
+    pending_block = _pending_transfer_block(sco_name)
+    if pending_block:
+        frappe.throw(pending_block, title=_("Material Still To Transfer"))
 
     # A submitted entry no longer ends the matter -- booking four drawings now and six
     # later is the point. What it must not do is double-book, and that is only safe
