@@ -333,12 +333,14 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			"not “this line”, it is “one of 1B1 and three of 1B3”. The <b>Delivery Plan</b> tab lists " +
 			"every drawing with finished pieces, and makes the Delivery Note from what you choose.",
 		fields: [
-			{ name: "Drawing / DUNO / FG Batch", note: "One row per finished drawing, with its DUNO/Mark No and the FG batch its pieces sit in (FG-&lt;order&gt;-&lt;DUNO&gt;). A drawing split across two warehouses gets a row for each." },
+			{ name: "DUNO / FG Batch", note: "One row per finished drawing, with its DUNO/Mark No and the FG batch its pieces sit in (FG-&lt;order&gt;-&lt;DUNO&gt;). A drawing split across two warehouses gets a row for each. The Drawing name itself is inside the row (open it) rather than in the table, to leave room for Delivery Weight." },
 			{ name: "Completed (Nos)", note: "Pieces booked into finished goods by the Final Stock Entry." },
 			{ name: "Delivered (Nos)", note: "On submitted Delivery Notes, net of any returns." },
 			{ name: "In Draft DN (Nos)", note: "Already on a Delivery Note that is still a draft. These come off Available, so the same pieces cannot be put on two notes." },
 			{ name: "Available (Nos)", note: "In stock in that warehouse, less what draft notes hold — the most you can plan now." },
 			{ name: "Delivery Plan (Nos)", note: "The one column you type in: how many pieces of that drawing to send now. Whole pieces, up to Available. Everything else on the row is read-only and filled for you." },
+			{ name: "Delivery Weight (Kg)", note: "Fills in as you type Delivery Plan (Nos): the Kg of those pieces, worked out <b>exactly as the Delivery Note will price them</b> — pieces × that warehouse's Kg per piece, and sending every piece in the warehouse takes its exact Kg (so nothing is left over from rounding). What you see here is what the note will carry. The Create Delivery confirmation shows it per drawing and in total." },
+			{ name: "Weight (inside the row)", note: "Open a row to see four more figures: <b>Cust Wt per Pcs</b> and <b>Total Cust Wt</b> (the customer's weight), and <b>Stock Wt per Pcs</b> and <b>Total Stock Wt</b> (the weight the Final Stock Entry actually booked). Both totals are over the Completed pieces, so they compare like with like and do not change as pieces are delivered. They differ only where the Final Stock Entry booked the pieces at an edited weight." },
 		],
 		steps: [
 			"Open the <b>Delivery Plan</b> tab on a submitted Sales Order.",

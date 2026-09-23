@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-23 20:07:19_
+_Generated: 2026-09-23 20:17:25_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -191,8 +191,8 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `refresh_delivery_plan` | 166 |
-| `create_delivery_from_plan` | 229 |
+| `refresh_delivery_plan` | 208 |
+| `create_delivery_from_plan` | 272 |
 ## selling_management/mapping.py
 
 | Method | Line |

@@ -111,6 +111,17 @@ def _run():
     check("  the grid fits its 11-column budget", total <= 11, True)
     check("  and Delivery Plan (Nos) is not the column it drops",
           "delivery_plan_qty" in shown, True)
+    # Drawing left the grid to make room: DUNO and FG Batch already name the drawing,
+    # and it is still in the row. Delivery Weight is the column that needed the room.
+    check("  nor Delivery Weight (Kg)", "delivery_weight" in shown, True)
+    check("  Delivery Weight is set in the browser, so it may change after submit",
+          bool(child.get_field("delivery_weight").allow_on_submit), True)
+    for fn in ("cust_weight_per_pcs", "total_cust_weight", "stock_weight_per_pcs",
+               "total_stock_weight"):
+        f = child.get_field(fn)
+        check("  %s is in the row, read-only, not the grid" % fn,
+              (bool(f), bool(f and f.read_only), bool(f and f.in_list_view)),
+              (True, True, False))
     for fn in ("completed_qty", "delivered_qty", "draft_qty", "available_qty", "fg_batch"):
         check("  %s is read-only" % fn, bool(child.get_field(fn).read_only), True)
     check("  delivery_plan_qty is editable after submit",
@@ -139,6 +150,40 @@ def _run():
     check("  Refresh stores one row per (batch, warehouse)", len(_stored(so)), len(rows))
 
     print()
+    print("=== 2b. Weights ===")
+    from manufyxinvenzaerp.production_management.fg_stock import (
+        _price_nos, kg_for_nos, planned_kg_per_nos,
+    )
+    for r in rows:
+        tag = r["duno_mark_no"]
+        check("  %s: Cust Wt per Pcs is the drawing's own figure" % tag,
+              flt(r["cust_weight_per_pcs"], 3),
+              flt(planned_kg_per_nos(r["drawing"], r["fg_batch"]), 3))
+        # Both totals over the Completed pieces, so they compare like with like.
+        check("  %s: Total Cust Wt = per pcs x Completed" % tag,
+              flt(r["total_cust_weight"], 3),
+              flt(r["cust_weight_per_pcs"] * r["completed_qty"], 3))
+        check("  %s: Stock Wt per Pcs = Total Stock Wt / Completed" % tag,
+              flt(r["stock_weight_per_pcs"], 3),
+              flt(r["total_stock_weight"] / r["completed_qty"], 3) if r["completed_qty"] else 0.0)
+
+    # Delivery Weight must be the note's own pricing, or the grid shows one weight and
+    # the note carries another. Checked through a saved plan, which _refresh re-prices.
+    w = next(r for r in rows if flt(r["available_qty"]) >= 2)
+    frappe.db.set_value("Sales Order Delivery Plan",
+                        {"parent": so, "fg_batch": w["fg_batch"], "warehouse": w["warehouse"]},
+                        "delivery_plan_qty", 1)
+    _refresh(so)
+    kept = {(x.fg_batch, x.warehouse): x for x in _stored(so)}[(w["fg_batch"], w["warehouse"])]
+    check("  Delivery Weight of a saved plan = kg_for_nos, the note's own pricing",
+          flt(kept.delivery_weight, 3), flt(kg_for_nos(w["fg_batch"], w["warehouse"], 1), 3))
+    # The last-piece rule: every piece in the warehouse takes its exact Kg, whatever
+    # the per-piece ratio would round to.
+    check("  planning every piece in stock gives exactly the stock Kg",
+          _price_nos(w["stock_nos"], w["stock_kg"], w["stock_nos"]), flt(w["stock_kg"], 3))
+    _refresh(so, keep_plan=False)
+
+    print()
     print("=== 3. Create Delivery ===")
     target = next(r for r in rows if flt(r["available_qty"]) >= 2)
     plan = [{"fg_batch": target["fg_batch"], "warehouse": target["warehouse"],
@@ -160,6 +205,9 @@ def _run():
     from manufyxinvenzaerp.production_management.fg_stock import kg_for_nos
     check("  Kg priced by the batch, as a hand-made note would be",
           flt(row.qty, 3), flt(kg_for_nos(target["fg_batch"], target["warehouse"], 2), 3))
+    from manufyxinvenzaerp.selling_management.delivery_plan import delivery_weight
+    check("  and it is the Delivery Weight the plan showed for those pieces",
+          flt(row.qty, 3), flt(delivery_weight(target, 2), 3))
 
     after = {(r.fg_batch, r.warehouse): r for r in _stored(so)}[(target["fg_batch"], target["warehouse"])]
     check("  the pieces move to In Draft DN", flt(after.draft_qty), 2.0)

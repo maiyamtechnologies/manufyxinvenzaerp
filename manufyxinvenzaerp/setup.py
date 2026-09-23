@@ -3541,13 +3541,16 @@ frappe.ui.form.on("Sales Order", {
             return;
         }
         var total = rows.reduce(function(a, r) { return a + flt(r.delivery_plan_qty); }, 0);
+        var total_kg = rows.reduce(function(a, r) { return a + flt(r.delivery_weight); }, 0);
         var lines = rows.map(function(r) {
             return "<li>" + frappe.utils.escape_html(r.duno_mark_no || r.drawing)
                 + " &mdash; " + flt(r.delivery_plan_qty) + " " + __("Nos")
+                + ", " + format_number(flt(r.delivery_weight), null, 3) + " " + __("Kg")
                 + " <span class='text-muted'>(" + frappe.utils.escape_html(r.fg_batch) + ")</span></li>";
         }).join("");
         frappe.confirm(
-            __("Create a draft Delivery Note for {0} Nos across {1} drawing(s)?", [total, rows.length])
+            __("Create a draft Delivery Note for {0} Nos, {1} Kg, across {2} drawing(s)?",
+               [total, format_number(total_kg, null, 3), rows.length])
                 + "<ul style='margin-top:8px'>" + lines + "</ul>",
             function() {
                 frappe.call({
@@ -3579,28 +3582,46 @@ frappe.ui.form.on("Sales Order", {
     },
 });
 
+// The Kg for `nos` pieces out of a warehouse holding stock_nos / stock_kg -- a copy of
+// fg_stock._price_nos, which is what the Delivery Note prices its rows with. Kept
+// line for line the same so the Delivery Weight shown while typing is the weight the
+// note will carry: the ratio is NOT rounded before multiplying, and taking every piece
+// in the warehouse takes its exact Kg (the last-piece rule). The server re-prices the
+// note anyway; this is so the preview does not disagree with it.
+function mfx_price_nos(stock_nos, stock_kg, nos) {
+    stock_nos = flt(stock_nos, 3);
+    stock_kg = flt(stock_kg, 3);
+    nos = flt(nos, 3);
+    if (nos <= 0 || stock_nos <= 0) return 0;
+    if (nos === stock_nos) return stock_kg;
+    return flt(nos * stock_kg / stock_nos, 3);
+}
+
 frappe.ui.form.on("Sales Order Delivery Plan", {
     delivery_plan_qty(frm, cdt, cdn) {
         // A hint while typing; the server is what refuses. Whole pieces only, and no
         // more than is available -- the same two rules create_delivery_from_plan checks.
+        // Each branch prices the quantity it settles on, rather than relying on the
+        // set_value to fire this handler again: it does not fire when the corrected
+        // value happens to equal the old one, and the weight would be left stale.
         var row = locals[cdt][cdn];
         var qty = flt(row.delivery_plan_qty);
         if (qty < 0) {
-            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", 0);
-            return;
-        }
-        if (qty !== Math.floor(qty)) {
+            qty = 0;
+        } else if (qty !== Math.floor(qty)) {
             frappe.show_alert({ message: __("Delivery Plan is whole pieces."), indicator: "orange" });
-            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", Math.floor(qty));
-            return;
-        }
-        if (qty > flt(row.available_qty)) {
+            qty = Math.floor(qty);
+        } else if (qty > flt(row.available_qty)) {
             frappe.show_alert({
                 message: __("{0}: only {1} Nos available.", [row.duno_mark_no || row.drawing, flt(row.available_qty)]),
                 indicator: "orange",
             });
-            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", flt(row.available_qty));
+            qty = flt(row.available_qty);
         }
+        if (qty !== flt(row.delivery_plan_qty)) {
+            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", qty);
+        }
+        frappe.model.set_value(cdt, cdn, "delivery_weight", mfx_price_nos(row.stock_nos, row.stock_kg, qty));
     },
 });
 """.strip()

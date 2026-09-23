@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 20:07:19_
+_Generated: 2026-09-23 20:17:25_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 20:07:19_
 
 ## Python files
 
-_Total: 385_
+_Total: 387_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -234,6 +234,8 @@ _Total: 385_
 - tests/_dp_hook_tmp.py
 - tests/_dp_order_tmp.py
 - tests/_dp_try_tmp.py
+- tests/_dpw_apply_tmp.py
+- tests/_dpw_price_tmp.py
 - tests/_drw2_tmp.py
 - tests/_drw_tmp.py
 - tests/find_cascade_fixture.py
@@ -1485,17 +1487,19 @@ Functions:
 ### selling_management/delivery_plan.py
 Functions:
   - 45:_completed_nos:
-  - 60:_dn_nos:
-  - 78:_draft_notes:
-  - 92:_natural_key:
-  - 97:build_plan_rows:
-  - 147:_key:
-  - 151:_write_rows:
-  - 166:refresh_delivery_plan:
-  - 178:_refresh:
-  - 206:refresh_plans_for_batches:
-  - 229:create_delivery_from_plan:
-  - 291:_build_note:
+  - 60:_booked_kg:
+  - 77:delivery_weight:
+  - 88:_dn_nos:
+  - 106:_draft_notes:
+  - 120:_natural_key:
+  - 125:build_plan_rows:
+  - 189:_key:
+  - 193:_write_rows:
+  - 208:refresh_delivery_plan:
+  - 220:_refresh:
+  - 249:refresh_plans_for_batches:
+  - 272:create_delivery_from_plan:
+  - 334:_build_note:
 
 ### selling_management/mapping.py
 Functions:
@@ -1554,31 +1558,31 @@ Functions:
   - 3264:create_so_custom_fields:
   - 3400:create_so_client_script:
   - 3421:create_so_delivery_plan_fields:
-  - 3609:create_so_delivery_plan_script:
-  - 3625:create_bom_client_script:
-  - 3645:create_production_plan_custom_fields:
-  - 3963:layout_production_plan_item_grid:
-  - 4025:create_production_plan_client_script:
-  - 4298:create_stock_entry_custom_fields:
-  - 4559:hide_duplicate_sco_field:
-  - 4586:create_stock_entry_client_script:
-  - 4623:create_doctype_label_translations:
-  - 4646:remove_sco_purchase_order_mandatory:
-  - 4657:add_sco_working_status:
-  - 4695:hide_sco_job_worker_warehouse:
-  - 4724:hide_sco_unused_tabs:
-  - 4750:hide_sco_amount_fields:
-  - 4778:make_sco_job_worker_conditional:
-  - 4813:create_sco_custom_fields:
-  - 5548:create_sco_client_script:
-  - 5564:create_sco_ops_client_script:
-  - 5580:create_soe_client_script:
-  - 5596:create_manufacturing_settings_custom_fields:
-  - 5635:create_material_planning_auto_purchase_fields:
-  - 5698:create_payment_request_custom_fields:
-  - 5780:create_fg_sales_custom_fields:
-  - 5885:create_fg_property_setters:
-  - 5924:set_fg_settings_defaults:
+  - 3630:create_so_delivery_plan_script:
+  - 3646:create_bom_client_script:
+  - 3666:create_production_plan_custom_fields:
+  - 3984:layout_production_plan_item_grid:
+  - 4046:create_production_plan_client_script:
+  - 4319:create_stock_entry_custom_fields:
+  - 4580:hide_duplicate_sco_field:
+  - 4607:create_stock_entry_client_script:
+  - 4644:create_doctype_label_translations:
+  - 4667:remove_sco_purchase_order_mandatory:
+  - 4678:add_sco_working_status:
+  - 4716:hide_sco_job_worker_warehouse:
+  - 4745:hide_sco_unused_tabs:
+  - 4771:hide_sco_amount_fields:
+  - 4799:make_sco_job_worker_conditional:
+  - 4834:create_sco_custom_fields:
+  - 5569:create_sco_client_script:
+  - 5585:create_sco_ops_client_script:
+  - 5601:create_soe_client_script:
+  - 5617:create_manufacturing_settings_custom_fields:
+  - 5656:create_material_planning_auto_purchase_fields:
+  - 5719:create_payment_request_custom_fields:
+  - 5801:create_fg_sales_custom_fields:
+  - 5906:create_fg_property_setters:
+  - 5945:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -1784,6 +1788,14 @@ Functions:
 Functions:
   - 9:show:
   - 21:run:
+
+### tests/_dpw_apply_tmp.py
+Functions:
+  - 3:run:
+
+### tests/_dpw_price_tmp.py
+Functions:
+  - 3:run:
 
 ### tests/_drw2_tmp.py
 Functions:
@@ -2205,7 +2217,7 @@ Functions:
   - 59:_stored:
   - 65:run:
   - 75:_run:
-  - 208:_summary:
+  - 256:_summary:
 
 ### tests/verify_deploy_log.py
 Functions:
@@ -3113,8 +3125,8 @@ Functions:
 - `selling_management/delivery_note.py:421` — `get_fg_rows_kg`
 - `selling_management/delivery_note.py:435` — `get_fg_batches`
 - `selling_management/sales_invoice.py:351` — `get_fg_row_kg`
-- `selling_management/delivery_plan.py:166` — `refresh_delivery_plan`
-- `selling_management/delivery_plan.py:229` — `create_delivery_from_plan`
+- `selling_management/delivery_plan.py:208` — `refresh_delivery_plan`
+- `selling_management/delivery_plan.py:272` — `create_delivery_from_plan`
 
 ## hooks.py — doc_events
 

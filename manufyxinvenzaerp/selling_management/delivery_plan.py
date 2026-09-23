@@ -57,6 +57,34 @@ def _completed_nos(batch_no):
     )[0][0], 3)
 
 
+def _booked_kg(batch_no):
+    """Kg booked into the batch by submitted Final Stock Entries -- the weight the
+    Completed pieces were taken into stock at. Same rows as _completed_nos, so the two
+    always describe the same pieces."""
+    return flt(frappe.db.sql(
+        """
+        SELECT COALESCE(SUM(sed.qty), 0)
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON se.name = sed.parent
+        WHERE se.docstatus = 1 AND se.purpose = 'Manufacture'
+          AND sed.is_finished_item = 1 AND IFNULL(sed.t_warehouse, '') != ''
+          AND {match}
+        """.format(match=fg_stock._batch_row_match("sed")),
+        {"batch": batch_no},
+    )[0][0], 3)
+
+
+def delivery_weight(row, qty):
+    """Kg for `qty` pieces of a plan row, priced as the Delivery Note will price them.
+
+    fg_stock._price_nos is the exact function compute_fg_rows prices a note row with
+    (through kg_for_nos): pieces x Kg per piece on the unrounded ratio, and taking
+    every piece in the warehouse takes the exact Kg there. Anything else here would be
+    a second opinion on the weight that the note would then contradict.
+    """
+    return fg_stock._price_nos(row.get("stock_nos"), row.get("stock_kg"), qty)
+
+
 def _dn_nos(batch_no, docstatus):
     """{warehouse: Nos} on Delivery Note rows of the batch at one docstatus.
 
@@ -119,6 +147,12 @@ def build_plan_rows(sales_order):
         delivered = flt(sum(_dn_nos(b.name, 1).values()), 3)
         draft_by_wh = _dn_nos(b.name, 0)
         stock_by_wh = fg_stock.fg_batch_nos_by_warehouse(b.name)
+
+        # Both totals are over the Completed pieces, so the customer's weight and the
+        # weight actually booked can be compared like with like -- and neither moves
+        # as pieces are delivered, which would make the comparison mean nothing.
+        cust_per_pcs = flt(fg_stock.planned_kg_per_nos(b.custom_drawing, b.name), 3)
+        booked_kg = _booked_kg(b.name)
         base = {
             "drawing": b.custom_drawing,
             "duno_mark_no": b.custom_duno_mark_no or "",
@@ -127,15 +161,23 @@ def build_plan_rows(sales_order):
             "fg_batch": b.name,
             "completed_qty": completed,
             "delivered_qty": delivered,
+            "cust_weight_per_pcs": cust_per_pcs,
+            "total_cust_weight": flt(cust_per_pcs * completed, 3),
+            "total_stock_weight": booked_kg,
+            "stock_weight_per_pcs": flt(booked_kg / completed, 3) if completed else 0.0,
         }
         if not stock_by_wh:
             rows.append(dict(base, warehouse="", draft_qty=flt(sum(draft_by_wh.values()), 3),
-                             available_qty=0.0))
+                             available_qty=0.0, stock_nos=0.0, stock_kg=0.0))
             continue
         for wh, nos in sorted(stock_by_wh.items()):
             draft = flt(draft_by_wh.get(wh), 3)
+            # This warehouse's own Nos and Kg: what Delivery Weight is priced against,
+            # in the browser as the plan is typed and here for a kept plan.
+            stock = fg_stock.fg_batch_available(b.name, wh)
             rows.append(dict(base, warehouse=wh, draft_qty=draft,
-                             available_qty=flt(max(nos - draft, 0), 3)))
+                             available_qty=flt(max(nos - draft, 0), 3),
+                             stock_nos=flt(stock["nos"], 3), stock_kg=flt(stock["kg"], 3)))
 
     rows.sort(key=lambda r: (_natural_key(r["duno_mark_no"]), r["fg_batch"], r["warehouse"]))
     return rows
@@ -199,6 +241,7 @@ def _refresh(sales_order, keep_plan=True):
     rows = build_plan_rows(sales_order)
     for r in rows:
         r["delivery_plan_qty"] = min(kept.get(_key(r), 0.0), r["available_qty"])
+        r["delivery_weight"] = delivery_weight(r, r["delivery_plan_qty"])
     _write_rows(sales_order, rows)
     return rows
 
