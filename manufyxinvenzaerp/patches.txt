@@ -21,3 +21,4 @@ manufyxinvenzaerp.patches.v1.fix_mip_drawing_weight_shares
 manufyxinvenzaerp.patches.v1.backfill_fg_entry_mip_ref
 manufyxinvenzaerp.patches.v1.rescale_duno_calculated_weight
 manufyxinvenzaerp.patches.v1.repair_batch_sec_qty_stranded
+manufyxinvenzaerp.patches.v1.backfill_soe_wt_per_pcs

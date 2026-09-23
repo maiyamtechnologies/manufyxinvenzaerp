@@ -44,10 +44,35 @@ def check(label, got, want):
     print("  %-4s %-54s got=%r want=%r" % ("OK" if ok else "FAIL", label, got, want))
 
 
+def _bookable_sco():
+    """A submitted job whose raw material has actually been sent.
+
+    This used to take the first submitted order it found, which is fine until that
+    order is one that may not book finished goods yet. Finished goods now wait for
+    the transfer legs to finish (_pending_transfer_block in subcontracting.py), and
+    on this site the first submitted order is SC-ORD-2026-00004 -- the job that was
+    completed with 472.615 Kg of CNC material still in stores, which is exactly the
+    job that rule exists to stop. The test then read a correct refusal as a failure
+    of partial booking, which is a different feature entirely.
+
+    Skipping those keeps this test about what it is about. If every job is blocked
+    there is nothing here to measure, and run() says so rather than inventing one.
+    """
+    from manufyxinvenzaerp.subcontracting_management.subcontracting import (
+        _pending_transfer_block,
+    )
+
+    for name in frappe.get_all("Subcontracting Order",
+                               filters={"docstatus": 1}, pluck="name", order_by="name"):
+        if not _pending_transfer_block(name):
+            return name
+    return None
+
+
 def run():
-    sco = frappe.db.get_value("Subcontracting Order", {"docstatus": 1}, "name")
+    sco = _bookable_sco()
     if not sco:
-        print("=== no submitted Job Work Order on this site ===")
+        print("=== no submitted Job Work Order ready to book on this site ===")
         _wiring()
         _summary()
         return

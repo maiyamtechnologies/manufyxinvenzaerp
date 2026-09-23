@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-22 10:04:43_
+_Generated: 2026-09-23 13:39:24_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -127,7 +127,7 @@ All `@frappe.whitelist()` methods. Call from JS:
 | `update_so_difference_kg` | 5346 |
 | `auto_suggest_consolidate_dimensions` | 5376 |
 | `auto_purchase_from_mp` | 5464 |
-| `complete_batch_mapping` | 5687 |
+| `complete_batch_mapping` | 5722 |
 | `@frappe.validate_and_sanitize_search_inputs` | 984 |
 ## production_management/fg_stock.py
 
@@ -153,9 +153,9 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `get_production_plans_for_sales_order` | 1438 |
-| `@frappe.validate_and_sanitize_search_inputs` | 1463 |
-| `get_job_work_order_for_production_plan` | 1497 |
+| `get_production_plans_for_sales_order` | 1481 |
+| `@frappe.validate_and_sanitize_search_inputs` | 1506 |
+| `get_job_work_order_for_production_plan` | 1540 |
 ## production_plan_management/production_plan.py
 
 | Method | Line |
@@ -209,11 +209,11 @@ All `@frappe.whitelist()` methods. Call from JS:
 | Method | Line |
 |--------|------|
 | `unlink_excess_claim` | 1129 |
-| `refresh_weight_summary` | 1329 |
-| `get_mip_batch_plan_html` | 1505 |
-| `download_mip_batch_plan_pdf` | 1511 |
-| `get_mip_consolidate_plan_html` | 1650 |
-| `download_mip_consolidate_plan_pdf` | 1656 |
+| `refresh_weight_summary` | 1372 |
+| `get_mip_batch_plan_html` | 1548 |
+| `download_mip_batch_plan_pdf` | 1554 |
+| `get_mip_consolidate_plan_html` | 1693 |
+| `download_mip_consolidate_plan_pdf` | 1699 |
 | `check_mip_batch_change_allowed` | 237 |
 | `check_mip_raw_materials_refreshable` | 245 |
 | `refresh_mip_raw_materials_manual` | 259 |
@@ -255,20 +255,20 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `check_soe_completion_before_confirm` | 1148 |
-| `` | 2458 |
-| `` | 2461 |
-| `` | 2464 |
-| `` | 2467 |
-| `` | 2470 |
+| `check_soe_completion_before_confirm` | 1242 |
+| `` | 2552 |
+| `` | 2555 |
+| `` | 2558 |
+| `` | 2561 |
+| `` | 2564 |
 | `create_sco_from_production_plan` | 27 |
 | `create_sco_and_mip_from_production_plan` | 271 |
 | `delete_sco_and_mip_for_production_plan` | 296 |
 | `` | 376 |
 | `create_supplier_operation_entries` | 379 |
 | `get_soe_summary` | 401 |
-| `get_final_stock_entry_preview` | 773 |
-| `create_finished_goods_entry` | 867 |
+| `get_final_stock_entry_preview` | 839 |
+| `create_finished_goods_entry` | 937 |
 ## tests/test_whitelist_coverage.py
 
 | Method | Line |

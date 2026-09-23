@@ -8,6 +8,7 @@
   "date",
   "drawing",
   "qty_nos",
+  "wt_per_pcs_kg",
   "weight_kg",
   "remark"
  ],
@@ -35,12 +36,24 @@
    "reqd": 1
   },
   {
+   "fieldname": "wt_per_pcs_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "columns": 1,
+   "precision": "3",
+   "read_only": 1,
+   "label": "Wt per Pcs (Kg)",
+   "description": "The linked Drawing's per-piece weight (Total Weight / No of Qty to Manufacture). Shown so this row's Total Weight can be read against the Transferred (Kg) on the Drawing Details row above, which is a whole-drawing figure."
+  },
+  {
    "fieldname": "weight_kg",
    "fieldtype": "Float",
    "in_list_view": 1,
+   "columns": 1,
+   "precision": "3",
    "read_only": 1,
-   "label": "Weight (Kg)",
-   "description": "Auto-calculated: Qty (Nos) x the linked Drawing's per-piece weight (Total Weight / No of Qty to Manufacture)."
+   "label": "Total Weight (Kg)",
+   "description": "Auto-calculated: Qty (Nos) x Wt per Pcs (Kg). This is the figure that adds up into Total Consumed (Kg), which in turn seeds the next operation's Available to Consume (Kg) -- so it stays the row TOTAL and must not be repurposed to hold the per-piece weight."
   },
   {
    "fieldname": "remark",
