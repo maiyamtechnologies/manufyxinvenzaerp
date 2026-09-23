@@ -419,9 +419,29 @@ def get_soe_summary(sco_name):
         filters={"parent": ["in", [d.name for d in soes]]},
         fields=["parent", "drawing", "customer_drawing_number", "duno_mark_no",
                 "qty_to_manufacture", "completed_qty_nos",
-                "available_to_consume_nos", "transferred_weight_kg"],
+                "available_to_consume_nos", "transferred_weight_kg",
+                "planned_weight_kg"],
         order_by="idx asc",
     )
+
+    # What each drawing actually consumed on each operation, in Kg, from the
+    # consumption log itself rather than re-derived from pieces x a unit weight.
+    # The log is what total_consumed_kg is built from, so the drawings popup and the
+    # operation's own total cannot disagree. Keyed per (operation, drawing) because
+    # one drawing appears on every operation in the routing.
+    consumed_kg = {}
+    for row in frappe.get_all(
+        "SOE Consumption Log",
+        filters={"parent": ["in", [d.name for d in soes]]},
+        fields=["parent", "drawing", "weight_kg"],
+    ):
+        if not row.drawing:
+            continue
+        key = (row.parent, row.drawing)
+        consumed_kg[key] = flt(consumed_kg.get(key, 0)) + flt(row.weight_kg)
+
+    for dr in drawing_rows:
+        dr["consumed_kg"] = flt(consumed_kg.get((dr.parent, dr.drawing), 0), 3)
 
     details_map = {}
     for dr in drawing_rows:

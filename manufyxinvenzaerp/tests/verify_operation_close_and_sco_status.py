@@ -168,8 +168,21 @@ def run():
     soe_js = frappe.db.get_value(
         "Client Script", "Supplier Operation Entry-consumption-logic", "script"
     ) or ""
+    # Matched on the call, not on one exact spelling of it. This read
+    # 'save("Submit")' with the closing bracket, which stopped being true the moment
+    # c0582e3 gave the call its callbacks -- save("Submit", function() {...}, ...) --
+    # and the check then passed only on sites whose installed Client Script predated
+    # that commit. It went green on stale data and red on current code, which is
+    # exactly backwards.
     check("setting Completed asks before submitting",
-          bool(re.search(r"frappe\.confirm", soe_js)) and 'save("Submit")' in soe_js, True)
+          bool(re.search(r"frappe\.confirm", soe_js))
+          and bool(re.search(r'save\(\s*"Submit"', soe_js)), True)
+    # What c0582e3 actually added: the operation is validated server-side BEFORE the
+    # question is put, so a confirmation is never offered for a submit that would fail.
+    check("  and validates the operation before asking",
+          "check_soe_completion_before_confirm" in soe_js
+          and soe_js.index("check_soe_completion_before_confirm")
+              < soe_js.index("frappe.confirm"), True)
 
     frappe.db.rollback()
     print()

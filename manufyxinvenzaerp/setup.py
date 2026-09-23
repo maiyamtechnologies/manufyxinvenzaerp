@@ -1662,6 +1662,7 @@ def after_install():
     remove_sco_purchase_order_mandatory()
     hide_sco_job_worker_warehouse()
     hide_sco_unused_tabs()
+    hide_sco_amount_fields()
     make_sco_job_worker_conditional()
     add_sco_working_status()
     create_sco_custom_fields()
@@ -1727,6 +1728,7 @@ def after_migrate():
     remove_sco_purchase_order_mandatory()
     hide_sco_job_worker_warehouse()
     hide_sco_unused_tabs()
+    hide_sco_amount_fields()
     make_sco_job_worker_conditional()
     add_sco_working_status()
     create_sco_custom_fields()
@@ -4532,6 +4534,34 @@ def hide_sco_unused_tabs():
     frappe.db.commit()
 
 
+def hide_sco_amount_fields():
+    """Hide 'Total Estimated Taxes' and 'Grand Total' on the Job Work Order.
+
+    Both are ERPNext's own costing of a subcontracting order, and on this site's flow
+    they say nothing true. A PP-flow order is priced per drawing in Kg through the
+    Drawing Items table's rate/job work amount, not through the item rates and the tax
+    table these two total up -- the Taxes table is not used, so Total Estimated Taxes
+    reads 0 on every order, and Grand Total repeats a figure that does not include the
+    job work being paid for.
+
+    Hidden, not removed: same as hide_sco_unused_tabs, this is two Property Setters and
+    deleting them brings the fields back with their data intact. Safe to hide outright
+    because neither is reqd -- the reqd-before-hidden dance in
+    hide_sco_job_worker_warehouse does not apply here (verified against the meta).
+    """
+    for fieldname in ("total_taxes", "base_grand_total"):
+        frappe.make_property_setter(
+            {
+                "doctype": "Subcontracting Order",
+                "fieldname": fieldname,
+                "property": "hidden",
+                "value": 1,
+                "property_type": "Check",
+            }
+        )
+    frappe.db.commit()
+
+
 def make_sco_job_worker_conditional():
     """Job Worker (core field 'supplier') and its dependent 'supplier_name' (Job Worker
     Name, fetch_from supplier.supplier_name) are only meaningful when the SCO's
@@ -4981,12 +5011,24 @@ function render_soe_summary(frm) {
 
 function show_drawing_popup(soe) {
     var drawings = soe.drawing_details || [];
+    // Every piece count gets its weight beside it. Pieces alone cannot be reconciled
+    // against anything else on the job -- the transfer, the operation totals and the
+    // finished-goods entry are all in Kg -- so a popup that answered only in Nos left
+    // the reader converting in their head against a per-piece weight held elsewhere.
+    // Planned is the drawing's own weight, Transferred is what reached the supplier
+    // for it, and Consumed comes from this operation's consumption log.
+    var kg = function(v) {
+        return "<td class='text-right text-muted'>" + format_number(flt(v || 0), null, 3) + "</td>";
+    };
     var drw_rows = drawings.map(function(d) {
         return "<tr>"
             + "<td>" + frappe.utils.escape_html(d.drawing || "") + "</td>"
             + "<td>" + frappe.utils.escape_html(d.customer_drawing_number || "") + "</td>"
             + "<td class='text-right'>" + format_number(flt(d.qty_to_manufacture || 0), null, 3) + "</td>"
+            + kg(d.planned_weight_kg)
+            + kg(d.transferred_weight_kg)
             + "<td class='text-right'>" + format_number(flt(d.completed_qty_nos || 0), null, 3) + "</td>"
+            + kg(d.consumed_kg)
             + "</tr>";
     }).join("");
     var content = !drawings.length
@@ -4995,7 +5037,10 @@ function show_drawing_popup(soe) {
             + "<thead><tr>"
             + "<th>Drawing</th><th>Cust Drawing No</th>"
             + "<th class='text-right'>Qty to Mfg (Nos)</th>"
+            + "<th class='text-right'>Planned (Kg)</th>"
+            + "<th class='text-right'>Transferred (Kg)</th>"
             + "<th class='text-right'>Completed (Nos)</th>"
+            + "<th class='text-right'>Consumed (Kg)</th>"
             + "</tr></thead>"
             + "<tbody>" + drw_rows + "</tbody>"
             + "</table>";
@@ -5177,13 +5222,20 @@ function _sync_drawing_nos(frm) {
 }
 
 function _calc_consumption_weight_kg(frm, cdt, cdn) {
-\t// Weight (Kg) for a consumption log row = Qty (Nos) x the linked Drawing's
+\t// Total Weight (Kg) for a consumption log row = Qty (Nos) x the linked Drawing's
 \t// per-piece weight (Drawing.total_weight / Drawing.no_of_qty_to_manufacture).
 \t// This feeds total_consumed_kg (see subcontracting.py's Op-1 over-consume
 \t// guard), which in turn seeds the NEXT operation's available_to_consume_kg --
 \t// so it must be auto-derived, not left for the inspector to type by hand.
+\t//
+\t// The per-piece figure is now kept as well, in wt_per_pcs_kg. It was always
+\t// computed here and thrown away, which left the log showing a row total with
+\t// nothing to read it against: 1,790.089 Kg for 4 Nos beside a Transferred (Kg)
+\t// of 6,846.680 on the drawing row looks like a mismatch until you know one is
+\t// per-consumption and the other is the whole drawing.
 \tvar row = locals[cdt][cdn];
 \tif (!row.drawing || !flt(row.qty_nos)) {
+\t\tfrappe.model.set_value(cdt, cdn, "wt_per_pcs_kg", 0);
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", 0);
 \t\treturn;
 \t}
@@ -5191,6 +5243,9 @@ function _calc_consumption_weight_kg(frm, cdt, cdn) {
 \t\tvar d = r.message || {};
 \t\tvar total_qty = flt(d.no_of_qty_to_manufacture);
 \t\tvar weight_per_nos = total_qty ? flt(d.total_weight) / total_qty : 0;
+\t\tfrappe.model.set_value(cdt, cdn, "wt_per_pcs_kg", flt(weight_per_nos, 3));
+\t\t// Off the unrounded per-piece weight, not the rounded display value: rounding
+\t\t// first and multiplying by the count carries the error up by that many pieces.
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", flt(weight_per_nos * flt(row.qty_nos), 3));
 \t});
 }

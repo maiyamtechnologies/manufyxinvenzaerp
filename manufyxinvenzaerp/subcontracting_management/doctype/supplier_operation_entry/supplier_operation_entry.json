@@ -121,15 +121,15 @@
    "fieldname": "available_to_consume_kg",
    "fieldtype": "Float",
    "label": "Available to Consume (Kg)",
-   "read_only": 1,
-   "hidden": 1
+   "precision": "3",
+   "read_only": 1
   },
   {
    "fieldname": "total_consumed_kg",
    "fieldtype": "Float",
    "label": "Total Consumed (Kg)",
-   "read_only": 1,
-   "hidden": 1
+   "precision": "3",
+   "read_only": 1
   },
   {
    "fieldname": "total_available_nos",
