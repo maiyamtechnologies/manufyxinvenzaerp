@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 13:39:24_
+_Generated: 2026-09-23 13:58:08_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-23 13:39:24_
 
 ## Python files
 
-_Total: 370_
+_Total: 368_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -217,16 +217,14 @@ _Total: 370_
 - subcontracting_management/subcontracting.py
 - templates/__init__.py
 - templates/pages/__init__.py
-- tests/_apply_tmp.py
-- tests/_check_tmp.py
 - tests/_chk_tmp.py
 - tests/create_full_test_entry.py
 - tests/create_test_data.py
+- tests/_drw2_tmp.py
+- tests/_drw_tmp.py
 - tests/find_cascade_fixture.py
 - tests/find_clean_mp.py
 - tests/_find_mip_excess.py
-- tests/_fld_tmp.py
-- tests/_grid_budget_tmp.py
 - tests/__init__.py
 - tests/_mfx_probe.py
 - tests/move_fixtures_to_custom_json.py
@@ -1516,15 +1514,15 @@ Functions:
   - 4537:hide_sco_amount_fields:
   - 4565:make_sco_job_worker_conditional:
   - 4600:create_sco_custom_fields:
-  - 5287:create_sco_client_script:
-  - 5303:create_sco_ops_client_script:
-  - 5319:create_soe_client_script:
-  - 5335:create_manufacturing_settings_custom_fields:
-  - 5374:create_material_planning_auto_purchase_fields:
-  - 5437:create_payment_request_custom_fields:
-  - 5519:create_fg_sales_custom_fields:
-  - 5624:create_fg_property_setters:
-  - 5663:set_fg_settings_defaults:
+  - 5314:create_sco_client_script:
+  - 5330:create_sco_ops_client_script:
+  - 5346:create_soe_client_script:
+  - 5362:create_manufacturing_settings_custom_fields:
+  - 5401:create_material_planning_auto_purchase_fields:
+  - 5464:create_payment_request_custom_fields:
+  - 5546:create_fg_sales_custom_fields:
+  - 5651:create_fg_property_setters:
+  - 5690:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -1676,14 +1674,6 @@ Functions:
   - 2568:_build_jc_drawing_rows:
   - 2601:_populate_jcs_for_wo:
 
-### tests/_apply_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_check_tmp.py
-Functions:
-  - 8:run:
-
 ### tests/_chk_tmp.py
 Functions:
   - 2:run:
@@ -1709,6 +1699,14 @@ Functions:
   - 135:make_bom:
   - 171:run:
 
+### tests/_drw2_tmp.py
+Functions:
+  - 3:run:
+
+### tests/_drw_tmp.py
+Functions:
+  - 3:run:
+
 ### tests/find_cascade_fixture.py
 Functions:
   - 4:run:
@@ -1720,14 +1718,6 @@ Functions:
 ### tests/_find_mip_excess.py
 Functions:
   - 4:run:
-
-### tests/_fld_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_grid_budget_tmp.py
-Functions:
-  - 6:run:
 
 ### tests/_mfx_probe.py
 Functions:
@@ -2707,7 +2697,7 @@ Functions:
 Functions:
   - 29:check:
   - 35:run:
-  - 108:_summary:
+  - 147:_summary:
 
 ### tests/verify_soe_summary_available.py
 Functions:

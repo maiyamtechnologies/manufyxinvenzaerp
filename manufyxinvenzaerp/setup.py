@@ -5034,9 +5034,9 @@ function show_drawing_popup(soe) {
             + "<td style='white-space:nowrap'>" + frappe.utils.escape_html(d.drawing || "") + "</td>"
             + "<td>" + frappe.utils.escape_html(d.customer_drawing_number || "") + "</td>"
             + num(d.qty_to_manufacture)
+            + num(d.completed_qty_nos)
             + num(d.planned_weight_kg, true)
             + num(d.transferred_weight_kg, true)
-            + num(d.completed_qty_nos)
             + num(d.consumed_kg, true)
             + "</tr>";
     }).join("");
@@ -5049,9 +5049,9 @@ function show_drawing_popup(soe) {
     var foot = !drawings.length ? "" : "<tfoot><tr style='font-weight:600;background:#f8fafc'>"
         + "<td colspan='2'>Total</td>"
         + num(sum("qty_to_manufacture"))
+        + num(sum("completed_qty_nos"))
         + num(sum("planned_weight_kg"))
         + num(sum("transferred_weight_kg"))
-        + num(sum("completed_qty_nos"))
         + num(sum("consumed_kg"))
         + "</tr></tfoot>";
     var th = function(label, w) {
@@ -5062,17 +5062,34 @@ function show_drawing_popup(soe) {
         ? "<div class='text-muted' style='padding:12px'>No drawings attached to this operation.</div>"
         : "<div style='overflow-x:auto'>"
             + "<table class='table table-bordered table-condensed' style='margin:0;width:100%'>"
-            + "<thead><tr>"
-            + "<th style='white-space:nowrap'>Drawing</th>"
-            + "<th>Cust Drawing No</th>"
-            + th("Qty to Mfg (Nos)", "1%")
-            + th("Planned (Kg)", "1%")
-            + th("Transferred (Kg)", "1%")
-            + th("Completed (Nos)", "1%")
-            + th("Consumed (Kg)", "1%")
-            + "</tr></thead>"
+            // Two banded header rows: pieces and raw material are different questions
+            // and were being read as one. "8 of 8 done, so why is Consumed (Kg) not
+            // the Transferred (Kg)?" is the reasonable reading of a flat row of seven
+            // headings -- the counts and the weights do not answer each other, and
+            // grouping them says so before the numbers do.
+            + "<thead>"
+            + "<tr>"
+            + "<th rowspan='2' style='white-space:nowrap;vertical-align:bottom'>Drawing</th>"
+            + "<th rowspan='2' style='vertical-align:bottom'>Cust Drawing No</th>"
+            + "<th colspan='2' class='text-center' style='white-space:nowrap;background:#f8fafc'>Pieces (Nos)</th>"
+            + "<th colspan='3' class='text-center' style='white-space:nowrap;background:#f8fafc'>Raw Material (Kg)</th>"
+            + "</tr>"
+            + "<tr>"
+            + th("To Make", "1%") + th("Done", "1%")
+            + th("Planned", "1%") + th("Sent to Supplier", "1%") + th("Consumed", "1%")
+            + "</tr>"
+            + "</thead>"
             + "<tbody>" + drw_rows + "</tbody>" + foot
-            + "</table></div>";
+            + "</table></div>"
+            + "<div class='text-muted' style='margin-top:8px;font-size:11px;line-height:1.6'>"
+            + "<b>Pieces and weight answer different questions.</b> Done (Nos) is how many "
+            + "pieces this operation finished. Consumed (Kg) is the raw material those "
+            + "pieces used, at the drawing's own weight per piece &mdash; so finishing every "
+            + "piece consumes the <b>Planned</b> weight, not the <b>Sent</b> weight. "
+            + "Consumed above Sent means more was worked than reached the supplier; below "
+            + "Planned with every piece done means the drawing's weight per piece disagrees "
+            + "with what the job was planned at."
+            + "</div>";
     var dlg = new frappe.ui.Dialog({
         // Seven columns need the room. On the default width the headings wrapped to
         // three lines and the last column was cut off at the edge of the dialog.
@@ -5271,13 +5288,23 @@ function _calc_consumption_weight_kg(frm, cdt, cdn) {
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", 0);
 \t\treturn;
 \t}
-\tfrappe.db.get_value("Drawing", row.drawing, ["total_weight", "no_of_qty_to_manufacture"]).then(function(r) {
-\t\tvar d = r.message || {};
-\t\tvar total_qty = flt(d.no_of_qty_to_manufacture);
-\t\tvar weight_per_nos = total_qty ? flt(d.total_weight) / total_qty : 0;
+\tfrappe.db.get_value("Drawing", row.drawing, ["total_weight"]).then(function(r) {
+\t\t// Drawing.total_weight is ALREADY the raw material for ONE piece -- it is the
+\t\t// sum of that drawing's own item rows, and the job's requirement is built from
+\t\t// it as total_weight x pieces (see subcontracting.py, where SCO Drawing Item
+\t\t// total_weight_kg for 1B3 is 7,160.355 against a drawing total_weight of
+\t\t// 1,790.089 over 4 pieces). Dividing by no_of_qty_to_manufacture, as this did,
+\t\t// divided a per-piece figure by the piece count a second time and understated
+\t\t// every consumption row by exactly that factor: 1B3 logged 447.522 Kg a piece
+\t\t// against a real 1,790.089, so a fully finished operation reported 3,604.179 Kg
+\t\t// consumed against 10,788.533 planned. The giveaway is physical -- 447.522 Kg
+\t\t// of steel cannot yield a 1,756.160 Kg finished piece.
+\t\t//
+\t\t// It understated total_consumed_kg, which seeds the next operation's
+\t\t// available_to_consume_kg, and left the Op-1 over-consume guard measuring
+\t\t// against a figure too small to ever trip.
+\t\tvar weight_per_nos = flt((r.message || {}).total_weight);
 \t\tfrappe.model.set_value(cdt, cdn, "wt_per_pcs_kg", flt(weight_per_nos, 3));
-\t\t// Off the unrounded per-piece weight, not the rounded display value: rounding
-\t\t// first and multiplying by the count carries the error up by that many pieces.
 \t\tfrappe.model.set_value(cdt, cdn, "weight_kg", flt(weight_per_nos * flt(row.qty_nos), 3));
 \t});
 }
