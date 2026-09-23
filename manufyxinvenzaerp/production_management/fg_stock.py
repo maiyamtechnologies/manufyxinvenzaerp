@@ -532,6 +532,12 @@ def on_fg_stock_entry_change(doc, method=None):
 
 	_refresh_mip_loss(doc)
 
+	# The Sales Order's Delivery Plan tab lists what these batches completed and
+	# still hold. Cannot fail this entry: refresh_plans_for_batches catches and logs.
+	from manufyxinvenzaerp.selling_management.delivery_plan import refresh_plans_for_batches
+
+	refresh_plans_for_batches(batches)
+
 
 def _refresh_mip_loss(doc):
 	"""Total the Loss (Kg) of every submitted Final Stock Entry onto the plan.

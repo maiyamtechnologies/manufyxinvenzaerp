@@ -379,6 +379,12 @@ def _update_after_change(doc):
 	for batch_no in batches:
 		fg_stock.refresh_fg_batch(batch_no)
 
+	# Delivered / Available on the Sales Order's Delivery Plan tab. Cannot fail the
+	# note: refresh_plans_for_batches catches and logs.
+	from manufyxinvenzaerp.selling_management.delivery_plan import refresh_plans_for_batches
+
+	refresh_plans_for_batches(batches)
+
 
 def on_submit_delivery_note(doc, method=None):
 	"""Delivery Note on_submit hook (registered in hooks.py).

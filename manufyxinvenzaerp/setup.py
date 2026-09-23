@@ -1643,6 +1643,8 @@ def after_install():
     create_sq_client_script()
     create_so_custom_fields()
     create_so_client_script()
+    create_so_delivery_plan_fields()
+    create_so_delivery_plan_script()
     create_bom_custom_fields()
     create_bom_client_script()
     create_production_plan_custom_fields()
@@ -1709,6 +1711,8 @@ def after_migrate():
     create_sq_client_script()
     create_so_custom_fields()
     create_so_client_script()
+    create_so_delivery_plan_fields()
+    create_so_delivery_plan_script()
     create_bom_custom_fields()
     create_bom_client_script()
     create_production_plan_custom_fields()
@@ -3405,6 +3409,202 @@ def create_so_client_script():
             "view": "Form",
             "enabled": 1,
             "script": SO_CLIENT_SCRIPT,
+        }).insert(ignore_permissions=True)
+    frappe.db.commit()
+
+
+# ── Sales Order: Delivery Plan tab ────────────────────────────────────────────
+# See selling_management/delivery_plan.py for what the tab is and why its rows are
+# derived. A separate function and Client Script from the Drawing Import ones above,
+# so this feature can be found, read and switched off on its own.
+
+def create_so_delivery_plan_fields():
+    create_custom_fields(
+        {
+            "Sales Order": [
+                {
+                    "fieldname": "custom_tab_delivery_plan",
+                    "fieldtype": "Tab Break",
+                    "label": "Delivery Plan",
+                    "insert_after": "custom_so_raw_materials",
+                    # Nothing can be delivered from a draft order, and an empty tab
+                    # on every new order would only raise the question of why.
+                    "depends_on": "eval:doc.docstatus==1",
+                },
+                {
+                    "fieldname": "custom_delivery_plan_section",
+                    "fieldtype": "Section Break",
+                    "label": "Finished Drawings",
+                    "insert_after": "custom_tab_delivery_plan",
+                },
+                {
+                    "fieldname": "custom_delivery_plan",
+                    "fieldtype": "Table",
+                    "label": "Delivery Plan",
+                    "options": "Sales Order Delivery Plan",
+                    "insert_after": "custom_delivery_plan_section",
+                    # Delivery Plan (Nos) is typed on a submitted order.
+                    "allow_on_submit": 1,
+                    # Derived rows. A duplicated or amended order must rebuild its
+                    # own from its own batches, never inherit another order's.
+                    "no_copy": 1,
+                    "description": "Every drawing with pieces booked into finished goods. "
+                                   "Type Delivery Plan (Nos) on the drawings to send, "
+                                   "then Create Delivery.",
+                },
+                {
+                    "fieldname": "custom_delivery_plan_actions",
+                    "fieldtype": "Section Break",
+                    "insert_after": "custom_delivery_plan",
+                },
+                {
+                    "fieldname": "custom_create_delivery",
+                    "fieldtype": "Button",
+                    "label": "Create Delivery",
+                    "insert_after": "custom_delivery_plan_actions",
+                    "allow_on_submit": 1,
+                },
+                {
+                    "fieldname": "custom_delivery_plan_col",
+                    "fieldtype": "Column Break",
+                    "insert_after": "custom_create_delivery",
+                },
+                {
+                    "fieldname": "custom_refresh_delivery_plan",
+                    "fieldtype": "Button",
+                    "label": "Refresh Delivery Plan",
+                    "insert_after": "custom_delivery_plan_col",
+                    "allow_on_submit": 1,
+                },
+            ]
+        },
+        update=True,
+    )
+    frappe.db.commit()
+
+
+SO_DELIVERY_PLAN_SCRIPT_NAME = "Sales Order-delivery-plan"
+
+SO_DELIVERY_PLAN_SCRIPT = """
+frappe.ui.form.on("Sales Order", {
+    refresh(frm) {
+        // The rows are derived from the ledger (delivery_plan.py) -- one per finished
+        // drawing. Adding or deleting one by hand would describe pieces that do not
+        // exist. cannot_add_rows is a runtime grid flag, not a DocField property, so
+        // it has to be set here rather than in the doctype JSON.
+        var grid = frm.fields_dict.custom_delivery_plan && frm.fields_dict.custom_delivery_plan.grid;
+        if (grid) {
+            grid.cannot_add_rows = true;
+            grid.cannot_delete_rows = true;
+            grid.wrapper.find(".grid-add-row, .grid-remove-rows, .grid-remove-all-rows").hide();
+        }
+    },
+
+    custom_refresh_delivery_plan(frm) {
+        if (frm.is_dirty()) {
+            // A Refresh reloads the form, which would drop the plan being typed.
+            frappe.msgprint(__("Save or discard the Delivery Plan you have typed before refreshing."));
+            return;
+        }
+        frappe.call({
+            method: "manufyxinvenzaerp.selling_management.delivery_plan.refresh_delivery_plan",
+            args: { sales_order: frm.doc.name },
+            freeze: true,
+            freeze_message: __("Reading finished goods..."),
+            callback() { frm.reload_doc(); },
+        });
+    },
+
+    custom_create_delivery(frm) {
+        var rows = (frm.doc.custom_delivery_plan || []).filter(function(r) {
+            return flt(r.delivery_plan_qty) > 0;
+        });
+        if (!rows.length) {
+            frappe.msgprint({
+                title: __("Nothing Planned"),
+                message: __("Enter a Delivery Plan (Nos) on at least one drawing first."),
+                indicator: "orange",
+            });
+            return;
+        }
+        var total = rows.reduce(function(a, r) { return a + flt(r.delivery_plan_qty); }, 0);
+        var lines = rows.map(function(r) {
+            return "<li>" + frappe.utils.escape_html(r.duno_mark_no || r.drawing)
+                + " &mdash; " + flt(r.delivery_plan_qty) + " " + __("Nos")
+                + " <span class='text-muted'>(" + frappe.utils.escape_html(r.fg_batch) + ")</span></li>";
+        }).join("");
+        frappe.confirm(
+            __("Create a draft Delivery Note for {0} Nos across {1} drawing(s)?", [total, rows.length])
+                + "<ul style='margin-top:8px'>" + lines + "</ul>",
+            function() {
+                frappe.call({
+                    method: "manufyxinvenzaerp.selling_management.delivery_plan.create_delivery_from_plan",
+                    args: {
+                        sales_order: frm.doc.name,
+                        // Sent from the form, not read back from the saved rows: the
+                        // plan is typed on a submitted order and need not be saved
+                        // first. The server re-checks all of it against the ledger.
+                        plan: rows.map(function(r) {
+                            return { fg_batch: r.fg_batch, warehouse: r.warehouse,
+                                     delivery_plan_qty: r.delivery_plan_qty };
+                        }),
+                    },
+                    freeze: true,
+                    freeze_message: __("Creating Delivery Note..."),
+                    callback(r) {
+                        if (!r.message) return;
+                        // Reload first: the server has moved these pieces to In Draft DN
+                        // and cleared the plan, and the typed values would otherwise sit
+                        // on the form as unsaved changes.
+                        frm.reload_doc().then(function() {
+                            frappe.set_route("Form", "Delivery Note", r.message);
+                        });
+                    },
+                });
+            }
+        );
+    },
+});
+
+frappe.ui.form.on("Sales Order Delivery Plan", {
+    delivery_plan_qty(frm, cdt, cdn) {
+        // A hint while typing; the server is what refuses. Whole pieces only, and no
+        // more than is available -- the same two rules create_delivery_from_plan checks.
+        var row = locals[cdt][cdn];
+        var qty = flt(row.delivery_plan_qty);
+        if (qty < 0) {
+            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", 0);
+            return;
+        }
+        if (qty !== Math.floor(qty)) {
+            frappe.show_alert({ message: __("Delivery Plan is whole pieces."), indicator: "orange" });
+            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", Math.floor(qty));
+            return;
+        }
+        if (qty > flt(row.available_qty)) {
+            frappe.show_alert({
+                message: __("{0}: only {1} Nos available.", [row.duno_mark_no || row.drawing, flt(row.available_qty)]),
+                indicator: "orange",
+            });
+            frappe.model.set_value(cdt, cdn, "delivery_plan_qty", flt(row.available_qty));
+        }
+    },
+});
+""".strip()
+
+
+def create_so_delivery_plan_script():
+    if frappe.db.exists("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME):
+        frappe.db.set_value("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME, "script", SO_DELIVERY_PLAN_SCRIPT)
+        frappe.db.set_value("Client Script", SO_DELIVERY_PLAN_SCRIPT_NAME, "enabled", 1)
+    else:
+        frappe.get_doc({
+            "doctype": "Client Script",
+            "name": SO_DELIVERY_PLAN_SCRIPT_NAME,
+            "dt": "Sales Order",
+            "view": "Form",
+            "enabled": 1,
+            "script": SO_DELIVERY_PLAN_SCRIPT,
         }).insert(ignore_permissions=True)
     frappe.db.commit()
 

@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-23 14:24:35_
+_Generated: 2026-09-23 19:59:10_
 
 ## drawing
 
@@ -119,6 +119,17 @@ _Generated: 2026-09-23 14:24:35_
 | ` before_insert` | no |
 | ` validate` | no |
 | ` _track_rate_change` | no |
+
+---
+
+## sales_order_delivery_plan
+
+| Key | Value |
+|-----|-------|
+| Module | drawing_management |
+| Path | `drawing_management/doctype/sales_order_delivery_plan` |
+| Controller | `drawing_management/doctype/sales_order_delivery_plan/sales_order_delivery_plan.py` |
+| Client script | none |
 
 ---
 

@@ -323,6 +323,41 @@ const ERP_MANUAL_SALES_ORDER_CHILDREN = [
 			{ name: "Submit BOM", note: "Submits BOMs that were created but left in draft. Nothing in this app creates a draft BOM any more — the old <b>Create BOM</b> button did, and it was removed for exactly that reason — so this is only for drafts made by hand or left over from before." },
 		],
 	},
+	{
+		id: "so-delivery-plan",
+		title: "Delivery Plan",
+		kicker: "Sending finished drawings, drawing by drawing",
+		purpose:
+			"An order usually has one finished-goods line — say <i>Fabricated Structurs, 31 Nos</i> — " +
+			"but its pieces are made drawing by drawing, each into its own FG batch. So a delivery is " +
+			"not “this line”, it is “one of 1B1 and three of 1B3”. The <b>Delivery Plan</b> tab lists " +
+			"every drawing with finished pieces, and makes the Delivery Note from what you choose.",
+		fields: [
+			{ name: "Drawing / DUNO / FG Batch", note: "One row per finished drawing, with its DUNO/Mark No and the FG batch its pieces sit in (FG-&lt;order&gt;-&lt;DUNO&gt;). A drawing split across two warehouses gets a row for each." },
+			{ name: "Completed (Nos)", note: "Pieces booked into finished goods by the Final Stock Entry." },
+			{ name: "Delivered (Nos)", note: "On submitted Delivery Notes, net of any returns." },
+			{ name: "In Draft DN (Nos)", note: "Already on a Delivery Note that is still a draft. These come off Available, so the same pieces cannot be put on two notes." },
+			{ name: "Available (Nos)", note: "In stock in that warehouse, less what draft notes hold — the most you can plan now." },
+			{ name: "Delivery Plan (Nos)", note: "The one column you type in: how many pieces of that drawing to send now. Whole pieces, up to Available. Everything else on the row is read-only and filled for you." },
+		],
+		steps: [
+			"Open the <b>Delivery Plan</b> tab on a submitted Sales Order.",
+			"Type <b>Delivery Plan (Nos)</b> against each drawing you are sending. Leave the rest blank. You do not need to save the order first.",
+			"Click <b>Create Delivery</b>. It lists what it is about to put on the note and asks you to confirm.",
+			"A draft Delivery Note opens with one row per drawing — the FG item, that drawing's batch, its DUNO, the pieces you planned, from the warehouse holding them. The Kg is worked out from the batch exactly as on a note you make by hand.",
+			"Check it and submit it. The tab updates itself: those pieces move from In Draft DN to Delivered.",
+		],
+		notes: [
+			"<b>The tab keeps itself current.</b> It is recalculated whenever finished goods are booked or cancelled and whenever a Delivery Note is submitted or cancelled — you do not have to refresh it for those. <b>Refresh Delivery Plan</b> is there for the one case it cannot see: a draft Delivery Note made or deleted somewhere else.",
+			"<b>“Only N available” when you can see the pieces in stock</b> means a draft Delivery Note already holds them. The message names the draft; submit it or delete it, then plan again.",
+			"<b>The note carries only what you planned.</b> Any other lines on the order are left off it. For a delivery that mixes finished drawings with other items, use <b>Create &gt; Delivery Note</b> as before.",
+			"The tab only appears once the order is submitted. Nothing can be delivered from a draft order.",
+		],
+		buttons: [
+			{ name: "Create Delivery", note: "Makes a draft Delivery Note from the Delivery Plan (Nos) you typed, after checking every figure again against stock — including against other draft notes. Clears the plan once the note is made." },
+			{ name: "Refresh Delivery Plan", note: "Recalculates the tab. Keeps any Delivery Plan (Nos) already saved, cut down to what is still available. Save or discard what you have typed first, since it reloads the form." },
+		],
+	},
 ];
 
 // Drawing — one per drawing in the uploaded sheet. Everything downstream measures
