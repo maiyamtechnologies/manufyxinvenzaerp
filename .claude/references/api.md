@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-23 23:21:54_
+_Generated: 2026-09-23 23:32:22_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
