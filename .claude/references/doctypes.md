@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-22 10:04:43_
+_Generated: 2026-09-23 13:39:24_
 
 ## drawing
 
@@ -685,6 +685,7 @@ _Generated: 2026-09-22 10:04:43_
 | ` _used_in_fg_weight` | no |
 | ` _sync_batch_remarks` | no |
 | ` _maybe_mark_completed` | no |
+| ` _pending_transfer` | no |
 | ` _unaccounted_weight` | no |
 | ` recheck_mip_completion` | no |
 | ` refresh_weight_summary` | no |

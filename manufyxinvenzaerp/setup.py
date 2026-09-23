@@ -5017,34 +5017,66 @@ function show_drawing_popup(soe) {
     // the reader converting in their head against a per-piece weight held elsewhere.
     // Planned is the drawing's own weight, Transferred is what reached the supplier
     // for it, and Consumed comes from this operation's consumption log.
-    var kg = function(v) {
-        return "<td class='text-right text-muted'>" + format_number(flt(v || 0), null, 3) + "</td>";
+    // Seven columns do not fit a default dialog: the headings wrapped onto three
+    // lines each, the drawing names broke mid-word, and Consumed (Kg) was clipped off
+    // the right edge entirely. So the dialog is widened below, the numeric columns are
+    // held on one line, and the two text columns absorb whatever width is left.
+    //
+    // num() keeps the digits aligned: tabular figures give every digit the same width,
+    // so the decimal points line up down a column instead of drifting with the glyphs.
+    var num = function(v, muted) {
+        return "<td class='text-right' style='white-space:nowrap;font-variant-numeric:tabular-nums"
+            + (muted ? ";color:#6b7280" : "") + "'>"
+            + format_number(flt(v || 0), null, 3) + "</td>";
     };
     var drw_rows = drawings.map(function(d) {
         return "<tr>"
-            + "<td>" + frappe.utils.escape_html(d.drawing || "") + "</td>"
+            + "<td style='white-space:nowrap'>" + frappe.utils.escape_html(d.drawing || "") + "</td>"
             + "<td>" + frappe.utils.escape_html(d.customer_drawing_number || "") + "</td>"
-            + "<td class='text-right'>" + format_number(flt(d.qty_to_manufacture || 0), null, 3) + "</td>"
-            + kg(d.planned_weight_kg)
-            + kg(d.transferred_weight_kg)
-            + "<td class='text-right'>" + format_number(flt(d.completed_qty_nos || 0), null, 3) + "</td>"
-            + kg(d.consumed_kg)
+            + num(d.qty_to_manufacture)
+            + num(d.planned_weight_kg, true)
+            + num(d.transferred_weight_kg, true)
+            + num(d.completed_qty_nos)
+            + num(d.consumed_kg, true)
             + "</tr>";
     }).join("");
+    // Totals: with every figure on the row now in Kg, the column sums are what the
+    // operation's own Available to Consume and Total Consumed should agree with, and
+    // reading them off three rows by eye is the thing this popup is opened to avoid.
+    var sum = function(field) {
+        return drawings.reduce(function(a, d) { return a + flt(d[field] || 0); }, 0);
+    };
+    var foot = !drawings.length ? "" : "<tfoot><tr style='font-weight:600;background:#f8fafc'>"
+        + "<td colspan='2'>Total</td>"
+        + num(sum("qty_to_manufacture"))
+        + num(sum("planned_weight_kg"))
+        + num(sum("transferred_weight_kg"))
+        + num(sum("completed_qty_nos"))
+        + num(sum("consumed_kg"))
+        + "</tr></tfoot>";
+    var th = function(label, w) {
+        return "<th class='text-right' style='white-space:nowrap" + (w ? ";width:" + w : "") + "'>"
+            + label + "</th>";
+    };
     var content = !drawings.length
         ? "<div class='text-muted' style='padding:12px'>No drawings attached to this operation.</div>"
-        : "<table class='table table-bordered table-condensed' style='margin:0'>"
+        : "<div style='overflow-x:auto'>"
+            + "<table class='table table-bordered table-condensed' style='margin:0;width:100%'>"
             + "<thead><tr>"
-            + "<th>Drawing</th><th>Cust Drawing No</th>"
-            + "<th class='text-right'>Qty to Mfg (Nos)</th>"
-            + "<th class='text-right'>Planned (Kg)</th>"
-            + "<th class='text-right'>Transferred (Kg)</th>"
-            + "<th class='text-right'>Completed (Nos)</th>"
-            + "<th class='text-right'>Consumed (Kg)</th>"
+            + "<th style='white-space:nowrap'>Drawing</th>"
+            + "<th>Cust Drawing No</th>"
+            + th("Qty to Mfg (Nos)", "1%")
+            + th("Planned (Kg)", "1%")
+            + th("Transferred (Kg)", "1%")
+            + th("Completed (Nos)", "1%")
+            + th("Consumed (Kg)", "1%")
             + "</tr></thead>"
-            + "<tbody>" + drw_rows + "</tbody>"
-            + "</table>";
+            + "<tbody>" + drw_rows + "</tbody>" + foot
+            + "</table></div>";
     var dlg = new frappe.ui.Dialog({
+        // Seven columns need the room. On the default width the headings wrapped to
+        // three lines and the last column was cut off at the edge of the dialog.
+        size: "extra-large",
         title: "Drawings — " + frappe.utils.escape_html(soe.operation || soe.name),
         fields: [{ fieldtype: "HTML", fieldname: "content" }],
     });
