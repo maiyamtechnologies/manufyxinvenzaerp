@@ -1560,6 +1560,27 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			+ "</div>";
 	}
 
+	// CNC Process rows are filtered out of this popup by design -- they leave on their
+	// own leg, to the CNC warehouse, and only reach the supplier after that. Saying
+	// nothing left exactly the silent gap the at_supplier notice below exists to close.
+	// On MIP-2026-00004 five rows totalling 472.615 Kg simply were not in this list;
+	// the four that were got transferred, and the job ran to completion believing
+	// everything had gone. The button that sends them sits in the same Transfer menu
+	// this popup was opened from, so name it rather than leaving it to be found.
+	var held_cnc = transfer_type === "primary"
+		? pending_items.filter(function(d) { return d.cnc_process; })
+		: [];
+	if (held_cnc.length) {
+		var held_kg = held_cnc.reduce(function(a, d) { return a + flt(d.qty); }, 0);
+		summary += "<div style='background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#92400e'>"
+			+ "⚙ <b>" + __("{0} CNC Process item(s) ({1} Kg) are not listed here",
+				[held_cnc.length, format_number(held_kg, null, 3)]) + "</b><br>"
+			+ __("They must go to <b>{0}</b> first, on their own transfer, and only reach {1} after that. Transferring this list does NOT send them — use <b>Transfer &rarr; To CNC Warehouse</b> for those rows.",
+				[frappe.utils.escape_html(frm.doc.cnc_warehouse || __("the CNC warehouse")),
+				 frappe.utils.escape_html(frm.doc.supplier_warehouse || __("the supplier"))])
+			+ "</div>";
+	}
+
 	// Material already sitting at the supplier: an off-cut this plan claimed through
 	// Excess Material Mapping while it was still at their end. There is nothing to
 	// move -- it is already where the transfer would have sent it -- so the row is

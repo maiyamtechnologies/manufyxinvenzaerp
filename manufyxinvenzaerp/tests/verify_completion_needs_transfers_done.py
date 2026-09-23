@@ -157,6 +157,29 @@ def run():
     check("finished goods treats unanswerable as allowed",
           _pending_transfer_block("ZZ-NO-SUCH-SCO"), "")
 
+    print()
+    print("=== 6. The gap is visible where the work is done ===")
+    # Neither of these stops anything -- a partial transfer is a supported way to
+    # work. What they stop is transferring in good faith and never being told a leg
+    # was left behind.
+    mip_js = open(frappe.get_app_path(
+        "manufyxinvenzaerp", "subcontracting_management", "doctype",
+        "material_issue_plan", "material_issue_plan.js")).read()
+    check("the primary popup counts the CNC rows it is not showing",
+          "held_cnc" in mip_js and 'transfer_type === "primary"' in mip_js, True)
+    check("  and names the button that does send them",
+          "To CNC Warehouse</b>" in mip_js, True)
+
+    from manufyxinvenzaerp.setup import SCO_OPS_SCRIPT
+    check("the operations tab states planned vs transferred",
+          "transfer_gap_banner" in SCO_OPS_SCRIPT, True)
+    # Above the table, not below it -- the whole point is to be read first.
+    check("  and the banner is prepended to the table, not appended",
+          SCO_OPS_SCRIPT.index("var html = transfer_gap_banner(frm)")
+          < SCO_OPS_SCRIPT.index("<table class='table table-bordered'"), True)
+    check("  and it is shown before any operation exists too",
+          SCO_OPS_SCRIPT.count("transfer_gap_banner(frm)") >= 2, True)
+
     _summary()
 
 

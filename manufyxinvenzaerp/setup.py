@@ -4849,6 +4849,51 @@ frappe.ui.form.on("Subcontracting Order", {
     }
 });
 
+// What the job was meant to send, what it actually sent, and the gap -- directly
+// above the operations table, because that is where the number matters and the two
+// fields it is built from sit on a different tab entirely.
+//
+// SC-ORD-2026-00004 ran its whole operation chain on 10,315.918 Kg against a mapped
+// 10,788.533: the 472.615 Kg of CNC material was never sent, op 1 took the short
+// figure as its Available to Consume without comment, and the shortfall was only
+// visible to somebody who thought to compare two fields on another tab. Nothing
+// blocks a partial transfer -- it is a supported way to work -- so the fix is to
+// state the gap where the operations are read, not to refuse the operations.
+function transfer_gap_banner(frm) {
+    var planned = flt(frm.doc.custom_mapped_weight_kg || 0);
+    var sent = flt(frm.doc.custom_transferred_weight_kg || 0);
+    var pending = flt(planned - sent);
+    // Rounded before comparing: these are sums of 3-decimal weights, so a job that
+    // sent everything lands a few millionths off zero and would read as pending.
+    var short = Math.round(pending * 1000) / 1000 > 0;
+    var tone = short
+        ? { bg: '#fef2f2', line: '#fecaca', ink: '#b91c1c' }
+        : { bg: '#f0fdf4', line: '#bbf7d0', ink: '#15803d' };
+
+    function cell(label, value, ink) {
+        return "<div style='flex:1 1 150px'>"
+            + "<div style='font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em'>"
+            + label + "</div>"
+            + "<div style='font-size:16px;font-weight:600;" + (ink ? "color:" + ink : "") + "'>"
+            + format_number(value, null, 3) + " <small style='font-weight:400'>Kg</small></div>"
+            + "</div>";
+    }
+
+    return "<div style='display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;"
+        + "border:1px solid " + tone.line + ";background:" + tone.bg + ";"
+        + "border-radius:6px;padding:10px 14px;margin-bottom:10px'>"
+        + cell("Total Planned to Transfer", planned, "")
+        + cell("Transferred", sent, "")
+        + cell(short ? "Not Yet Transferred" : "Fully Transferred", pending, tone.ink)
+        + (short
+            ? "<div style='flex:2 1 260px;font-size:11px;color:" + tone.ink + ";padding-top:14px'>"
+              + "Operations below are running on the transferred weight only. Material still "
+              + "in stores &mdash; CNC Process rows go out on their own transfer &mdash; will "
+              + "not reach the supplier by finishing these operations.</div>"
+            : "")
+        + "</div>";
+}
+
 function render_soe_summary(frm) {
     var field = frm.get_field("custom_operations_html");
     if (!field) return;
@@ -4863,7 +4908,11 @@ function render_soe_summary(frm) {
         callback(r) {
             var rows = r.message || [];
             if (!rows.length) {
-                $w.html("<div style='margin-bottom:8px'><button class='btn btn-xs btn-default sco-ops-refresh'>&#8635; Refresh</button></div>"
+                // The banner shows here too, and this is the most useful moment for
+                // it: before any operation exists is when an unsent leg can still be
+                // sent without unwinding anything.
+                $w.html(transfer_gap_banner(frm)
+                    + "<div style='margin-bottom:8px'><button class='btn btn-xs btn-default sco-ops-refresh'>&#8635; Refresh</button></div>"
                     + "<div class='text-muted'>No Supplier Operation Entries created yet.</div>");
                 $w.find(".sco-ops-refresh").on("click", function() { render_soe_summary(frm); });
                 return;
@@ -4902,7 +4951,8 @@ function render_soe_summary(frm) {
                     + "<td class='text-center'><button class='btn btn-xs btn-default sco-drw-btn' data-idx='" + idx + "' title='View Drawings'>&#128366;</button></td>"
                     + "</tr>";
             }).join("");
-            var html = "<div style='margin-bottom:8px'><button class='btn btn-xs btn-default sco-ops-refresh'>&#8635; Refresh</button></div>"
+            var html = transfer_gap_banner(frm)
+                + "<div style='margin-bottom:8px'><button class='btn btn-xs btn-default sco-ops-refresh'>&#8635; Refresh</button></div>"
                 + "<table class='table table-bordered' style='margin-top:4px'>"
                 + "<thead><tr>"
                 + "<th class='text-center' style='width:60px'>Seq</th>"
