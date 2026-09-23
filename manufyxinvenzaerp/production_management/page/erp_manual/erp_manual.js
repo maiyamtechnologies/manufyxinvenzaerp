@@ -1466,7 +1466,7 @@ const ERP_MANUAL_JOB_WORK_ORDER_CHILDREN = [
 		fields: [
 			{ name: "Drawing Items", note: "Every drawing/DUNO this job covers, each with its own Customer Provided Weight, Planned RM Weight, Mapped Weight, Excess Weight, and Transferred Weight — rolled up from Material Planning." },
 			{ name: "All Operations Complete", note: "Ticks itself once every operation in the chain has been submitted. Informational — it no longer gates anything: <b>Make Final Stock Entry</b> follows the last operation's completed pieces instead, so part of a job can be booked without waiting for the whole of it." },
-			{ name: "Status", note: "<b>Open → Working → Completed</b>, and it moves on its own. Open on submit; Working the moment any operation has quantity logged against it; Completed once every operation is submitted <i>and</i> the Material Issue Plan's Final Stock Entry has been submitted. It is worked out fresh each time rather than remembered, so cancelling that Final Stock Entry puts the order back to Working." },
+			{ name: "Status", note: "<b>Open → Working → Completed</b>, and it moves on its own. Open on submit; Working the moment any operation has quantity logged against it; Completed once every operation is submitted <i>and</i> the Material Issue Plan's Final Stock Entry has been submitted. It is worked out fresh each time rather than remembered, so cancelling that Final Stock Entry puts the order back to Working. <b>There is no Status button on the toolbar.</b> Standard ERPNext puts Close and Re-open there, but because the status is recalculated rather than stored, anything set by hand is overwritten by the next recompute — a button that quietly undoes itself is worse than none, so it is removed." },
 		],
 		steps: [
 			"Submitting the Job work order and clicking “Job work order & MIP” back on Production Plan creates one Supplier Operation Entry per Operation table row, in sequence order.",
@@ -1478,7 +1478,7 @@ const ERP_MANUAL_JOB_WORK_ORDER_CHILDREN = [
 		],
 		buttons: [
 			{ name: "Open MIP", note: "Opens this job's Material Issue Plan. Sits on its own, before the Create group, because it goes to a document that already exists rather than making a new one. It only appears once there is an MIP to open. The Material Issue Plan carries the matching <b>Open Job Work Order</b> button back the other way." },
-			{ name: "Material Issue Plan (under Create)", note: "Creates the Material Issue Plan if it doesn't already exist, or opens the existing one." },
+			{ name: "Material Issue Plan (under Create) — removed", note: "No longer offered. The plan is created together with the order by <b>Job work order &amp; MIP</b> on the Production Plan, so by the time you are looking at this toolbar there is already one to open — use <b>Open MIP</b>. The two sat side by side doing nearly the same thing, and the one that could create was the one that read like a fresh start." },
 			{ name: "Supplier Operation Entries (under Create)", note: "Creates any still-missing Supplier Operation Entry in the chain — normally already done automatically by “Job work order & MIP”." },
 		],
 		notes: [

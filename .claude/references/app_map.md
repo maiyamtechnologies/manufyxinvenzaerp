@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-23 13:58:08_
+_Generated: 2026-09-23 14:04:29_
 
 ## Modules
 
@@ -1514,15 +1514,15 @@ Functions:
   - 4537:hide_sco_amount_fields:
   - 4565:make_sco_job_worker_conditional:
   - 4600:create_sco_custom_fields:
-  - 5314:create_sco_client_script:
-  - 5330:create_sco_ops_client_script:
-  - 5346:create_soe_client_script:
-  - 5362:create_manufacturing_settings_custom_fields:
-  - 5401:create_material_planning_auto_purchase_fields:
-  - 5464:create_payment_request_custom_fields:
-  - 5546:create_fg_sales_custom_fields:
-  - 5651:create_fg_property_setters:
-  - 5690:set_fg_settings_defaults:
+  - 5335:create_sco_client_script:
+  - 5351:create_sco_ops_client_script:
+  - 5367:create_soe_client_script:
+  - 5383:create_manufacturing_settings_custom_fields:
+  - 5422:create_material_planning_auto_purchase_fields:
+  - 5485:create_payment_request_custom_fields:
+  - 5567:create_fg_sales_custom_fields:
+  - 5672:create_fg_property_setters:
+  - 5711:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -2522,7 +2522,7 @@ Functions:
   - 39:check:
   - 45:_throws:
   - 54:run:
-  - 193:_summary:
+  - 217:_summary:
 
 ### tests/verify_partial_final_stock_entry.py
 Functions:

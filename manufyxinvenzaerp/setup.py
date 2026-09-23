@@ -4806,6 +4806,19 @@ frappe.ui.form.on("Subcontracting Order", {
 \t\t// refresh, which is what added it.
 \t\tfrm.remove_custom_button(__("Subcontracting Receipt"), __("Create"));
 
+\t\t// The Status group (Close / Re-open) goes for a stronger reason than tidiness:
+\t\t// on a PP-flow order the status is DERIVED, not stored. update_status in
+\t\t// overrides.py recomputes Open -> Working -> Completed from the operations and
+\t\t// the final Stock Entry, and it is re-run from the SOE hooks and from Stock
+\t\t// Entry submit/cancel -- so closing an order by hand sets a value the next
+\t\t// recompute overwrites without telling anybody. A button whose effect quietly
+\t\t// undoes itself is worse than no button. Removing both leaves the group empty,
+\t\t// and Frappe drops an empty group, so the dropdown disappears with them.
+\t\t// Both labels are removed because the standard controller adds whichever one
+\t\t// fits the current status, never both.
+\t\tfrm.remove_custom_button(__("Close"), __("Status"));
+\t\tfrm.remove_custom_button(__("Re-open"), __("Status"));
+
 \t\tif (frm.doc.docstatus === 1 && frm.doc.custom_production_plan) {
 
 \t\t\t// Straight to the Material Issue Plan for this order -- the two documents
@@ -4821,19 +4834,27 @@ frappe.ui.form.on("Subcontracting Order", {
 \t\t\t\t\t});
 \t\t\t\t});
 
-\t\t\tfrm.add_custom_button(__("Material Issue Plan"), function() {
-\t\t\t\tfrappe.call({
-\t\t\t\t\tmethod: "manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan.create_from_subcontracting_order",
-\t\t\t\t\targs: { sco_name: frm.doc.name },
-\t\t\t\t\tfreeze: true,
-\t\t\t\t\tfreeze_message: __("Creating Material Issue Plan…"),
-\t\t\t\t\tcallback: function(r) {
-\t\t\t\t\t\tif (r.message) {
-\t\t\t\t\t\t\tfrappe.set_route("Form", "Material Issue Plan", r.message);
-\t\t\t\t\t\t}
-\t\t\t\t\t}
-\t\t\t\t});
-\t\t\t}, __("Create"));
+\t\t\t// Create -> Material Issue Plan is no longer offered. The plan is made with
+\t\t\t// the order, by "Job work order & MIP" on the Production Plan, so by the time
+\t\t\t// anyone is looking at this toolbar there is already one to open -- which is
+\t\t\t// what Open MIP above does. The two sat next to each other doing almost the
+\t\t\t// same thing, and the one that could CREATE was the one that looked like a
+\t\t\t// fresh start. create_from_subcontracting_order is kept and still returns the
+\t\t\t// existing plan rather than a second one; only the button is gone, so this can
+\t\t\t// be brought back by uncommenting it.
+\t\t\t// frm.add_custom_button(__("Material Issue Plan"), function() {
+\t\t\t// \tfrappe.call({
+\t\t\t// \t\tmethod: "manufyxinvenzaerp.subcontracting_management.doctype.material_issue_plan.material_issue_plan.create_from_subcontracting_order",
+\t\t\t// \t\targs: { sco_name: frm.doc.name },
+\t\t\t// \t\tfreeze: true,
+\t\t\t// \t\tfreeze_message: __("Creating Material Issue Plan…"),
+\t\t\t// \t\tcallback: function(r) {
+\t\t\t// \t\t\tif (r.message) {
+\t\t\t// \t\t\t\tfrappe.set_route("Form", "Material Issue Plan", r.message);
+\t\t\t// \t\t\t}
+\t\t\t// \t\t}
+\t\t\t// \t});
+\t\t\t// }, __("Create"));
 
 \t\t\t// "Make Final Stock Entry" moved to Material Issue Plan (see
 \t\t\t// material_issue_plan.js's _add_final_stock_entry_button) -- the Return
