@@ -740,6 +740,56 @@ def _cnc_sourced_rows(doc):
 	}
 
 
+def _job_mip_name(doc):
+	"""The Material Issue Plan behind a Stock Entry: tagged directly, or through the
+	job it was made for. The Final Stock Entry carries only the core
+	subcontracting_order, so the job is the only way back to it."""
+	if doc.get("custom_mip_ref"):
+		return doc.get("custom_mip_ref")
+	for fieldname in ("custom_sco_ref", "subcontracting_order"):
+		if doc.get(fieldname):
+			name = frappe.db.get_value("Material Issue Plan", {"subcontracting_order": doc.get(fieldname)})
+			if name:
+				return name
+	if doc.get("work_order"):
+		return frappe.db.get_value("Material Issue Plan", {"work_order": doc.get("work_order")})
+	return None
+
+
+def _downstream_sourced_rows(doc):
+	"""Item rows leaving the job's supplier / WIP warehouse.
+
+	The same reasoning as _cnc_sourced_rows, one step further on. A reservation is held
+	on stock in the stores; it is given up when the material leaves them for the
+	supplier. What is issued out of the supplier's warehouse afterwards -- the Final
+	Stock Entry's consumption, an excess return, a process loss -- is that same
+	material, already released. Counting it again took the same Kg off whichever
+	rows on the batch were STILL reserved: on a drawing split between two plans, the
+	first plan's finished goods stripped the second plan's reservation of material
+	that had never left the stores.
+
+	The stores warehouse itself is never skipped, whatever the plan says, so a job
+	whose source and target were set to one warehouse still releases as before."""
+	mip_name = _job_mip_name(doc)
+	if not mip_name:
+		return set()
+	mip = frappe.db.get_value(
+		"Material Issue Plan", mip_name, ["supplier_warehouse", "source_warehouse", "work_order"],
+		as_dict=True)
+	if not mip:
+		return set()
+	downstream = {mip.supplier_warehouse}
+	if mip.work_order:
+		downstream.add(frappe.db.get_value("Work Order", mip.work_order, "wip_warehouse"))
+	downstream = {w for w in downstream if w and w != mip.source_warehouse}
+	if not downstream:
+		return set()
+	return {
+		row.name for row in doc.items
+		if row.name and row.get("s_warehouse") in downstream
+	}
+
+
 def _consumed_qty_by_batch(doc):
 	"""How much of each batch this entry moved OUT, batch by batch.
 
@@ -750,13 +800,14 @@ def _consumed_qty_by_batch(doc):
 	reserved in, which is the whole reason the reservation moves.
 
 	Rows leaving the CNC warehouse are left out: their reservation was already given up
-	when the material entered CNC -- see _cnc_sourced_rows.
+	when the material entered CNC -- see _cnc_sourced_rows. So are rows leaving the
+	job's supplier / WIP warehouse, for the same reason -- see _downstream_sourced_rows.
 
 	Falls back to the rows' own batch_no where no bundle exists, for entries simple
 	enough not to have one. Cancelled bundles are included deliberately -- on cancel
 	that is the only record left of what moved."""
 	moved = {}
-	skip_rows = _cnc_sourced_rows(doc)
+	skip_rows = _cnc_sourced_rows(doc) | _downstream_sourced_rows(doc)
 	voucher_no = getattr(doc, "name", None)
 	if voucher_no:
 		conditions = ""

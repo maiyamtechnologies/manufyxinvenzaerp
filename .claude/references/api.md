@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-23 23:32:22_
+_Generated: 2026-09-24 18:39:59_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -154,9 +154,9 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `get_production_plans_for_sales_order` | 1481 |
-| `@frappe.validate_and_sanitize_search_inputs` | 1506 |
-| `get_job_work_order_for_production_plan` | 1540 |
+| `get_production_plans_for_sales_order` | 1532 |
+| `@frappe.validate_and_sanitize_search_inputs` | 1557 |
+| `get_job_work_order_for_production_plan` | 1591 |
 ## production_plan_management/production_plan.py
 
 | Method | Line |
@@ -215,19 +215,19 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `unlink_excess_claim` | 1129 |
-| `refresh_weight_summary` | 1372 |
-| `get_mip_batch_plan_html` | 1548 |
-| `download_mip_batch_plan_pdf` | 1554 |
-| `get_mip_consolidate_plan_html` | 1693 |
-| `download_mip_consolidate_plan_pdf` | 1699 |
-| `check_mip_batch_change_allowed` | 237 |
-| `check_mip_raw_materials_refreshable` | 245 |
-| `refresh_mip_raw_materials_manual` | 259 |
-| `refresh_mip_raw_materials` | 279 |
+| `unlink_excess_claim` | 1156 |
+| `refresh_weight_summary` | 1399 |
+| `get_mip_batch_plan_html` | 1582 |
+| `download_mip_batch_plan_pdf` | 1588 |
+| `get_mip_consolidate_plan_html` | 1727 |
+| `download_mip_consolidate_plan_pdf` | 1733 |
+| `check_mip_batch_change_allowed` | 246 |
+| `check_mip_raw_materials_refreshable` | 254 |
+| `refresh_mip_raw_materials_manual` | 268 |
+| `refresh_mip_raw_materials` | 288 |
 | `create_from_subcontracting_order` | 50 |
-| `save_transfer_draft` | 584 |
-| `get_transfer_draft` | 643 |
+| `save_transfer_draft` | 611 |
+| `get_transfer_draft` | 670 |
 | `` | 69 |
 | `populate_from_production_plan` | 72 |
 ## subcontracting_management/material_issue_plan_batch_update.py
@@ -244,38 +244,38 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `has_cnc_stock` | 1511 |
-| `get_mip_cnc_button_state` | 1531 |
-| `get_mip_readiness_check` | 1605 |
-| `create_mip_transfer_entry` | 1763 |
-| `create_mip_partial_transfer` | 1815 |
-| `get_mip_cnc_pending_items` | 1898 |
-| `create_mip_cnc_partial_forward` | 1960 |
-| `create_mip_cnc_forward_entry` | 2093 |
-| `create_mip_excess_return_entry` | 2269 |
+| `has_cnc_stock` | 1596 |
+| `get_mip_cnc_button_state` | 1616 |
+| `get_mip_readiness_check` | 1690 |
+| `create_mip_transfer_entry` | 1848 |
+| `create_mip_partial_transfer` | 1900 |
+| `get_mip_cnc_pending_items` | 1983 |
+| `create_mip_cnc_partial_forward` | 2045 |
+| `create_mip_cnc_forward_entry` | 2178 |
+| `create_mip_excess_return_entry` | 2354 |
 | `submit_mip_transfer_entry` | 249 |
 | `get_mip_process_loss_state` | 301 |
 | `create_mip_process_loss_entry` | 374 |
 | `get_mip_pending_items` | 600 |
-| `update_transfer_sec_qty` | 846 |
+| `update_transfer_sec_qty` | 859 |
 ## subcontracting_management/subcontracting.py
 
 | Method | Line |
 |--------|------|
-| `check_soe_completion_before_confirm` | 1246 |
-| `` | 2573 |
-| `` | 2576 |
-| `` | 2579 |
-| `` | 2582 |
-| `` | 2585 |
+| `check_soe_completion_before_confirm` | 1256 |
+| `` | 2623 |
+| `` | 2626 |
+| `` | 2629 |
+| `` | 2632 |
+| `` | 2635 |
 | `create_sco_from_production_plan` | 27 |
-| `create_sco_and_mip_from_production_plan` | 271 |
-| `delete_sco_and_mip_for_production_plan` | 296 |
-| `` | 376 |
-| `create_supplier_operation_entries` | 379 |
-| `get_soe_summary` | 401 |
-| `get_final_stock_entry_preview` | 843 |
-| `create_finished_goods_entry` | 941 |
+| `create_sco_and_mip_from_production_plan` | 281 |
+| `delete_sco_and_mip_for_production_plan` | 306 |
+| `` | 386 |
+| `create_supplier_operation_entries` | 389 |
+| `get_soe_summary` | 411 |
+| `get_final_stock_entry_preview` | 853 |
+| `create_finished_goods_entry` | 951 |
 ## tests/test_whitelist_coverage.py
 
 | Method | Line |
