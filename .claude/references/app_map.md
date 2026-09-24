@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-24 18:39:59_
+_Generated: 2026-09-24 18:47:11_
 
 ## Modules
 
