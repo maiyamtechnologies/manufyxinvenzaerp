@@ -2703,6 +2703,43 @@ const ERP_MANUAL_FINISHED_GOODS_CHILDREN = [
 		],
 	},
 	{
+		id: "fg-split-drawing",
+		title: "Splitting a Drawing Between Suppliers",
+		kicker: "2 NOS to one supplier now, 3 to another later",
+		purpose:
+			"A drawing's pieces can go to different suppliers or contractors on separate Production Plans. " +
+			"Each plan takes only its share of the drawing's raw material, in proportion to its pieces, and " +
+			"no plan can transfer material that belongs to the other.",
+		fields: [
+			{ name: "Total NOS (picker)", note: "All the drawing's pieces." },
+			{ name: "Already Planned (picker)", note: "Pieces other plans (not cancelled) already hold." },
+			{ name: "To Use Now (picker)", note: "What this plan takes. It starts at every piece left; type less to keep some for a later plan. Typing a value ticks the row. More than what is left, or 0, is refused on Insert." },
+			{ name: "Later (picker)", note: "What stays unplanned for a plan still to come — updates as you type." },
+		],
+		steps: [
+			"On the first plan, Add Drawings → search the Sales Order → set To Use Now (e.g. 2 of 5) → Insert Selected.",
+			"Make the Job Work Order and Material Issue Plan as usual. The Material Issue Plan lists 2/5 of every raw-material row of that drawing — Kg and pieces — and its planned, mapped and excess weights are 2/5 of the drawing's.",
+			"On the next plan the picker shows Total 5, Already Planned 2, To Use Now 3. Its Material Issue Plan gets the other 3/5.",
+			"Transfer from each Material Issue Plan as usual. A share can be a fraction of a piece (half a bar when one bar serves both plans): raise it to whole pieces in the transfer popup as you always can, as long as the stock is not the other plan's.",
+		],
+		calcs: [
+			{
+				title: "One row shared by two plans",
+				item: "1B3 — 4 NOS", group: "16 × ISMB400 6936 mm, 6,836.131 Kg",
+				sec_qty: "16", unit_weight: "see formula",
+				formula: "Plan A 1 NOS → 1/4 → 4 bars, 1,709.033 Kg.  Plan B 3 NOS → 3/4 → 12 bars, 5,127.098 Kg.",
+				result: "4 + 12 = 16 bars; 1,709.033 + 5,127.098 = 6,836.131 Kg",
+				note: "The shares are laid end to end in the order the plans were made, so they always add back to the whole row to the gram.",
+			},
+		],
+		notes: [
+			"<b>No overlap.</b> What one plan's rows still hold beyond its own outstanding share is treated as reserved for the other plan. Plan A asking for a 5th bar is refused, with the other plan named in the message.",
+			"<b>Partial transfers are counted once.</b> Send 6 of B's 12 bars and B's list shows the other 6 — and a draft transfer of those 6 stops them being offered a second time.",
+			"<b>Material Planning is unchanged.</b> It still holds the whole drawing; each plan's share is worked out from it. A plan that takes the whole drawing behaves exactly as before.",
+			"<b>A job's Final Stock Entry, excess return and process loss no longer release store reservations.</b> They issue material that already left the stores (and was released then); before, they could strip another plan's reservation on the same batch.",
+		],
+	},
+	{
 		id: "fg-job-work-order",
 		title: "Job Work Order and Job Work Amount",
 		kicker: "Kg, Nos, rate per Kg",

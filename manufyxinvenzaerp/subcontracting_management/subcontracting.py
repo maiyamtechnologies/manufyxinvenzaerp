@@ -109,6 +109,12 @@ def create_sco_from_production_plan(pp_name):
     _mapped_cache = {}   # mp_name -> {duno_mark_no: mapped_kg}
     _excess_cache = {}   # mp_name -> {duno_mark_no: excess_kg}
     _drawing_weight_cache = {}  # mp_name -> {duno_mark_no: planned_kg}
+    # A drawing this plan holds only part of (2 of 5 NOS) gets its share of every
+    # whole-drawing weight below -- see production_plan_management/drawing_split.
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        plan_drawing_slices, portion,
+    )
+    split = plan_drawing_slices(pp.name)
     for pi in pp.po_items:
         mp_name = pi.get("custom_material_planning")
         duno    = pi.get("custom_duno_mark_no") or ""
@@ -132,6 +138,10 @@ def create_sco_from_production_plan(pp_name):
         # Cust Weight (Total) is the whole drawing's, all pieces (D2) -- the same
         # basis as the planned and mapped raw-material weights beside it.
         customer = flt(pi.get("custom_customer_weight_kg"), 3)
+        sl = split.get((mp_name, duno)) if duno else None
+        if sl:
+            planned, mapped, excess, customer = (
+                portion(planned, sl), portion(mapped, sl), portion(excess, sl), portion(customer, sl))
         total_customer += customer
         total_planned  += planned
         total_mapped   += mapped
@@ -2369,9 +2379,23 @@ def _sec_qty_for_reserved(full_sec_qty, reserved_qty, full_qty):
     return flt(full_sec_qty * (reserved_qty / full_qty), 3)
 
 
-def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno_filter=None):
+def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno_filter=None,
+                             basis="reserved", slices=None):
     """Return SE item dicts for reserved batches in a Material Planning document.
     Includes sec_qty, dimensions, and unit_weight for each SE line.
+
+    basis: "reserved" (the default) -- what each row still holds reserved.
+           "held" -- what the row was given: still reserved PLUS what transfers have
+           already taken from it (transferred_qty). A transfer moves weight from the
+           first to the second, so this stays the same for the life of the row, and a
+           caller that subtracts its own transfers (get_mip_pending_items) must start
+           from it: subtracting them from the reduced reservation counts every partial
+           transfer twice. Rows released in full are included on this basis, as they
+           still carry what they were given.
+
+    slices: {duno: slice} for drawings the calling plan holds only part of
+           (production_plan_management.drawing_split). Each such row contributes only
+           the plan's share of its Kg and pieces.
 
     duno_filter: an optional iterable of DUNO/Mark Nos to restrict results to. A
     single Material Planning document can be shared across several Production
@@ -2398,8 +2422,20 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
             _uwt_cache[item_code] = flt(frappe.db.get_value("Item", item_code, "custom_unit_weight") or 0)
         return _uwt_cache[item_code]
 
+    from manufyxinvenzaerp.production_plan_management.drawing_split import portion
+
+    held = basis == "held"
+    slices = slices or {}
+
+    def _row_qty(r):
+        if not held:
+            return flt(r.reserved_qty)
+        return flt((flt(r.reserved_qty) if r.is_reserved else 0.0) + flt(r.transferred_qty), 3)
+
     # From material_mapping: batch-assigned reserved rows
-    mm_filters = {"parent": mp_name, "is_reserved": 1}
+    mm_filters = {"parent": mp_name}
+    if not held:
+        mm_filters["is_reserved"] = 1
     if duno_filter:
         mm_filters["duno_mark_no"] = ["in", list(duno_filter)]
     rows = frappe.get_all(
@@ -2410,6 +2446,7 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
             "batch_length", "batch_width", "batch_thickness", "batch_unit_weight",
             "batch_parent_item_group", "parent_item_group", "sec_uom", "cnc_process",
             "reserve_without_dimensions", "reserved_qty",
+            "is_reserved", "transferred_qty", "duno_mark_no",
         ],
     )
     for r in rows:
@@ -2417,9 +2454,15 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
             continue
         # Always use reserved_qty — it's the actual stock held back for this row.
         # batch_calc_qty is the full requirement which may exceed what's available (shortfall).
-        qty = flt(r.reserved_qty)
+        qty = _row_qty(r)
         if qty <= 0:
             continue
+        sec = _sec_qty_for_reserved(r.batch_sec_qty, qty, r.batch_calc_qty)
+        sl = slices.get(r.duno_mark_no or "")
+        if sl:
+            qty, sec = portion(qty, sl), portion(sec, sl)
+            if qty <= 0:
+                continue
         # When the batch belongs to a different item (cross-item mapping), planned_item
         # holds the batch's actual item — use it so ERPNext batch validation passes.
         se_item_code = r.planned_item or r.item_code
@@ -2432,7 +2475,7 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
             "uom": _stock_uom(se_item_code),
             "s_warehouse": source_warehouse,
             "t_warehouse": supplier_warehouse,
-            "custom_sec_qty": _sec_qty_for_reserved(r.batch_sec_qty, qty, r.batch_calc_qty),
+            "custom_sec_qty": sec,
             "custom_sec_uom": r.sec_uom or "",
             "custom_length": flt(r.batch_length, 3),
             "custom_width": flt(r.batch_width, 3),
@@ -2443,7 +2486,9 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
         })
 
     # From available_raw_material: exact-match reserved rows
-    arm_filters = {"parent": mp_name, "is_reserved": 1}
+    arm_filters = {"parent": mp_name}
+    if not held:
+        arm_filters["is_reserved"] = 1
     if duno_filter:
         arm_filters["duno_mark_no"] = ["in", list(duno_filter)]
     rows2 = frappe.get_all(
@@ -2452,10 +2497,15 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
         fields=[
             "item_code", "batch_no", "reserved_qty", "available_qty", "required_qty",
             "sec_qty", "sec_uom", "length", "width", "thickness", "parent_item_group", "cnc_process",
+            "is_reserved", "transferred_qty", "duno_mark_no",
         ],
     )
     for r in rows2:
-        qty = flt(r.reserved_qty)   # available_qty is pre-reservation stock, not what's actually reserved
+        qty = _row_qty(r)   # available_qty is pre-reservation stock, not what's actually reserved
+        sec = _sec_qty_for_reserved(r.sec_qty, qty, r.required_qty)
+        sl = slices.get(r.duno_mark_no or "")
+        if sl and qty > 0:
+            qty, sec = portion(qty, sl), portion(sec, sl)
         if r.batch_no and qty > 0:
             items.append({
                 "item_code": r.item_code,
@@ -2466,7 +2516,7 @@ def _get_mp_reserved_batches(mp_name, source_warehouse, supplier_warehouse, duno
                 "uom": _stock_uom(r.item_code),
                 "s_warehouse": source_warehouse,
                 "t_warehouse": supplier_warehouse,
-                "custom_sec_qty": _sec_qty_for_reserved(r.sec_qty, qty, r.required_qty),
+                "custom_sec_qty": sec,
                 "custom_sec_uom": r.sec_uom or "",
                 "custom_length": flt(r.length, 3),
                 "custom_width": flt(r.width, 3),

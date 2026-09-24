@@ -126,10 +126,16 @@ def populate_from_production_plan(mip_name):
             sco_row.get("supplier"), sco_row.get("company") or mip.company
         )
 
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        plan_drawing_slices, portion,
+    )
+    split = plan_drawing_slices(pp.name)
+
     mip.set("drawing_items", [])
     for row in (pp.po_items or []):
         if not row.get("custom_drawing") and not row.get("custom_material_planning"):
             continue
+        sl = split.get((row.get("custom_material_planning"), row.get("custom_duno_mark_no") or ""))
         mip.append("drawing_items", {
             "drawing": row.get("custom_drawing"),
             "item_code": row.item_code,
@@ -145,7 +151,10 @@ def populate_from_production_plan(mip_name):
             "sales_order": row.get("sales_order") or "",
             "material_planning": row.get("custom_material_planning"),
             # Cust Weight (Total) is the whole drawing's, with per Nos beside it (D30).
-            "customer_weight_kg": row.get("custom_customer_weight_kg"),
+            # The plan's share of the drawing's Cust Weight (Total) where it holds
+            # only some of its pieces, so it sits on the same basis as the planned
+            # weight beside it.
+            "customer_weight_kg": portion(row.get("custom_customer_weight_kg"), sl),
             "cust_weight_per_nos": row.get("custom_cust_weight_per_nos"),
         })
 
@@ -471,6 +480,24 @@ def refresh_mip_raw_materials(mip_name):
                 "is_reserved": 0,
                 "is_unavailable": 1,
             })
+
+    # A drawing this plan holds only part of (2 of its 5 NOS) takes only its share of
+    # each of that drawing's rows -- Kg, pieces and the planned drawing weight alike, so
+    # the Excess Qty, the consolidated lines and the Final Stock Entry's consumption all
+    # measure this plan's part against this plan's part. Material Planning keeps the
+    # whole drawing; see production_plan_management/drawing_split.
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        mip_drawing_slices, portion,
+    )
+    split = mip_drawing_slices(mip)
+    if split:
+        for new_row in (mip.raw_materials or []):
+            sl = split.get((new_row.material_planning, new_row.duno_mark_no or ""))
+            if not sl:
+                continue
+            for f in ("qty", "reqd_kg", "sec_qty", "transferred_qty", "drawing_planned_weight"):
+                if new_row.get(f) is not None:
+                    new_row.set(f, portion(new_row.get(f), sl))
 
     # The rounding surplus a past transfer booked onto these rows (see
     # _apply_transfer_excess_to_raw_materials) is history, not something the Material
@@ -1405,6 +1432,11 @@ def refresh_weight_summary(mip_name):
         )
 
     # Actual transferred weight — read from the linked SCO or WO
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        mip_drawing_slices, portion,
+    )
+    split = mip_drawing_slices(mip)
+
     actual_transferred = 0.0
     if mip.subcontracting_order:
         actual_transferred = flt(frappe.db.get_value(
@@ -1444,9 +1476,11 @@ def refresh_weight_summary(mip_name):
             planned_weight = drawing_weight_by_mp[mp_name].get(d.duno_mark_no, 0.0)
         else:
             planned_weight = _get_mp_total_weight(mp_name)
-        d.total_weight_kg = flt(planned_weight, 3)
-        d.mapped_weight_kg = flt(mapped_by_mp[mp_name].get(d.duno_mark_no), 3)
-        d.excess_weight_kg = flt(excess_by_mp[mp_name].get(d.duno_mark_no), 3)
+        # This plan's share where it holds only part of the drawing.
+        sl = split.get((mp_name, d.duno_mark_no)) if d.duno_mark_no else None
+        d.total_weight_kg = portion(planned_weight, sl)
+        d.mapped_weight_kg = portion(mapped_by_mp[mp_name].get(d.duno_mark_no), sl)
+        d.excess_weight_kg = portion(excess_by_mp[mp_name].get(d.duno_mark_no), sl)
 
         total_planned += d.total_weight_kg
         allocated += d.mapped_weight_kg

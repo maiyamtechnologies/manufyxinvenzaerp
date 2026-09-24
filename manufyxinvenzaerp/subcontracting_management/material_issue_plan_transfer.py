@@ -616,9 +616,22 @@ def get_mip_pending_items(mip_name):
     # fraction into whole physical pieces is the user's call, made row by row in
     # the transfer popup, which books the resulting surplus as excess to return
     # (see update_transfer_sec_qty).
+    #
+    # Read on the "held" basis -- what each row was given, transferred or not -- because
+    # this plan's own transfers are subtracted further down (primary_done / cnc_done).
+    # Starting from what is STILL reserved subtracted every partial transfer twice:
+    # 30 Kg sent of a 120 Kg row left 90 reserved, and 90 - 30 offered 60.
+    #
+    # A drawing this plan holds only part of (2 of its 5 NOS, say) contributes only
+    # this plan's share of each row -- see production_plan_management/drawing_split.
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        mip_drawing_slices, slices_by_duno,
+    )
+    split = mip_drawing_slices(mip)
     for mp_name in mp_names:
         raw_items.extend(_get_mp_reserved_batches(
-            mp_name, source_warehouse, primary_warehouse, duno_filter=duno_scope.get(mp_name)
+            mp_name, source_warehouse, primary_warehouse, duno_filter=duno_scope.get(mp_name),
+            basis="held", slices=slices_by_duno(split, mp_name),
         ))
 
     # A row drawing from a Cut Sheet only ever offers its To Use (W1) weight for
@@ -1161,6 +1174,10 @@ def _batch_availability_for_plan(mip, item_code, batch_no, warehouse=None):
             waiting.append({"material_planning": r.parent, "table": label, "idx": r.idx,
                             "duno": r.duno_mark_no or "", "qty": flt(r.need, 3)})
 
+    hold = _split_sibling_hold(mip, batch_no, own, warehouse)
+    if hold:
+        reserved.append(hold)
+
     reserved_kg = flt(sum(x["qty"] for x in reserved), 3)
     return frappe._dict({
         "warehouse": warehouse,
@@ -1173,6 +1190,73 @@ def _batch_availability_for_plan(mip, item_code, batch_no, warehouse=None):
     })
 
 
+def _split_sibling_hold(mip, batch_no, own, warehouse):
+    """The part of this plan's own rows on a batch that is owed to the OTHER plans of a
+    split drawing, as one reserved-for-others entry -- or None.
+
+    A drawing split over plans keeps one set of Material Planning rows, so each of its
+    plans sees those rows as its own and, on its own, would count the whole reservation
+    as available -- letting the first plan to transfer take the second plan's half as
+    well. What this plan may still take from its own rows is its outstanding share: what
+    it is entitled to on the batch less what it has already sent (drafts included).
+    Anything its rows hold beyond that is someone else's.
+
+    Worked on the whole batch, not row by row, because a transfer line is one batch and
+    does not say which row each kilo came from. Only reached when the plan really has a
+    split drawing on the batch; everything else is exactly as before."""
+    from manufyxinvenzaerp.production_plan_management.drawing_split import (
+        mip_drawing_slices, portion,
+    )
+
+    split = mip_drawing_slices(mip)
+    if not split:
+        return None
+
+    entitled = held_now = 0.0
+    split_dunos, split_plans, any_split = set(), set(), False
+    for table, name in own:
+        r = frappe.db.get_value(
+            table, name, ["parent", "duno_mark_no", "is_reserved", "reserved_qty", "transferred_qty"],
+            as_dict=True)
+        if not r:
+            continue
+        mp_wh = frappe.db.get_value("Material Planning", r.parent, "for_warehouse") or ""
+        if mp_wh and warehouse and mp_wh != warehouse:
+            continue
+        still = flt(r.reserved_qty) if r.is_reserved else 0.0
+        given = flt(still + flt(r.transferred_qty), 3)
+        sl = split.get((r.parent, r.duno_mark_no or ""))
+        if sl:
+            any_split = True
+            split_dunos.add(r.duno_mark_no or "")
+            split_plans.update(p for p in sl["plans"] if p != mip.production_plan)
+        entitled += portion(given, sl)
+        held_now += still
+    if not any_split:
+        return None
+
+    sent = flt(frappe.db.sql(
+        """
+        SELECT COALESCE(SUM(sed.qty), 0) FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON se.name = sed.parent
+        WHERE se.custom_mip_ref = %s AND se.docstatus != 2
+          AND sed.batch_no = %s AND sed.s_warehouse = %s
+        """,
+        (mip.name, batch_no, warehouse),
+    )[0][0])
+    outstanding = max(0.0, flt(entitled - sent, 3))
+    hold = flt(held_now - outstanding, 3)
+    if hold <= _TRANSFER_EPS:
+        return None
+    return {
+        "material_planning": ", ".join(sorted(split_plans)) or _("another Production Plan"),
+        "table": _("split drawing — the other plan's share"),
+        "idx": "",
+        "duno": ", ".join(sorted(d for d in split_dunos if d)),
+        "qty": hold,
+    }
+
+
 def _num(value):
     """3 decimals, without the trailing zeros -- "1 Nos", "0.48 Nos", "2260.8 Kg"."""
     text = ("%.3f" % flt(value, 3)).rstrip("0").rstrip(".")
@@ -1183,8 +1267,9 @@ def _claims_html(claims):
     # The DUNO is what makes a claim recognisable: one Material Planning is often shared
     # by several Issue Plans, so "MP-2026-00017" alone reads like this plan's own rows.
     return "".join(
-        "<li>{0} — {1} {2} {3}{4}: <b>{5} Kg</b></li>".format(
-            frappe.utils.escape_html(c["material_planning"]), c["table"], _("row"), c["idx"],
+        "<li>{0} — {1}{2}{3}: <b>{4} Kg</b></li>".format(
+            frappe.utils.escape_html(c["material_planning"]), c["table"],
+            " " + _("row") + " " + str(c["idx"]) if c.get("idx") else "",
             " (" + _("DUNO") + " " + frappe.utils.escape_html(c["duno"]) + ")" if c.get("duno") else "",
             _num(c["qty"]))
         for c in claims

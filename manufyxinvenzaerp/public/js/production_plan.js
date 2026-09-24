@@ -613,6 +613,15 @@ function _ppd_render_results(d, all_rows, search_mode, pp_name) {
 	const _filter_selector = "#_ppd_f_cdn, #_ppd_f_duno, #_ppd_f_item, #_ppd_f_so, #_ppd_f_cust, #_ppd_f_mp";
 	$wrap.on("input",  _filter_selector, _apply_filter);
 	$wrap.on("change", ".ppd-chk",       _count);
+	$wrap.on("input", ".ppd-use", function() {
+		let orig = parseInt($(this).data("orig"));
+		let r = free_rows[orig];
+		if (!r) return;
+		r._use = flt($(this).val());
+		$wrap.find(`.ppd-later[data-orig="${orig}"]`).text(_ppd_later(_ppd_nos(r)));
+		$wrap.find(`.ppd-chk[data-orig="${orig}"]`).prop("checked", r._use > 0);
+		_count();
+	});
 	$wrap.on("change", "#_ppd_search_all", _apply_filter);
 	$wrap.on("click",  "#_ppd_clear_filter", function() {
 		$wrap.find(_filter_selector).val("");
@@ -634,21 +643,37 @@ function _ppd_render_results(d, all_rows, search_mode, pp_name) {
 // Pixel widths for each column (all fixed — enables reliable horizontal scroll)
 const _PPD_COLS = [
 	{ label: "",              w: 20,  key: "chk"  },
-	{ label: "Drawing No",   w: 155, key: "cdn"  },
+	{ label: "Drawing No",   w: 135, key: "cdn"  },
 	{ label: "DUNO/Mark",    w: 70,  key: "duno" },
 	{ label: "Item Name",    w: 120, key: "item" },
 	{ label: "Sales Order",  w: 155, key: "so"   },
 	{ label: "Customer",     w: 95,  key: "cust" },
 	{ label: "Mat. Planning",w: 110, key: "mp"   },
-	{ label: "Nos Left",     w: 70,  key: "qty", align: "center" },
+	{ label: "Total NOS",       w: 62, key: "total",   align: "center" },
+	{ label: "Already Planned", w: 94, key: "planned", align: "center" },
+	{ label: "To Use Now",      w: 78, key: "use",     align: "center" },
+	{ label: "Later",           w: 50, key: "later",   align: "center" },
 ];
-// "left / drawing" in pieces for a drawing row, e.g. "6 / 10": a drawing can be
-// split over several plans (D16), so what matters is what is still unplanned.
-function _ppd_qty_text(r) {
-	if (r.fg_nos_tracked) {
-		return String(flt(r.nos_left || 0, 3)) + " / " + String(flt(r.drawing_nos || 0, 3));
+
+// A drawing's pieces can be split over several plans (D16) -- 2 of 5 NOS to one
+// supplier now, the other 3 on a later plan. Already Planned is what other plans
+// hold; To Use Now is what THIS plan takes (every piece left, unless changed);
+// Later is what stays unplanned for a plan still to come. Each plan then gets that
+// share of the drawing's raw material (production_plan_management/drawing_split).
+function _ppd_num(v) {
+	return String(flt(v || 0, 3));
+}
+function _ppd_nos(r) {
+	if (!r.fg_nos_tracked) {
+		return { total: flt(r.qty_to_manufacture || 0, 2), planned: null, left: null, use: null };
 	}
-	return String(flt(r.qty_to_manufacture || 0, 2));
+	let total = flt(r.drawing_nos || 0, 3);
+	let left = flt(r.nos_left || 0, 3);
+	let use = r._use === undefined ? left : r._use;
+	return { total, planned: flt(total - left, 3), left, use };
+}
+function _ppd_later(n) {
+	return n.left === null ? "—" : _ppd_num(Math.max(flt(n.left - flt(n.use), 3), 0));
 }
 
 const _PPD_COL_GAP = 8;   // gap between columns
@@ -694,7 +719,7 @@ function _ppd_free_rows_html(rows, show_mp_col) {
 	if (!rows.length) {
 		return `<div style="color:#6c757d;padding:12px 8px;font-size:12px;">${__("No drawings match.")}</div>`;
 	}
-	let [C_CHK, C_CDN, C_DUNO, C_ITEM, C_SO, C_CUST, C_MP, C_QTY] = _PPD_COLS;
+	let [C_CHK, C_CDN, C_DUNO, C_ITEM, C_SO, C_CUST, C_MP, C_TOTAL, C_PLANNED, C_USE, C_LATER] = _PPD_COLS;
 	return rows.map(function(r) {
 		let cdn  = frappe.utils.escape_html(r.customer_drawing_number || "—");
 		let duno = frappe.utils.escape_html(String(r.duno_mark_no || "—"));
@@ -702,7 +727,16 @@ function _ppd_free_rows_html(rows, show_mp_col) {
 		let so   = frappe.utils.escape_html(r.sales_order || "—");
 		let cust = frappe.utils.escape_html(r.customer_name || r.customer || "");
 		let mp   = frappe.utils.escape_html(r.material_planning || "—");
-		let qty  = _ppd_qty_text(r);
+		let n    = _ppd_nos(r);
+		// Editable only where the drawing is counted in pieces; an older row without
+		// that keeps the old one-plan-takes-all behaviour.
+		let use_cell = n.left === null
+			? _ppd_cell("—", C_USE, "color:#6c757d;")
+			: `<span style="flex:0 0 ${C_USE.w}px;text-align:center;">
+				<input type="number" class="ppd-use" data-orig="${r._orig_idx}" min="0" max="${n.left}" step="1"
+				       value="${flt(n.use, 3)}" title="${__("Pieces this plan takes now (up to {0})", [_ppd_num(n.left)])}"
+				       style="width:${C_USE.w - 12}px;height:24px;padding:0 4px;font-size:12px;text-align:center;border:1px solid #d1d8dd;border-radius:4px;">
+			</span>`;
 		return `<label style="display:flex;align-items:center;gap:${_PPD_COL_GAP}px;padding:6px ${_PPD_PAD}px;cursor:pointer;border-bottom:1px solid #f0f0f0;user-select:none;">
 			<input type="checkbox" class="ppd-chk" data-orig="${r._orig_idx}" style="flex:0 0 ${C_CHK.w}px;width:${C_CHK.w}px;height:${C_CHK.w}px;cursor:pointer;">
 			${_ppd_cell(cdn,  C_CDN,  "font-size:12px;font-weight:500;color:#212529;")}
@@ -711,14 +745,17 @@ function _ppd_free_rows_html(rows, show_mp_col) {
 			${_ppd_cell(so,   C_SO,   "color:#6c757d;")}
 			${_ppd_cell(cust, C_CUST, "color:#6c757d;")}
 			${_ppd_cell(mp,   C_MP,   "color:#6c757d;")}
-			${_ppd_cell(qty,  C_QTY,  "color:#6c757d;")}
+			${_ppd_cell(_ppd_num(n.total), C_TOTAL, "color:#212529;font-weight:500;")}
+			${_ppd_cell(n.planned === null ? "—" : _ppd_num(n.planned), C_PLANNED, "color:#6c757d;")}
+			${use_cell}
+			<span class="ppd-later" data-orig="${r._orig_idx}" style="flex:0 0 ${C_LATER.w}px;font-size:11px;text-align:center;color:#6c757d;">${_ppd_later(n)}</span>
 		</label>`;
 	}).join("");
 }
 
 
 function _ppd_disabled_rows_html(rows, show_mp_col, type, pp_name) {
-	let [C_CHK, C_CDN, C_DUNO, C_ITEM, C_SO, C_CUST, C_MP, C_QTY] = _PPD_COLS;
+	let [C_CHK, C_CDN, C_DUNO, C_ITEM, C_SO, C_CUST, C_MP, C_TOTAL, C_PLANNED, C_USE, C_LATER] = _PPD_COLS;
 	let C_REF = { w: 140 };
 	return rows.map(function(r) {
 		let cdn  = frappe.utils.escape_html(r.customer_drawing_number || "—");
@@ -727,7 +764,7 @@ function _ppd_disabled_rows_html(rows, show_mp_col, type, pp_name) {
 		let so   = frappe.utils.escape_html(r.sales_order || "—");
 		let cust = frappe.utils.escape_html(r.customer_name || r.customer || "");
 		let mp   = frappe.utils.escape_html(r.material_planning || "—");
-		let qty  = _ppd_qty_text(r);
+		let n    = _ppd_nos(r);
 
 		let badge = "";
 		let chk_checked = "";
@@ -757,7 +794,10 @@ function _ppd_disabled_rows_html(rows, show_mp_col, type, pp_name) {
 			${_ppd_cell(so,   C_SO,   `color:${tc};`)}
 			${_ppd_cell(cust, C_CUST, `color:${tc};`)}
 			${_ppd_cell(mp,   C_MP,   `color:${tc};`)}
-			${_ppd_cell(qty,  C_QTY,  `color:${tc};`)}
+			${_ppd_cell(_ppd_num(n.total), C_TOTAL, `color:${tc};`)}
+			${_ppd_cell(n.planned === null ? "—" : _ppd_num(n.planned), C_PLANNED, `color:${tc};`)}
+			${_ppd_cell("—", C_USE, `color:${tc};`)}
+			${_ppd_cell(n.left === null ? "—" : _ppd_num(n.left), C_LATER, `color:${tc};`)}
 			${badge}
 		</div>`;
 	}).join("");
@@ -776,6 +816,25 @@ function _ppd_do_insert(frm, d, all_rows) {
 
 	if (!selected.length) {
 		frappe.msgprint(__("Select at least one drawing to insert."));
+		return;
+	}
+
+	// To Use Now: more than 0, and no more than the pieces no other plan holds.
+	let bad_use = selected.filter(s => s.fg_nos_tracked).filter(s => {
+		let n = _ppd_nos(s);
+		return !(flt(n.use) > 0) || flt(n.use) > flt(n.left) + 0.0005;
+	});
+	if (bad_use.length) {
+		frappe.msgprint({
+			title: __("Check To Use Now"),
+			message: __("To Use Now must be more than 0 and no more than the pieces not yet planned:") + "<ul>"
+				+ bad_use.map(s => {
+					let n = _ppd_nos(s);
+					return `<li>${frappe.utils.escape_html(s.customer_drawing_number || s.duno_mark_no || s.drawing || "")}: `
+						+ __("{0} entered, {1} available", [_ppd_num(n.use), _ppd_num(n.left)]) + "</li>";
+				}).join("") + "</ul>",
+			indicator: "red",
+		});
 		return;
 	}
 
@@ -840,15 +899,17 @@ function _ppd_do_insert(frm, d, all_rows) {
 			child.custom_customer_drawing_number = s.customer_drawing_number || "";
 			child.custom_material_planning       = s.material_planning || "";
 			if (s.fg_nos_tracked) {
-				// Planned in pieces (sep14 FG plan, D5/D16): default to every piece no
-				// other plan has claimed. The Kg shown here mirrors the server, which
-				// recalculates it on save (apply_fg_nos) -- the one place it is decided.
-				child.custom_sec_qty             = flt(s.nos_left);
+				// Planned in pieces (sep14 FG plan, D5/D16): the popup's To Use Now,
+				// which starts at every piece no other plan has claimed. The Kg shown
+				// here mirrors the server, which recalculates it on save (apply_fg_nos)
+				// -- the one place it is decided.
+				let use_now = flt(_ppd_nos(s).use);
+				child.custom_sec_qty             = use_now;
 				child.custom_sec_uom             = "Nos";
 				child.custom_customer_weight_kg  = flt(s.cust_weight_total, 3);
 				child.custom_cust_weight_per_nos = flt(s.cust_weight_per_nos, 3);
 				child.planned_qty                = s.drawing_nos
-					? flt(flt(s.cust_weight_total) * flt(s.nos_left) / flt(s.drawing_nos), 3) : 0;
+					? flt(flt(s.cust_weight_total) * use_now / flt(s.drawing_nos), 3) : 0;
 			} else {
 				child.planned_qty                = flt(s.qty_to_manufacture) || 1;
 			}
