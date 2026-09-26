@@ -341,7 +341,19 @@ def get_mip_process_loss_state(mip_name):
     transferred = flt(mip.transferred_weight_kg)
     over_threshold = bool(transferred) and remaining > (transferred * threshold_pct / 100.0)
 
+    # Off-cut marked "Return NA" on the transfer popup: never declared to return, so
+    # it is part of what is left at the supplier -- named here so the write-off says
+    # where that part of it came from.
+    return_na = frappe.get_all(
+        "Manufyx Decision Log",
+        filters={"action": "Return NA at Transfer", "reference_doctype": "Material Issue Plan",
+                 "reference_name": mip.name},
+        fields=["item_code", "qty"], order_by="creation",
+    )
+
     return {
+        "return_na": [{"item_code": r.item_code, "qty": flt(r.qty, 3)} for r in return_na],
+        "return_na_kg": flt(sum(flt(r.qty) for r in return_na), 3),
         "transferred": transferred,
         "used_in_fg": flt(mip.used_in_fg_weight_kg, 3),
         "planned_return": planned_return,
@@ -852,7 +864,26 @@ def get_mip_pending_items(mip_name):
     # read as a duplicate with the wrong total, which is exactly how this was reported.
     result.sort(key=lambda r: (r["item_code"], r.get("batch_no") or ""))
 
+    _add_spec_grade(result)
     return result
+
+
+def _add_spec_grade(rows):
+    """Material Spec and Grade on each popup line, read off the line's Item -- the
+    Item is where they are typed, and a second grade is a second Item. Shown in the
+    transfer popup only; never written back."""
+    codes = list({r.get("item_code") for r in rows if r.get("item_code")})
+    if not codes:
+        return
+    items = {
+        i.name: i for i in frappe.get_all(
+            "Item", filters={"name": ["in", codes]},
+            fields=["name", "custom_material_spec", "custom_material_grade"])
+    }
+    for r in rows:
+        item = items.get(r.get("item_code")) or {}
+        r["material_spec"] = item.get("custom_material_spec") or ""
+        r["material_grade"] = item.get("custom_material_grade") or ""
 
 
 @frappe.whitelist()
@@ -1485,6 +1516,43 @@ def _log_round_up_excess(mip, items, excess_plan=None):
 CONSOLIDATED_EXCESS_SOURCE = "Consolidated Excess Return Plan"
 
 
+def return_na_limit_kg():
+    """Manufyxinvenza Settings -> Excess Return Not Applicable if Less Than (Kg).
+    0 when unset, which allows Return NA on no item at all."""
+    return flt(frappe.db.get_single_value("Manufyxinvenza Settings", "excess_return_na_below_kg"))
+
+
+def _system_excess_by_item(items):
+    """{item_code: Kg sent beyond what the drawings call for} over the lines being
+    transferred -- the popup's "Excess Kg (system)", worked out the same way."""
+    sent, drawing = {}, {}
+    for item in items:
+        code = item["item_code"]
+        sent[code] = flt(sent.get(code, 0) + flt(item.get("qty")), 3)
+        drawing[code] = flt(drawing.get(code, 0) + flt(item.get("drawing_planned_weight")), 3)
+    return {code: flt(sent[code] - drawing[code], 3) for code in sent}
+
+
+def _validate_return_na(items, excess_plan):
+    """Return NA is only for a small off-cut: Excess Kg (system) below the limit set
+    in Manufyxinvenza Settings. The popup closes the box on every other item; this is
+    the same rule for a request that did not come through it. Checked before the
+    transfer is made, so a refusal moves no stock."""
+    ticked = [code for code, entry in (excess_plan or {}).items() if (entry or {}).get("return_na")]
+    if not ticked:
+        return
+    limit = return_na_limit_kg()
+    excess = _system_excess_by_item(items)
+    refused = [code for code in ticked if code in excess and not (0 < excess[code] < limit)]
+    if refused:
+        frappe.throw(
+            _("Return NA is allowed only when the Excess Kg is less than {0} Kg "
+              "(Manufyxinvenza Settings). Enter the off-cut dimensions for: {1}").format(
+                limit, ", ".join("<b>{0}</b> ({1} Kg)".format(c, excess[c]) for c in refused)),
+            title=_("Return NA Not Allowed"),
+        )
+
+
 def _log_consolidated_excess(mip, items, excess_plan):
     """Book the excess the user planned on the transfer popup's second tab.
 
@@ -1526,18 +1594,44 @@ def _log_consolidated_excess(mip, items, excess_plan):
         item = meta.get(code)
         if not item:
             continue
-        length = flt(entry.get("length"))
-        width = flt(entry.get("width"))
-        sec_qty = flt(entry.get("sec_qty"))
         thickness = flt(item.get("custom_thickness"))
-        entered_kg = flt(calculate_qty(
-            item.get("custom_parent_item_group") or "",
-            length, width, thickness,
-            flt(item.get("custom_unit_weight")), sec_qty,
-        ) or 0, 3)
-        if entered_kg <= 0:
+
+        if entry.get("return_na"):
+            # "Return NA": the off-cut is not coming back -- typically well under a
+            # kilo, not worth measuring. Nothing is declared to return, so the weight
+            # stays at the supplier and goes out with the job's Process Loss
+            # write-off. Recorded here so that write-off can name it.
+            system_kg = flt(planned_kg.get(code, 0) - planned_kg.get("_drawing_" + code, 0), 3)
+            if system_kg > 0:
+                log_decision(
+                    "Return NA at Transfer",
+                    reference_doctype="Material Issue Plan",
+                    reference_name=mip.name,
+                    item_code=code,
+                    qty=system_kg,
+                    details=_("{0} Kg of {1} marked Return NA at transfer -- not coming back, "
+                              "to be written off as Process Loss.").format(system_kg, code),
+                )
+            continue
+
+        # The off-cut may come back in several sizes (the duplicate icon on the tab):
+        # the first size is the entry itself, any further ones are in "extra". Each
+        # size is booked as its own excess row, the same way Return Excess Entry books
+        # the sizes it is given -- one shape, one row, one batch when it comes back.
+        sizes = []
+        for size in [entry] + list(entry.get("extra") or []):
+            length, width, sec_qty = flt(size.get("length")), flt(size.get("width")), flt(size.get("sec_qty"))
+            kg = flt(calculate_qty(
+                item.get("custom_parent_item_group") or "",
+                length, width, thickness,
+                flt(item.get("custom_unit_weight")), sec_qty,
+            ) or 0, 3)
+            if kg > 0:
+                sizes.append((length, width, sec_qty, kg))
+        if not sizes:
             # Nothing measurable was typed for this item -- no row to book.
             continue
+        entered_kg = flt(sum(s[3] for s in sizes), 3)
 
         system_kg = flt(planned_kg.get(code, 0) - planned_kg.get("_drawing_" + code, 0), 3)
         if system_kg <= 0:
@@ -1557,36 +1651,42 @@ def _log_consolidated_excess(mip, items, excess_plan):
             flt(planned_kg.get(code, 0), 3), flt(planned_kg.get("_drawing_" + code, 0), 3),
             system_kg, entered_kg, ("+%s" % difference) if difference > 0 else difference,
         )
+        if len(sizes) > 1:
+            reason += " " + _("Measured in {0} sizes.").format(len(sizes))
 
-        target = by_key.get(code)
-        if target and (target.stock_entry_created or target.mapped_material_planning):
-            target = None
-        if target:
-            target.qty = flt(flt(target.qty) + entered_kg, 3)
-            target.sec_qty = flt(flt(target.sec_qty) + sec_qty, 3)
-            target.length = length or target.length
-            target.width = width or target.width
-            target.return_reason = reason
-        else:
-            target = mip.append("excess_return_items", {
-                "source_table": CONSOLIDATED_EXCESS_SOURCE,
-                "source_row": code,
-                "item_code": code,
-                "item_name": item.get("item_name") or code,
-                "parent_item_group": item.get("custom_parent_item_group") or "",
-                "unit_weight": flt(item.get("custom_unit_weight")),
-                "length": length,
-                "width": width,
-                "thickness": thickness,
-                "sec_qty": sec_qty,
-                "sec_uom": item.get("custom_sec_uom") or "",
-                "uom": item.get("uom") or "Kg",
-                "qty": entered_kg,
-                "return_warehouse": entry.get("return_warehouse") or mip.source_warehouse or "",
-                "return_reason": reason,
-            })
-            by_key[code] = target
-        changed = True
+        for n, (length, width, sec_qty, kg) in enumerate(sizes, start=1):
+            # The first size keeps the item code as its key, as a single size always
+            # has, so a plan booked before sizes existed accumulates the same way.
+            source_row = code if n == 1 else "%s|size %d" % (code, n)
+            target = by_key.get(source_row)
+            if target and (target.stock_entry_created or target.mapped_material_planning):
+                target = None
+            if target:
+                target.qty = flt(flt(target.qty) + kg, 3)
+                target.sec_qty = flt(flt(target.sec_qty) + sec_qty, 3)
+                target.length = length or target.length
+                target.width = width or target.width
+                target.return_reason = reason
+            else:
+                target = mip.append("excess_return_items", {
+                    "source_table": CONSOLIDATED_EXCESS_SOURCE,
+                    "source_row": source_row,
+                    "item_code": code,
+                    "item_name": item.get("item_name") or code,
+                    "parent_item_group": item.get("custom_parent_item_group") or "",
+                    "unit_weight": flt(item.get("custom_unit_weight")),
+                    "length": length,
+                    "width": width,
+                    "thickness": thickness,
+                    "sec_qty": sec_qty,
+                    "sec_uom": item.get("custom_sec_uom") or "",
+                    "uom": item.get("uom") or "Kg",
+                    "qty": kg,
+                    "return_warehouse": entry.get("return_warehouse") or mip.source_warehouse or "",
+                    "return_reason": reason,
+                })
+                by_key[source_row] = target
+            changed = True
 
     if changed:
         mip.save(ignore_permissions=True)
@@ -1937,6 +2037,7 @@ def create_mip_partial_transfer(mip_name, selected_items_json, transfer_type, ex
         se_type = ctx.primary_se_type
 
     _validate_selected_against_stock(mip, selected)
+    _validate_return_na(selected, excess_plan)
 
     se_items = []
     for item in selected:
@@ -2038,6 +2139,7 @@ def get_mip_cnc_pending_items(mip_name):
         # these rows: the popup reads that key for its own NOS -> Kg arithmetic, and
         # this leg has always done without it.
         row["available_nos"] = _available_nos(row, _line_kg_per_piece(row)[0])
+    _add_spec_grade(result)
     return result
 
 

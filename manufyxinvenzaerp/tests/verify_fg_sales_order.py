@@ -216,16 +216,27 @@ def _run():
     check("a 240 Kg line fails", ok, False)
     check("...ordered vs drawings in Kg and Nos, with the difference",
           bool(kg_issue) and all(t in kg_issue[0] for t in
-                                 ("240 Kg / 5 Nos", "250 Kg / 5 Nos", "+10 Kg / 0 Nos")), True)
+                                 ("planned 250 Kg / 5 Nos", "Items table has 240 Kg / 5 Nos", "Drawing List has 10 Kg more")), True)
     if kg_issue:
         print("       ->", kg_issue[0][:170])
+    frappe.db.set_value("Sales Order Item", line, "qty", 250)
+
+    # Above the drawings is a warning only (2026-09-26): the customer's weight may sit
+    # over the planned one. Measured as "no Items-row issue", not as a pass, so it
+    # holds whatever else this fixture's sheet trips over.
+    frappe.db.set_value("Sales Order Item", line, "qty", 260)
+    r = imp.verify_raw_materials(so.name)
+    check("a 260 Kg line (above planned) does not block",
+          any(_plain(i).startswith("Items row 1") for i in r["issues"]), False)
+    check("...it is a warning naming the excess",
+          any("Items table has 10 Kg more" in _plain(w) for w in r["warnings"]), True)
     frappe.db.set_value("Sales Order Item", line, "qty", 250)
 
     frappe.db.set_value("Sales Order Item", line, "custom_sec_qty", 4)
     ok, issues = verify()
     check("a 4 Nos line fails", ok, False)
     check("...naming the Nos difference",
-          any("250 Kg / 4 Nos" in i and "0 Kg / +1 Nos" in i for i in issues), True)
+          any("250 Kg / 4 Nos" in i and "Drawing List has 1 Nos more" in i and "Kg more" not in i for i in issues), True)
     frappe.db.set_value("Sales Order Item", line, "custom_sec_qty", 5)
 
     frappe.db.set_value("Sales Order DUNO Item", staged.name, "item", FOREIGN_FG)
@@ -248,13 +259,13 @@ def _run():
     check("changing the FG line Kg clears the flag", flag(), 0)
     check("...and says why", any("Verification Cleared" in m for m in msgs), True)
     check("an orange warning names the mismatch on save",
-          any("does not match the order" in m and "251 Kg / 5 Nos" in m for m in msgs), True)
+          any("Planned weight differs" in m and "251 Kg / 5 Nos" in m and "Items table has 1 Kg more" in m for m in msgs), True)
     doc = frappe.get_doc("Sales Order", so.name)
     doc.items[0].qty = 250
     frappe.local.message_log = []
     doc.save(ignore_permissions=True)
     check("matching again: no mismatch warning",
-          any("does not match the order" in m for m in _messages()), False)
+          any("Planned weight differs" in m for m in _messages()), False)
 
     verify()
     doc = frappe.get_doc("Sales Order", so.name)
@@ -336,4 +347,4 @@ def _run():
     check("the row may follow its Drawing (Update Customer Weight)",
           _throws(lambda: doc.save(ignore_permissions=True)), None)
     check("...and the new line difference shows in orange",
-          any("does not match the order" in m and "+50 Kg / 0 Nos" in m for m in _messages()), True)
+          any("Planned weight differs" in m and "Drawing List has 50 Kg more" in m for m in _messages()), True)

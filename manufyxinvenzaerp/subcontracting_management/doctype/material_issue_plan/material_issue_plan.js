@@ -755,6 +755,13 @@ function _show_process_loss_dialog(frm, s) {
 		`<tr><td>${__("Excess actually returned")}</td><td style="text-align:right">${money(s.returned)} Kg</td></tr>` +
 		`<tr style="font-weight:700;background:#fff5f5"><td>${__("Still at the supplier — to write off")}</td>` +
 		`<td style="text-align:right;color:#c62828">${money(s.remaining)} Kg</td></tr>` +
+		// Part of the above, not in addition to it: off-cut marked "Return NA" at
+		// transfer was never declared to come back.
+		(flt(s.return_na_kg) > 0
+			? `<tr><td style="padding-left:24px;color:#6b7280">${__("of which marked Return NA at transfer")}: ` +
+			  (s.return_na || []).map(r => `${frappe.utils.escape_html(r.item_code)} ${money(r.qty)} Kg`).join(", ") +
+			  `</td><td style="text-align:right;color:#6b7280">${money(s.return_na_kg)} Kg</td></tr>`
+			: "") +
 		"</table>";
 
 	if (s.pending_return_kg > 0.001) {
@@ -1290,6 +1297,8 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 		+ "<thead><tr>"
 		+ "<th style='width:32px'></th>"
 		+ "<th>" + __("Item") + "</th>"
+		+ "<th style='white-space:nowrap'>" + __("Material Spec") + "</th>"
+		+ "<th style='white-space:nowrap'>" + __("Material Grade") + "</th>"
 		+ "<th>" + __("Batch") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Planned") + "</th>"
 		+ "<th class='text-right' style='white-space:nowrap'>" + __("Transferred") + "</th>"
@@ -1335,13 +1344,15 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				// The off-cut was parked per item, against every batch row of it --
 				// first one found answers for the item.
 			if (!is_cnc_fwd && (flt(saved.draft_excess_length) || flt(saved.draft_excess_width) ||
-				flt(saved.draft_excess_sec_qty))) {
+				flt(saved.draft_excess_sec_qty) || cint(saved.draft_excess_return_na))) {
 					dlg._excess_plan = dlg._excess_plan || {};
 					if (!dlg._excess_plan[d.item_code]) {
 						dlg._excess_plan[d.item_code] = {
 							length: flt(saved.draft_excess_length),
 							width: flt(saved.draft_excess_width),
 							sec_qty: flt(saved.draft_excess_sec_qty),
+							extra: saved.draft_excess_extra_sizes ? JSON.parse(saved.draft_excess_extra_sizes) : [],
+							return_na: cint(saved.draft_excess_return_na),
 							return_warehouse: saved.draft_return_warehouse || "",
 						};
 					}
@@ -1382,6 +1393,9 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			"<td>" + frappe.utils.escape_html(d.item_code) +
 				(d.duno_mark_no ? "<div class='text-muted' style='font-size:11px'>" +
 					frappe.utils.escape_html(d.duno_mark_no) + "</div>" : "") + "</td>" +
+			// Read-only: spec and grade belong to the Item (server: _add_spec_grade).
+			"<td>" + frappe.utils.escape_html(d.material_spec || "—") + "</td>" +
+			"<td>" + frappe.utils.escape_html(d.material_grade || "—") + "</td>" +
 			"<td style='word-break:break-all'>" + frappe.utils.escape_html(d.batch_no || "—") + "</td>" +
 			"<td class='text-right' style='white-space:nowrap'>" + format_number(flt(d.planned_qty), null, 3) + "</td>" +
 			"<td class='text-right' style='white-space:nowrap'>" +
@@ -1705,6 +1719,8 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				"<th style='" + th + "text-align:right'>" + __("Planned Transfer Wt") + "</th>" +
 				"<th style='" + th + "text-align:right'>" + __("Excess Kg") +
 					"<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("system") + "</div></th>" +
+				"<th style='" + th + "text-align:center'>" + __("Return NA") +
+					"<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("to Process Loss") + "</div></th>" +
 				"<th style='" + th + "'>" + __("Length (mm)") + "</th>" +
 				"<th style='" + th + "'>" + __("Width (mm)") + "</th>" +
 				"<th style='" + th + "'>" + __("Thickness (mm)") + "</th>" +
@@ -1712,6 +1728,7 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				"<th style='" + th + "text-align:right'>" + __("Excess Kg") +
 					"<div class='text-muted' style='font-weight:normal;font-size:10px'>" + __("entered") + "</div></th>" +
 				"<th style='" + th + "text-align:right'>" + __("Difference") + "</th>" +
+				"<th style='" + th + "width:36px'></th>" +
 			"</tr></thead><tbody>";
 
 		codes.forEach(function(code) {
@@ -1728,6 +1745,16 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			// A row that stops having excess must not keep what was typed while it did.
 			if (no_excess && dlg._excess_plan) delete dlg._excess_plan[code];
 			var saved = (dlg._excess_plan || {})[code] || {};
+			// Return NA only for a small off-cut: Excess Kg (system) under the limit in
+			// Manufyxinvenza Settings. Every other line keeps the box closed -- and a
+			// draft that ticked it on a line now over the limit loses the tick.
+			var na_limit = flt(dlg._return_na_limit);
+			var na_allowed = !no_excess && na_limit > 0 && sys < na_limit;
+			if (saved.return_na && !na_allowed && dlg._excess_plan) {
+				delete dlg._excess_plan[code];
+				saved = {};
+			}
+			var return_na = na_allowed && !!saved.return_na;
 			var why = no_excess
 				? " title='" + __("No excess on this item — nothing to describe.") + "'"
 				: "";
@@ -1759,22 +1786,106 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				"<td class='text-right' style='white-space:nowrap'>" + format_number(e.transfer_kg, null, 3) + "</td>" +
 				"<td class='text-right mip-xs-sys' style='white-space:nowrap;font-weight:600'>" +
 					format_number(sys, null, 3) + no_excess_label + "</td>" +
-				"<td>" + box("mip-xs-length", 100, flt(saved.length)) + "</td>" +
+				// "Return NA": the off-cut is not coming back (typically under a kilo, not
+				// worth measuring). Its weight goes to Process Loss and no dimensions are
+				// asked for, so ticking it closes the boxes on this line.
+				"<td style='text-align:center'><input type='checkbox' class='mip-xs-na'" +
+					(return_na ? " checked" : "") + (na_allowed ? "" : " disabled") +
+					(na_allowed || no_excess ? "" : " title='" +
+						(na_limit > 0 ? __("Allowed only when the Excess Kg is less than {0} Kg", [na_limit])
+						              : __("Return NA is switched off in Manufyxinvenza Settings")) + "'") +
+					"></td>" +
+				"<td>" + box("mip-xs-length", 100, return_na ? 0 : flt(saved.length), return_na) + "</td>" +
 				// Width is only used by the Plates formula -- Structurals rows never
 				// need it, so their Width box is read-only whatever the excess.
-				"<td>" + box("mip-xs-width", 100, flt(saved.width), e.group === "Structurals") + "</td>" +
+				"<td>" + box("mip-xs-width", 100, return_na ? 0 : flt(saved.width), return_na || e.group === "Structurals") + "</td>" +
 				"<td class='text-right' style='white-space:nowrap'>" + format_number(e.thickness, null, 2) + "</td>" +
-				"<td>" + box("mip-xs-sec", 90, flt(saved.sec_qty)) + "</td>" +
+				"<td>" + box("mip-xs-sec", 90, return_na ? 0 : flt(saved.sec_qty), return_na) + "</td>" +
 				"<td class='text-right mip-xs-kg' style='white-space:nowrap;font-weight:600'>—</td>" +
 				"<td class='text-right mip-xs-diff' style='white-space:nowrap;font-weight:600'>—</td>" +
+				// Several sizes for one off-cut, as on Return Excess Entry: the duplicate
+				// icon adds another Length / Width / NOS line for the same item. Only
+				// where there is an off-cut to describe, and only for the groups whose
+				// weight comes from dimensions.
+				"<td style='text-align:center'>" +
+					(!no_excess && _xs_splittable(e.group)
+						? "<button type='button' class='btn btn-xs btn-default mip-xs-dup'" +
+						  (return_na ? " style='display:none'" : "") + " title='" +
+						  __("Add another size for this item") + "'>" + frappe.utils.icon("duplicate", "xs") + "</button>"
+						: "") + "</td>" +
 			"</tr>";
+			if (!no_excess && !return_na && _xs_splittable(e.group)) {
+				(saved.extra || []).forEach(function(size) { html += _xs_extra_row_html(code, e, size); });
+			}
 		});
 		html += "</tbody></table></div>";
 		$pane_excess.html(html);
 		$pane_excess.find("tr[data-item]").each(function() { _recalc_excess_row($(this), by_item); });
 		$pane_excess.off("input.xs").on("input.xs", ".mip-xs-length, .mip-xs-width, .mip-xs-sec", function() {
-			_recalc_excess_row($(this).closest("tr"), by_item);
+			_recalc_excess_row(_xs_main_row($(this).closest("tr")), by_item);
 		});
+		$pane_excess.off("change.xsna").on("change.xsna", ".mip-xs-na", function() {
+			var $main = $(this).closest("tr");
+			var na = $(this).prop("checked");
+			var group = (by_item[$main.data("item")] || {}).group;
+			if (na) {
+				$main.find(".mip-xs-length, .mip-xs-width, .mip-xs-sec").val("");
+				_xs_extra_rows($main).remove();
+			}
+			$main.find(".mip-xs-length, .mip-xs-sec").prop("disabled", na);
+			$main.find(".mip-xs-width").prop("disabled", na || group === "Structurals");
+			$main.find(".mip-xs-dup").toggle(!na);
+			_recalc_excess_row($main, by_item);
+		});
+		$pane_excess.off("click.xsdup").on("click.xsdup", ".mip-xs-dup", function() {
+			var $main = $(this).closest("tr");
+			var code = $main.data("item");
+			var $last = _xs_extra_rows($main).last();
+			$(_xs_extra_row_html(code, by_item[code], {})).insertAfter($last.length ? $last : $main);
+			_recalc_excess_row($main, by_item);
+		});
+		$pane_excess.off("click.xsdel").on("click.xsdel", ".mip-xs-remove", function() {
+			var $main = _xs_main_row($(this).closest("tr"));
+			$(this).closest("tr").remove();
+			_recalc_excess_row($main, by_item);
+		});
+	}
+
+	function _xs_splittable(group) { return group === "Structurals" || group === "Plates"; }
+
+	// The main line of an item, from any of its lines.
+	function _xs_main_row($tr) {
+		return $tr.hasClass("mip-xs-extra")
+			? $pane_excess.find("tr[data-item]").filter(function() { return $(this).data("item") === $tr.data("for"); })
+			: $tr;
+	}
+
+	function _xs_extra_rows($main) {
+		var code = $main.data("item");
+		return $pane_excess.find("tr.mip-xs-extra").filter(function() { return $(this).data("for") === code; });
+	}
+
+	// One extra size of an item's off-cut: the same Length / Width / NOS boxes as the
+	// main line, its own Kg, and a remove button. The Difference stays on the main
+	// line, worked out on every size together.
+	function _xs_extra_row_html(code, e, size) {
+		var num = "<input type='number' step='0.001' min='0' class='form-control input-xs text-right ";
+		function box(cls, width, value, disabled) {
+			return num + cls + "' style='width:" + width + "px'" + (disabled ? " disabled" : "") +
+				" value='" + (value || "") + "'>";
+		}
+		return "<tr class='mip-xs-extra' data-for='" + frappe.utils.escape_html(code) + "'>" +
+			"<td colspan='5' class='text-muted' style='font-size:11px;padding-left:18px'>↳ " +
+				__("another size of {0}", [frappe.utils.escape_html(code)]) + "</td>" +
+			"<td>" + box("mip-xs-length", 100, flt(size.length)) + "</td>" +
+			"<td>" + box("mip-xs-width", 100, flt(size.width), e.group === "Structurals") + "</td>" +
+			"<td class='text-right' style='white-space:nowrap'>" + format_number(e.thickness, null, 2) + "</td>" +
+			"<td>" + box("mip-xs-sec", 90, flt(size.sec_qty)) + "</td>" +
+			"<td class='text-right mip-xs-kg' style='white-space:nowrap;font-weight:600'>—</td>" +
+			"<td></td>" +
+			"<td style='text-align:center'><button type='button' class='btn btn-xs btn-default mip-xs-remove' title='" +
+				__("Remove this size") + "'>" + frappe.utils.icon("delete", "xs") + "</button></td>" +
+		"</tr>";
 	}
 
 	function _recalc_excess_row($row, by_item) {
@@ -1788,34 +1899,66 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			$row.find(".mip-xs-diff").text("—").css("color", "");
 			return;
 		}
-		var L = flt($row.find(".mip-xs-length").val());
-		var W = flt($row.find(".mip-xs-width").val());
-		var S = flt($row.find(".mip-xs-sec").val());
-		var entered = _excess_weight({
+		if ($row.find(".mip-xs-na").prop("checked")) {
+			var sys_na = flt(e.transfer_kg - e.drawing_kg, 3);
+			dlg._excess_plan = dlg._excess_plan || {};
+			dlg._excess_plan[e.item_code] = { return_na: 1 };
+			$row.find(".mip-xs-kg").text("—");
+			$row.find(".mip-xs-diff")
+				.html("<span style='color:#b45309;font-weight:600'>" +
+					__("{0} Kg to Process Loss", [format_number(sys_na, null, 3)]) + "</span>")
+				.css("color", "");
+			return;
+		}
+		var dims = {
 			custom_parent_item_group: e.group,
 			custom_thickness: e.thickness,
 			custom_unit_weight: e.unit_weight,
-		}, L, W, S);
+		};
+		var L = flt($row.find(".mip-xs-length").val());
+		var W = flt($row.find(".mip-xs-width").val());
+		var S = flt($row.find(".mip-xs-sec").val());
+		var entered = _excess_weight(dims, L, W, S);
 		var sys = flt(e.transfer_kg - e.drawing_kg, 3);
+
+		// Further sizes of the same off-cut. Each shows its own Kg; the main line's
+		// Difference is taken on all of them together, since together they are what
+		// comes back.
+		var extra = [], extra_kg = 0, extra_incomplete = false;
+		_xs_extra_rows($row).each(function() {
+			var $x = $(this);
+			var xl = flt($x.find(".mip-xs-length").val()), xw = flt($x.find(".mip-xs-width").val()),
+				xs = flt($x.find(".mip-xs-sec").val());
+			var kg = _excess_weight(dims, xl, xw, xs);
+			$x.find(".mip-xs-kg").text(kg === null ? "—" : format_number(kg, null, 3));
+			if (!(xl || xw || xs)) return;
+			extra.push({ length: xl, width: xw, sec_qty: xs });
+			if (kg === null) extra_incomplete = true; else extra_kg += kg;
+		});
 
 		// Remembered on the dialog, not only in the DOM: switching back to the
 		// transfer tab re-renders this one from scratch.
 		dlg._excess_plan = dlg._excess_plan || {};
-		if (L || W || S) {
-			dlg._excess_plan[e.item_code] = { length: L, width: W, sec_qty: S };
+		if (L || W || S || extra.length) {
+			var kept = dlg._excess_plan[e.item_code] || {};
+			dlg._excess_plan[e.item_code] = { length: L, width: W, sec_qty: S, extra: extra,
+				return_warehouse: kept.return_warehouse || "" };
 		} else {
 			delete dlg._excess_plan[e.item_code];
 		}
 
-		if (entered === null) {
-			$row.find(".mip-xs-kg").text("—");
+		$row.find(".mip-xs-kg").text(entered === null ? "—" : format_number(entered, null, 3));
+		if (entered === null || extra_incomplete) {
+			// No Difference until every size is complete; the main line keeps its own Kg.
 			$row.find(".mip-xs-diff").text("—").css("color", "");
 			return;
 		}
-		var diff = flt(entered - sys, 3);
-		$row.find(".mip-xs-kg").text(format_number(entered, null, 3));
+		var total = flt(entered + extra_kg, 3);
+		var diff = flt(total - sys, 3);
 		$row.find(".mip-xs-diff")
-			.text((diff > 0 ? "+" : "") + format_number(diff, null, 3))
+			.html((diff > 0 ? "+" : "") + format_number(diff, null, 3) +
+				(extra.length ? "<div class='text-muted' style='font-size:10px;font-weight:normal'>" +
+					__("on {0} Kg, {1} sizes", [format_number(total, null, 3), extra.length + 1]) + "</div>" : ""))
 			.attr("title", diff > 0 ? __("extra beyond the transfer") : diff < 0 ? __("missing") : "")
 			.css("color", Math.abs(diff) < 0.001 ? "#15803d" : diff > 0 ? "#1d4ed8" : "#b91c1c");
 	}
@@ -1905,12 +2048,23 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 				// be asking for the shape of something that does not exist.
 				if (flt(e.transfer_kg - e.drawing_kg, 3) <= 0) return;
 				var plan = (dlg._excess_plan || {})[s.item_code] || {};
+				// Return NA: nothing is coming back, so there is nothing to measure.
+				if (plan.return_na) return;
 				var entered = _excess_weight({
 					custom_parent_item_group: e.group,
 					custom_thickness: e.thickness,
 					custom_unit_weight: e.unit_weight,
 				}, plan.length, plan.width, plan.sec_qty);
-				if (entered === null) missing.push(s.item_code);
+				// Every extra size must be complete too: a half-typed size would be
+				// dropped by the server and the off-cut booked short.
+				var extra_bad = (plan.extra || []).some(function(x) {
+					return _excess_weight({
+						custom_parent_item_group: e.group,
+						custom_thickness: e.thickness,
+						custom_unit_weight: e.unit_weight,
+					}, x.length, x.width, x.sec_qty) === null;
+				});
+				if (entered === null || extra_bad) missing.push(s.item_code);
 			});
 			if (missing.length) {
 				frappe.msgprint({
@@ -2006,6 +2160,16 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 	}
 
 	dlg.$wrapper.addClass("mip-transfer-theme");
+	// The Return NA limit (Manufyxinvenza Settings). Until it arrives the box stays
+	// closed; the excess tab is redrawn if it is already showing.
+	dlg._return_na_limit = 0;
+	frappe.db.get_single_value("Manufyxinvenza Settings", "excess_return_na_below_kg").then(function(v) {
+		dlg._return_na_limit = flt(v);
+		if ($pane_excess.is(":visible")) _render_excess_plan();
+	});
+	// Wider than "extra-large": Material Spec and Grade joined the table, and every
+	// column must stay on screen without scrolling sideways.
+	dlg.$wrapper.find(".modal-dialog").css({ "max-width": "95vw", "width": "95vw" });
 	dlg.$wrapper
 		.on("shown.bs.modal", function() { $("body").addClass("mip-transfer-alerts-front"); })
 		.on("hidden.bs.modal", function() { $("body").removeClass("mip-transfer-alerts-front"); });

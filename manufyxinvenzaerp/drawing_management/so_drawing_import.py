@@ -1034,14 +1034,14 @@ def _check_fg_weights(so):
       - its FG item is on the order's items table (D4). A second FG item that the
         order does not sell would produce drawings nothing can be delivered against.
     For each FG item on the items table, over ALL its Drawing List rows (created or
-    not): the Totals add up to the line Quantity in Kg and the Total Qtys to the line
-    Qty (Nos). A sheet that describes 245 Kg of a 250 Kg order is short by a drawing
-    or a weight, and every plan built from it would be short too.
+    not): the line Quantity (Kg) and Qty (Nos) must not be LESS than the drawings'
+    Totals -- drawings for more than the order sells would be built and never
+    delivered. A line above the drawings is only a warning (_check_fg_excess).
 
     Rows of items that are not finished goods are left to the older checks.
     """
     from manufyxinvenzaerp.drawing_management.sales_order import (
-        fg_line_mismatch_text, fg_line_totals, fmt_qty,
+        fg_line_is_short, fg_line_mismatch_text, fg_line_totals, fmt_qty,
     )
     from manufyxinvenzaerp.production_management.fg_stock import is_fg_item
 
@@ -1081,9 +1081,24 @@ def _check_fg_weights(so):
                            fmt_qty(total), fmt_qty(total - per_nos * nos)))
 
     for t in fg_line_totals(so):
-        if not t.matches:
+        if not t.matches and fg_line_is_short(t):
             issues.append(_at(ITEMS, t.idx, fg_line_mismatch_text(t)))
     return issues
+
+
+def _check_fg_excess(so):
+    """Items table lines that order MORE than their drawings plan -- a warning, not an
+    issue: the customer's weight on the order may sit above the planned one, and
+    verification still passes. Less than planned is _check_fg_weights' and blocks.
+    Same precondition as _check_fg_weights: only while a Drawing List row is pending."""
+    from manufyxinvenzaerp.drawing_management.sales_order import (
+        fg_line_is_short, fg_line_mismatch_text, fg_line_totals,
+    )
+
+    if not any(not r.get("drawing") for r in (so.get("custom_duno_items") or [])):
+        return []
+    return [_at(ITEMS, t.idx, fg_line_mismatch_text(t))
+            for t in fg_line_totals(so) if not t.matches and not fg_line_is_short(t)]
 
 
 def _check_duno_reuse(so):
@@ -1148,7 +1163,7 @@ def verify_raw_materials(so_name):
     # there blocks drawing creation -- and a mark reused by an unrelated customer is
     # not a fault in this sheet. It is reported separately so it is seen at import
     # time, when renaming is still cheap, without refusing the import.
-    warnings = _check_duno_reuse(so)
+    warnings = _check_duno_reuse(so) + _check_fg_excess(so)
 
     if not unlocked:
         verified = not issues

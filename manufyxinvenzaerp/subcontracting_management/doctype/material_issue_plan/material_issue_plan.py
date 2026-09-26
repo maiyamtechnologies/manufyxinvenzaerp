@@ -656,6 +656,9 @@ def save_transfer_draft(mip_name, rows_json, excess_plan_json=None, transfer_typ
             "draft_excess_length": flt(excess.get("length")),
             "draft_excess_width": flt(excess.get("width")),
             "draft_excess_sec_qty": flt(excess.get("sec_qty")),
+            # Further sizes of the same off-cut (the duplicate icon), parked as JSON.
+            "draft_excess_extra_sizes": json.dumps(excess.get("extra")) if excess.get("extra") else None,
+            "draft_excess_return_na": 1 if excess.get("return_na") else 0,
             "draft_return_warehouse": excess.get("return_warehouse") or "",
             "draft_saved_on": now(),
             "draft_transfer_type": transfer_type or _DEFAULT_TRANSFER_TYPE,
@@ -735,6 +738,8 @@ _CONSOLIDATE_DRAFT_FIELDS = (
     "draft_excess_length",
     "draft_excess_width",
     "draft_excess_sec_qty",
+    "draft_excess_extra_sizes",
+    "draft_excess_return_na",
     "draft_return_warehouse",
     "draft_saved_on",
     "draft_transfer_type",
@@ -743,6 +748,7 @@ _CONSOLIDATE_DRAFT_FIELDS = (
 # The ones that hold text rather than a number, so they are emptied to None rather
 # than 0 and are not measured with flt() when asking "does this row hold a draft".
 _CONSOLIDATE_DRAFT_TEXT_FIELDS = (
+    "draft_excess_extra_sizes",
     "draft_return_warehouse",
     "draft_saved_on",
     "draft_transfer_type",
@@ -795,7 +801,7 @@ def _sync_consolidate_items(mip):
         for r in (mip.consolidate_items or [])
         # draft_transfer_type says which popup a draft belongs to, never that there IS
         # one -- measuring it here would make a row that holds nothing else look drafted.
-        if any(r.get(f) if f in ("draft_return_warehouse", "draft_saved_on") else flt(r.get(f))
+        if any(r.get(f) if f in _CONSOLIDATE_DRAFT_TEXT_FIELDS else flt(r.get(f))
                for f in _CONSOLIDATE_DRAFT_FIELDS if f != "draft_transfer_type")
     }
 
@@ -803,10 +809,16 @@ def _sync_consolidate_items(mip):
     # hold hundreds of distinct item/batch pairs, and a lookup inside the loop turned
     # a single save into hundreds of round trips.
     wanted_items = {r.planned_item or r.item_code for r in (mip.raw_materials or []) if r.batch_no}
-    item_names = dict(frappe.get_all(
-        "Item", filters={"name": ["in", list(wanted_items)]},
-        fields=["name", "item_name"], as_list=True,
-    )) if wanted_items else {}
+    # Spec and grade ride along: they are fetch_from item_code, but this table is
+    # rebuilt inside validate(), after Frappe's fetch has already run, so a row left
+    # to the fetch is always blank.
+    items = {
+        i.name: i for i in frappe.get_all(
+            "Item", filters={"name": ["in", list(wanted_items)]},
+            fields=["name", "item_name", "custom_material_spec", "custom_material_grade"],
+        )
+    } if wanted_items else {}
+    item_names = {name: i.item_name for name, i in items.items()}
 
     groups = {}
     for row in (mip.raw_materials or []):
@@ -842,6 +854,8 @@ def _sync_consolidate_items(mip):
         done = flt(g["transferred_qty"], 3)
         row = mip.append("consolidate_items", {
             "item_code": g["item_code"], "item_name": g["item_name"],
+            "material_spec": (items.get(g["item_code"]) or {}).get("custom_material_spec"),
+            "material_grade": (items.get(g["item_code"]) or {}).get("custom_material_grade"),
             "batch_no": g["batch_no"], "cnc_process": g["cnc_process"],
             "parent_item_group": g["parent_item_group"],
             "length": g["length"], "width": g["width"],
@@ -1536,8 +1550,10 @@ def get_target_context(mip):
         primary_warehouse = mip.supplier_warehouse or sco.supplier_warehouse
         if not primary_warehouse:
             frappe.throw(
-                _("Supplier Warehouse is not set. Please set it directly on this Material Issue Plan "
-                  "(Warehouses section) or on the linked Subcontracting Order {0}.").format(mip.subcontracting_order)
+                _("Supplier / Work in Progress Warehouse is not set. Please set it directly on this "
+                  "Material Issue Plan (Warehouses section) or on the linked Subcontracting Order {0}.")
+                .format(mip.subcontracting_order),
+                title=_("Supplier / Work in Progress Warehouse Missing"),
             )
         return frappe._dict({
             "doctype": "Subcontracting Order",

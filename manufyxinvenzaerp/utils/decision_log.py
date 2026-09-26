@@ -25,6 +25,7 @@ ACTIONS = {
     "Reassign Batch",
     "Round Up at Transfer",
     "Cut Sheet Balance",
+    "Return NA at Transfer",
 }
 
 

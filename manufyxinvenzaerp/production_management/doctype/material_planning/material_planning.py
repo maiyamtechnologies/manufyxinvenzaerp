@@ -506,27 +506,51 @@ class MaterialPlanning(Document):
         the save flow), and item_code is already a unique key per Material Planning
         since consolidation is deduped by item_code."""
         pending = [r for r in (self.unavailable_items or []) if r.item_code and not r.consolidated_into]
-        if not pending:
+        if pending:
+            by_item = {r.item_code: r for r in (self.consolidate_items or [])}
+
+            for row in pending:
+                target = by_item.get(row.item_code)
+                if not target:
+                    target = self.append("consolidate_items", {
+                        "item_code": row.item_code,
+                        "item_name": row.item_name,
+                        "parent_item_group": row.parent_item_group,
+                        "unit_weight": row.unit_weight,
+                        "required_kg": 0,
+                    })
+                    by_item[row.item_code] = target
+                # Nuts and Bolts reverses qty/sec_qty roles (qty = Nos, sec_qty = Kg) —
+                # same reversal _verify_nos_vs_qty already accounts for.
+                kg_value = flt(row.sec_qty) if row.parent_item_group == "Nuts and Bolts" else flt(row.qty)
+                target.required_kg = flt(target.required_kg) + kg_value
+                row.consolidated_into = row.item_code
+
+        self._fill_consolidate_spec_grade()
+
+    def _fill_consolidate_spec_grade(self):
+        """Material Spec / Grade on the Consolidate Item rows, carried by hand.
+
+        Both are `fetch_from item_code`, but Frappe runs that fetch in _validate_links,
+        BEFORE validate() -- and validate() is where these rows are appended, so a new
+        row never got it and MP-2026-00016 showed every line blank. Spec and grade
+        belong to the Item (one Item per grade), so reading them off the Item is exact;
+        rows already saved blank are repaired on their next save."""
+        blank = [r for r in (self.consolidate_items or [])
+                 if r.item_code and not (r.material_spec and r.material_grade)]
+        if not blank:
             return
-
-        by_item = {r.item_code: r for r in (self.consolidate_items or [])}
-
-        for row in pending:
-            target = by_item.get(row.item_code)
-            if not target:
-                target = self.append("consolidate_items", {
-                    "item_code": row.item_code,
-                    "item_name": row.item_name,
-                    "parent_item_group": row.parent_item_group,
-                    "unit_weight": row.unit_weight,
-                    "required_kg": 0,
-                })
-                by_item[row.item_code] = target
-            # Nuts and Bolts reverses qty/sec_qty roles (qty = Nos, sec_qty = Kg) —
-            # same reversal _verify_nos_vs_qty already accounts for.
-            kg_value = flt(row.sec_qty) if row.parent_item_group == "Nuts and Bolts" else flt(row.qty)
-            target.required_kg = flt(target.required_kg) + kg_value
-            row.consolidated_into = row.item_code
+        spec_grade = {
+            i.name: i for i in frappe.get_all(
+                "Item", filters={"name": ["in", list({r.item_code for r in blank})]},
+                fields=["name", "custom_material_spec", "custom_material_grade"],
+            )
+        }
+        for r in blank:
+            item = spec_grade.get(r.item_code)
+            if item:
+                r.material_spec = item.custom_material_spec
+                r.material_grade = item.custom_material_grade
 
     def _recalculate_consolidate_items(self):
         """Purchase Kg / Difference Kg on the Consolidate Item table, recomputed from

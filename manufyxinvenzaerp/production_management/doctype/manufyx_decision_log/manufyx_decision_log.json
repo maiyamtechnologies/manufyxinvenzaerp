@@ -33,7 +33,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Decision",
-   "options": "Reserve\nUnreserve\nReassign Batch\nRound Up at Transfer\nCut Sheet Balance",
+   "options": "Reserve\nUnreserve\nReassign Batch\nRound Up at Transfer\nCut Sheet Balance\nReturn NA at Transfer",
    "reqd": 1
   },
   {
@@ -142,7 +142,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-21 10:00:00.000000",
+ "modified": "2026-09-26 17:22:17.691227",
  "modified_by": "Administrator",
  "module": "Production Management",
  "name": "Manufyx Decision Log",

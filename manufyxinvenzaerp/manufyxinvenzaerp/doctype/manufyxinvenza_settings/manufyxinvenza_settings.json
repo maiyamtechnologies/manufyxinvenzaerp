@@ -11,6 +11,7 @@
   "create_new_batch_for_cut_sheet_stock_entry",
   "process_loss_section",
   "process_loss_warning_percent",
+  "excess_return_na_below_kg",
   "duno_section",
   "warn_on_duplicate_duno",
   "finished_goods_section",
@@ -27,7 +28,7 @@
    "fieldname": "auto_purchase_from_material_planning",
    "fieldtype": "Check",
    "label": "Auto Purchase from Material Planning",
-   "description": "When enabled, shows an Auto Purchase button on Material Planning to automatically create MR \u2192 PO \u2192 PR in one click for all unavailable items."
+   "description": "When enabled, shows an Auto Purchase button on Material Planning to automatically create MR → PO → PR in one click for all unavailable items."
   },
   {
    "fieldname": "cut_sheet_section",
@@ -58,7 +59,15 @@
    "fieldtype": "Percent",
    "label": "Process Loss Warning Above (%)",
    "default": "5",
-   "description": "Warn when a job's process loss is above this share of what was transferred. Above it, the material was probably not used effectively rather than lost in cutting \u2014 that is a purchase return to recover payment from the supplier, not a write-off. A warning only; the write-off is still allowed with a reason."
+   "description": "Warn when a job's process loss is above this share of what was transferred. Above it, the material was probably not used effectively rather than lost in cutting — that is a purchase return to recover payment from the supplier, not a write-off. A warning only; the write-off is still allowed with a reason."
+  },
+  {
+   "fieldname": "excess_return_na_below_kg",
+   "fieldtype": "Float",
+   "precision": "3",
+   "label": "Excess Return Not Applicable if Less Than (Kg)",
+   "default": "1",
+   "description": "On the transfer popup's excess return plan tab, Return NA can be ticked only on an item whose Excess Kg (system) is below this weight. That off-cut is not measured or returned; it is written off with the job's Process Loss. 0 or blank: Return NA is not allowed on any item."
   },
   {
    "fieldname": "duno_section",
@@ -70,7 +79,7 @@
    "fieldtype": "Check",
    "label": "Show Warning for Duplicate DUNO",
    "default": "1",
-   "description": "Warn on the Sales Order (Verify Raw Materials) and when saving a Drawing if the DUNO/Mark No is already used by a different Sales Order. This is only a warning and never blocks either one \u2014 a mark comes from the customer's drawing, and two customers reusing one is normal. Material Planning and Production Plan still REFUSE two rows sharing a DUNO whatever this is set to: weights, batch reservations and transfers are tracked per DUNO within a plan, so a repeat there would double-count weight and could send one Sales Order's material to another's supplier."
+   "description": "Warn on the Sales Order (Verify Raw Materials) and when saving a Drawing if the DUNO/Mark No is already used by a different Sales Order. This is only a warning and never blocks either one — a mark comes from the customer's drawing, and two customers reusing one is normal. Material Planning and Production Plan still REFUSE two rows sharing a DUNO whatever this is set to: weights, batch reservations and transfers are tracked per DUNO within a plan, so a repeat there would double-count weight and could send one Sales Order's material to another's supplier."
   },
   {
    "fieldname": "finished_goods_section",
@@ -82,7 +91,7 @@
    "fieldtype": "Check",
    "label": "Edit FG Stock Kg",
    "default": "1",
-   "description": "When ticked, the Kg of each finished-goods row on the Final Stock Entry can be changed to the weighed figure. When unticked, the Kg is read-only and always equals Nos \u00d7 the drawing's Cust Weight (per Nos)."
+   "description": "When ticked, the Kg of each finished-goods row on the Final Stock Entry can be changed to the weighed figure. When unticked, the Kg is read-only and always equals Nos × the drawing's Cust Weight (per Nos)."
   },
   {
    "fieldname": "fg_weight_difference_warning_percent",
@@ -90,12 +99,12 @@
    "label": "FG Weight Difference Warning (%)",
    "default": "5",
    "depends_on": "eval:doc.edit_fg_stock_kg",
-   "description": "On the Final Stock Entry, show a warning when the Kg entered for a drawing differs from its planned weight (Nos \u00d7 Cust Weight (per Nos)) by more than this percentage, in either direction. It is only a warning: the entry can still be saved. Set 0 to warn on any difference. Applies only when Edit FG Stock Kg is ticked."
+   "description": "On the Final Stock Entry, show a warning when the Kg entered for a drawing differs from its planned weight (Nos × Cust Weight (per Nos)) by more than this percentage, in either direction. It is only a warning: the entry can still be saved. Set 0 to warn on any difference. Applies only when Edit FG Stock Kg is ticked."
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-19 12:00:00.000000",
+ "modified": "2026-09-26 17:34:02.056690",
  "modified_by": "Administrator",
  "module": "Manufyxinvenzaerp",
  "name": "Manufyxinvenza Settings",
