@@ -147,18 +147,66 @@ def fg_line_totals(doc):
 
 
 def fg_line_mismatch_text(t):
-    """One sentence for an FG item whose drawings do not add up to its order lines:
-    ordered vs drawings, in Kg and in Nos, and the difference of each."""
+    """One short sentence for an FG item whose drawings do not add up to its order
+    lines: what the drawings plan, what the Items table holds, and which side is
+    over by how much. Used by Verify Raw Materials; the save note shows the same
+    figures as a table (fg_line_mismatch_table)."""
     return _(
-        "FG Item <b>{0}</b>: the order is for <b>{1} Kg / {2} Nos</b> but the Drawing List "
-        "adds up to <b>{3} Kg / {4} Nos</b> — difference {5} Kg / {6} Nos. "
-        "The Cust Weight (Total) of its drawings must add up to the line Quantity, and their "
-        "Total Quantity to the line NOS."
+        "FG Item <b>{0}</b>: planned <b>{1}</b> in the Drawing List, Items table has "
+        "<b>{2}</b> — {3}."
     ).format(
-        t.item_code, fmt_qty(t.ordered_kg), fmt_qty(t.ordered_nos),
-        fmt_qty(t.drawing_kg), fmt_qty(t.drawing_nos),
-        _signed(t.drawing_kg - t.ordered_kg), _signed(t.drawing_nos - t.ordered_nos),
+        t.item_code,
+        _kg_nos(t.drawing_kg, t.drawing_nos), _kg_nos(t.ordered_kg, t.ordered_nos),
+        fg_line_difference_text(t),
     )
+
+
+def fg_line_difference_text(t):
+    """Which side is over, in words: "Items table has 908.01 Kg more", "Drawing List
+    has 1 Nos more". Kg and Nos are named only when they differ."""
+    parts = []
+    for unit, ordered, planned in (("Kg", t.ordered_kg, t.drawing_kg),
+                                   ("Nos", t.ordered_nos, t.drawing_nos)):
+        diff = flt(ordered - planned, 3)
+        if diff > 0:
+            parts.append(_("Items table has {0} {1} more").format(fmt_qty(diff), unit))
+        elif diff < 0:
+            parts.append(_("Drawing List has {0} {1} more").format(fmt_qty(-diff), unit))
+    return "; ".join(parts)
+
+
+def fg_line_is_short(t):
+    """The Items table orders LESS than the drawings plan, in Kg or in Nos.
+
+    Only this side blocks Verify Raw Materials: drawings would be created for more
+    than the order sells. An Items table heavier than the drawings (customer's
+    weight above the planned one) is a warning -- verification still passes."""
+    return t.ordered_kg < t.drawing_kg or t.ordered_nos < t.drawing_nos
+
+
+def fg_line_mismatch_table(bad):
+    """The save note: one row per FG item, Planned vs Items table vs difference."""
+    head = "".join(
+        "<th style='text-align:left;padding:4px 8px'>%s</th>" % h
+        for h in (_("Row"), _("FG Item"), _("Planned (Drawing List)"),
+                  _("Items table"), _("Difference")))
+    body = "".join(
+        "<tr>" + "".join("<td style='padding:4px 8px'>%s</td>" % c for c in (
+            t.idx, t.item_code,
+            _kg_nos(t.drawing_kg, t.drawing_nos), _kg_nos(t.ordered_kg, t.ordered_nos),
+            fg_line_difference_text(t),
+        )) + "</tr>"
+        for t in bad)
+    return (
+        "<table class='table table-bordered' style='margin-bottom:8px'>"
+        "<thead><tr>%s</tr></thead><tbody>%s</tbody></table>"
+        "<div class='text-muted small'>%s</div>"
+    ) % (head, body, _("Adjust the Items table Quantity / NOS or the drawings' Cust Weight "
+                       "if the difference is not intended."))
+
+
+def _kg_nos(kg, nos):
+    return "%s Kg / %s Nos" % (fmt_qty(kg), fmt_qty(nos))
 
 
 def _signed(value):
@@ -300,7 +348,6 @@ def warn_fg_line_totals(doc):
     bad = [t for t in fg_line_totals(doc) if not t.matches]
     if bad:
         frappe.msgprint(
-            "<br><br>".join(_("Items row {0}").format(t.idx) + " · " + fg_line_mismatch_text(t)
-                            for t in bad),
-            title=_("Drawing List does not match the order"), indicator="orange",
+            fg_line_mismatch_table(bad),
+            title=_("Planned weight differs from the Items table"), indicator="orange",
         )

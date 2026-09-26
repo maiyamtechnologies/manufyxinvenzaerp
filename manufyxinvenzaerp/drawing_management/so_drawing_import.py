@@ -856,6 +856,31 @@ def _check_raw_material_specs(so):
     return issues
 
 
+# Structural sections and plates are bought and inspected by spec and grade, so a row
+# of either group without them cannot be planned or purchased correctly.
+SPEC_GRADE_REQUIRED_GROUPS = ("Structurals", "Plates")
+
+
+def _check_spec_grade_required(so):
+    """Material Spec and Grade are mandatory on every Structurals and Plates row.
+
+    Other groups (Nuts and Bolts, consumables) keep them optional. Checked here, at
+    Verify, because the staged rows are written by a raw SQL insert that no field-level
+    mandatory rule would ever see."""
+    issues = []
+    for r in (so.get("custom_so_raw_materials") or []):
+        if r.get("is_locked") or (r.get("parent_item_group") or "") not in SPEC_GRADE_REQUIRED_GROUPS:
+            continue
+        missing = [label for label, value in ((_("Material Spec"), r.get("material_spec")),
+                                              (_("Grade"), r.get("grade"))) if not value]
+        if missing:
+            issues.append(_at(RAW_MATERIALS, r.idx,
+                _("{0} / {1}: {2} is mandatory for {3} -- fill it in the sheet and import again.")
+                .format(r.customer_drawing_number or "?", r.material_code or "?",
+                        _(" and ").join(missing), r.parent_item_group)))
+    return issues
+
+
 def _check_item_spec_grade(so):
     """The sheet's Material Spec and Grade must be the ones on that Material Code's Item.
 
@@ -1009,14 +1034,14 @@ def _check_fg_weights(so):
       - its FG item is on the order's items table (D4). A second FG item that the
         order does not sell would produce drawings nothing can be delivered against.
     For each FG item on the items table, over ALL its Drawing List rows (created or
-    not): the Totals add up to the line Quantity in Kg and the Total Qtys to the line
-    Qty (Nos). A sheet that describes 245 Kg of a 250 Kg order is short by a drawing
-    or a weight, and every plan built from it would be short too.
+    not): the line Quantity (Kg) and Qty (Nos) must not be LESS than the drawings'
+    Totals -- drawings for more than the order sells would be built and never
+    delivered. A line above the drawings is only a warning (_check_fg_excess).
 
     Rows of items that are not finished goods are left to the older checks.
     """
     from manufyxinvenzaerp.drawing_management.sales_order import (
-        fg_line_mismatch_text, fg_line_totals, fmt_qty,
+        fg_line_is_short, fg_line_mismatch_text, fg_line_totals, fmt_qty,
     )
     from manufyxinvenzaerp.production_management.fg_stock import is_fg_item
 
@@ -1056,9 +1081,24 @@ def _check_fg_weights(so):
                            fmt_qty(total), fmt_qty(total - per_nos * nos)))
 
     for t in fg_line_totals(so):
-        if not t.matches:
+        if not t.matches and fg_line_is_short(t):
             issues.append(_at(ITEMS, t.idx, fg_line_mismatch_text(t)))
     return issues
+
+
+def _check_fg_excess(so):
+    """Items table lines that order MORE than their drawings plan -- a warning, not an
+    issue: the customer's weight on the order may sit above the planned one, and
+    verification still passes. Less than planned is _check_fg_weights' and blocks.
+    Same precondition as _check_fg_weights: only while a Drawing List row is pending."""
+    from manufyxinvenzaerp.drawing_management.sales_order import (
+        fg_line_is_short, fg_line_mismatch_text, fg_line_totals,
+    )
+
+    if not any(not r.get("drawing") for r in (so.get("custom_duno_items") or [])):
+        return []
+    return [_at(ITEMS, t.idx, fg_line_mismatch_text(t))
+            for t in fg_line_totals(so) if not t.matches and not fg_line_is_short(t)]
 
 
 def _check_duno_reuse(so):
@@ -1116,13 +1156,14 @@ def verify_raw_materials(so_name):
     # longer applies to them.
     unlocked = [r for r in (so.custom_so_raw_materials or []) if not r.get("is_locked")]
     issues = (_check_drawing_masters(so) + _check_raw_material_grades(so)
-              + _check_raw_material_specs(so) + _check_item_spec_grade(so)
+              + _check_raw_material_specs(so) + _check_spec_grade_required(so)
+              + _check_item_spec_grade(so)
               + _check_drawing_headers(so) + _check_fg_weights(so))
     # Kept OUT of `issues` on purpose. `verified` is `not issues`, so anything added
     # there blocks drawing creation -- and a mark reused by an unrelated customer is
     # not a fault in this sheet. It is reported separately so it is seen at import
     # time, when renaming is still cheap, without refusing the import.
-    warnings = _check_duno_reuse(so)
+    warnings = _check_duno_reuse(so) + _check_fg_excess(so)
 
     if not unlocked:
         verified = not issues
@@ -1261,18 +1302,21 @@ def download_bom_template():
     # its own verification unchanged. Falls back to blank, which is always legal,
     # rather than to an invented grade.
     sample_grade = frappe.db.get_value("Material Grade", {"disabled": 0}, "name") or ""
+    # Both are mandatory on Structurals and Plates rows (_check_spec_grade_required),
+    # so the sample carries a real spec from the master as well.
+    sample_spec = frappe.db.get_value("Material Spec", {"disabled": 0}, "name") or ""
 
     # Sample row 1 — drawing CDN-001, item 1
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "1", "MAT-STRUCT-001", "", sample_grade, 0, 0, 3000, 2,
+        "1", "MAT-STRUCT-001", sample_spec, sample_grade, 0, 0, 3000, 2,
     ])
     # Sample row 2 — same drawing CDN-001, item 2 (same header columns repeated)
     ws.append([
         "Structural Assembly", "CDN-001", "DM-001", "FG-ITEM-001", 5, 50.0, 250.0,
         sample_now, sample_rs,
-        "2", "MAT-PLATE-001", "", sample_grade, 10, 200, 1500, 1,
+        "2", "MAT-PLATE-001", sample_spec, sample_grade, 10, 200, 1500, 1,
     ])
 
     output = io.BytesIO()

@@ -194,9 +194,11 @@ def run():
     check("...under its own source table", CONSOLIDATED_EXCESS_SOURCE,
           "Consolidated Excess Return Plan")
     src = inspect.getsource(_log_consolidated_excess)
-    check("keyed by item, not item+batch", "source_row\": code" in src, True)
-    check("books the measured Kg", "\"qty\": entered_kg" in src, True)
-    check("a second transfer accumulates", "target.qty = flt(flt(target.qty) + entered_kg" in src, True)
+    # Per size since 2026-09-26 (verify_excess_plan_sizes runs it): the first size keeps
+    # the item as its key, further sizes are "<item>|size n".
+    check("keyed by item, not item+batch", "source_row = code if n == 1" in src, True)
+    check("books the measured Kg", "\"qty\": kg," in src, True)
+    check("a second transfer accumulates", "target.qty = flt(flt(target.qty) + kg" in src, True)
     check("a settled row is never drifted", "stock_entry_created" in src, True)
     # The value has to be in the field's own option list, or the save that books
     # the row is refused outright -- which is exactly what happened on the first
@@ -234,7 +236,9 @@ def run():
     check("the row knows it has none", "var no_excess = sys <= 0;" in js, True)
     check("and the boxes are closed", '((no_excess || also_disabled) ? " disabled" : "")' in js, True)
     check("Width stays closed for Structurals whatever the excess",
-          'box("mip-xs-width", 100, flt(saved.width), e.group === "Structurals")' in js, True)
+          # Closed for Return NA as well since 2026-09-26 (verify_excess_plan_sizes).
+          'return_na || e.group === "Structurals")' in js
+          and 'prop("disabled", na || group === "Structurals")' in js, True)
     check("a row that stops having excess drops what was typed while it did",
           "if (no_excess && dlg._excess_plan) delete dlg._excess_plan[code];" in js, True)
     check("and never recalculates from it",

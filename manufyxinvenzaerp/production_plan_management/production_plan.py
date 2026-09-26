@@ -19,6 +19,26 @@ from frappe.utils import (
 	nowdate,
 )
 
+def _warehouse_sec_qty(batch_sec_qty, warehouse_qty, batch_total_qty):
+	"""The Nos of a batch that sit in ONE warehouse.
+
+	Batch.custom_sec_qty counts the batch's pieces across every warehouse, while the
+	Kg these readers return is what the one warehouse holds. Pairing the two made a
+	crumb look like whole pieces: MP-2026-00016 reserved 12 Nos of ISMB400-L6936-R008
+	against 0.035 Kg left in Stores, because all 12 pieces had gone to Work In
+	Progress. The warehouse's share of the pieces is the share of the Kg; a batch held
+	in one warehouse only comes out unchanged.
+
+	Not rounded: a crumb must stay a crumb (0.00008 Nos), not become 0. At 0 the dust
+	guard (material_planning._batch_has_free_stock) can no longer measure the Kg
+	against pieces and falls back to Kg alone, which offers the crumb as a 0 Nos row."""
+	batch_sec_qty, warehouse_qty, batch_total_qty = (
+		flt(batch_sec_qty), flt(warehouse_qty), flt(batch_total_qty))
+	if batch_total_qty <= 0 or warehouse_qty >= batch_total_qty:
+		return batch_sec_qty
+	return batch_sec_qty * warehouse_qty / batch_total_qty
+
+
 def get_sbb_available_qty(item_code, warehouse, dimensions, location=None):
 	"""
 	Fetch available qty per batch for an item in a warehouse, optionally filtered
@@ -111,7 +131,7 @@ def get_sbb_available_qty(item_code, warehouse, dimensions, location=None):
 			"Batch",
 			filters={"name": ["in", batch_nos]},
 			fields=["name", "custom_length", "custom_thickness", "custom_width",
-			        "custom_sec_qty", "custom_sec_uom"],
+			        "custom_sec_qty", "custom_sec_uom", "batch_qty"],
 		)
 		batch_map = {b.name: b for b in batch_data}
 
@@ -139,7 +159,7 @@ def get_sbb_available_qty(item_code, warehouse, dimensions, location=None):
 			matched_batches.append({
 				"batch_no": batch_no,
 				"qty": qty,
-				"custom_sec_qty": flt(batch.custom_sec_qty),
+				"custom_sec_qty": _warehouse_sec_qty(batch.custom_sec_qty, qty, batch.batch_qty),
 				"custom_sec_uom": batch.custom_sec_uom,
 			})
 
@@ -222,7 +242,7 @@ def get_sbb_batches_bulk(item_codes, warehouse, location=None):
 		batch_data = frappe.db.sql(
 			f"""
 			SELECT name, custom_length, custom_thickness, custom_width,
-			       custom_sec_qty, custom_sec_uom
+			       custom_sec_qty, custom_sec_uom, batch_qty
 			FROM `tabBatch`
 			WHERE name IN ({ph_batch})
 			""",
@@ -256,7 +276,7 @@ def get_sbb_batches_bulk(item_codes, warehouse, location=None):
 			"custom_length": flt(batch.custom_length),
 			"custom_thickness": flt(batch.custom_thickness),
 			"custom_width": flt(batch.custom_width),
-			"custom_sec_qty": flt(batch.custom_sec_qty),
+			"custom_sec_qty": _warehouse_sec_qty(batch.custom_sec_qty, qty, batch.batch_qty),
 			"custom_sec_uom": batch.custom_sec_uom,
 		})
 

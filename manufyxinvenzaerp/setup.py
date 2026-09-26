@@ -5498,9 +5498,9 @@ frappe.ui.form.on("Supplier Operation Entry", {
 \t\t\tfrappe.db.get_single_value("Manufyxinvenza Settings", "auto_purchase_from_material_planning")
 \t\t\t\t.then(function(enabled) {
 \t\t\t\t\tif (!enabled) return;
-\t\t\t\t\tfrm.add_custom_button(__("Add All Drawing"), function() {
+\t\t\t\t\tfrm.add_custom_button(__("Add Pending Drawing to Log"), function() {
 \t\t\t\t\t\t_add_all_drawing_to_log(frm);
-\t\t\t\t\t}, __("Testing"));
+\t\t\t\t\t});
 \t\t\t\t});
 \t\t}
 \t}
@@ -5512,15 +5512,28 @@ function _add_all_drawing_to_log(frm) {
 \t\tfrappe.msgprint(__("No drawings on this Supplier Operation Entry yet."));
 \t\treturn;
 \t}
+\t// Only what is still pending. Clicking again must not log a drawing twice:
+\t// what the Consumption Log already holds for a drawing is taken off its
+\t// quantity first, so 3 logged of 5 adds one new row of 2, and a drawing
+\t// that is fully logged adds nothing. A drawing listed on two rows shares
+\t// one logged total, used up row by row.
+\tvar logged = {};
+\t(frm.doc.consumption_log || []).forEach(function(r) {
+\t\tif (r.drawing) logged[r.drawing] = (logged[r.drawing] || 0) + flt(r.qty_nos);
+\t});
 \tvar added = 0;
 \trows.forEach(function(row) {
 \t\tif (!row.drawing) return;
 \t\tvar qty = flt(row.available_to_consume_nos) || flt(row.qty_to_manufacture);
 \t\tif (!qty) return;
+\t\tvar already = Math.min(logged[row.drawing] || 0, qty);
+\t\tlogged[row.drawing] = (logged[row.drawing] || 0) - already;
+\t\tvar pending = flt(qty - already, 3);
+\t\tif (pending <= 0) return;
 \t\tvar log_row = frm.add_child("consumption_log", {
 \t\t\tdate: frappe.datetime.get_today(),
 \t\t\tdrawing: row.drawing,
-\t\t\tqty_nos: qty,
+\t\t\tqty_nos: pending,
 \t\t});
 \t\t_calc_consumption_weight_kg(frm, log_row.doctype, log_row.name);
 \t\tadded++;
@@ -5529,9 +5542,9 @@ function _add_all_drawing_to_log(frm) {
 \t_sync_drawing_nos(frm);
 \tif (added) {
 \t\tfrm.dirty();
-\t\tfrappe.show_alert({ message: __("Added {0} drawing(s) to Consumption Log.", [added]), indicator: "green" }, 5);
+\t\tfrappe.show_alert({ message: __("Added the pending quantity of {0} drawing(s) to Consumption Log.", [added]), indicator: "green" }, 5);
 \t} else {
-\t\tfrappe.msgprint(__("Nothing to add -- no drawing has an available quantity yet."));
+\t\tfrappe.msgprint(__("Nothing to add -- every drawing's quantity is already in the Consumption Log."));
 \t}
 }
 
@@ -6002,7 +6015,7 @@ def create_fg_property_setters():
 
 
 def set_fg_settings_defaults():
-    """Give the two Finished Goods settings their defaults on a site that has never set them.
+    """Give Manufyxinvenza Settings fields added later their defaults on a site that has never set them.
 
     A Single field added after the Settings were first saved has no row in
     tabSingles, and Frappe does not create one from the field's default:
@@ -6014,6 +6027,8 @@ def set_fg_settings_defaults():
     for fieldname, value in (
         ("edit_fg_stock_kg", 1),
         ("fg_weight_difference_warning_percent", 5),
+        # Return NA on the transfer popup, for an off-cut under 1 Kg (2026-09-26).
+        ("excess_return_na_below_kg", 1),
     ):
         if not frappe.db.sql(
             "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s",

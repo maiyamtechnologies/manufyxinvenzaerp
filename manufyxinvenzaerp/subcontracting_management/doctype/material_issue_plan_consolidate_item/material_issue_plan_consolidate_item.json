@@ -37,6 +37,8 @@
   "draft_excess_width",
   "column_break_draft",
   "draft_excess_sec_qty",
+  "draft_excess_extra_sizes",
+  "draft_excess_return_na",
   "draft_return_warehouse",
   "draft_saved_on",
   "draft_transfer_type"
@@ -248,6 +250,20 @@
    "read_only": 1
   },
   {
+   "description": "Further off-cut sizes typed with the duplicate icon on the transfer popup's excess tab, as a JSON list of {length, width, sec_qty}. The first size is in the Draft Excess fields.",
+   "fieldname": "draft_excess_extra_sizes",
+   "fieldtype": "Long Text",
+   "label": "Draft Excess Extra Sizes",
+   "read_only": 1
+  },
+  {
+   "description": "Return NA ticked on the transfer popup's excess tab: the off-cut is not coming back and goes to Process Loss.",
+   "fieldname": "draft_excess_return_na",
+   "fieldtype": "Check",
+   "label": "Draft Return NA",
+   "read_only": 1
+  },
+  {
    "fieldname": "draft_return_warehouse",
    "fieldtype": "Link",
    "label": "Draft Return Warehouse",
@@ -271,7 +287,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-13 00:00:00.000000",
+ "modified": "2026-09-26 17:22:17.691625",
  "modified_by": "Administrator",
  "module": "Subcontracting Management",
  "name": "Material Issue Plan Consolidate Item",

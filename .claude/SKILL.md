@@ -296,6 +296,19 @@ manufyxinvenzaerp/
   `CUSTOM_FIELDS` in rfq/sq or to `_copy_from_po_item`'s list: those default their
   blank-check to the same list, the fetch has already populated them by then, and the
   dimension copy-forward would silently stop.
+- **A row appended inside `validate()` never gets its `fetch_from`.** Frappe runs the fetch
+  in `_validate_links`, which comes BEFORE `validate()`. Material Planning's Consolidate Item
+  table (`_consolidate_unavailable_items`) and Material Issue Plan's (`_sync_consolidate_items`)
+  are both built in `validate()`, which is why Material Spec / Grade showed blank on every line
+  (MP-2026-00016). Both now carry the values by hand from the Item; any new table built in
+  `validate()` must do the same.
+- **`Batch.custom_sec_qty` counts the batch's pieces across EVERY warehouse.** The stock
+  readers (`production_plan.get_sbb_available_qty` / `get_sbb_batches_bulk`) return Kg for ONE
+  warehouse, so they scale the pieces to that warehouse's share (`_warehouse_sec_qty`). Pairing
+  warehouse Kg with the batch-wide count turned a 0.035 Kg crumb left in Stores into 12 pieces
+  (ISMB400-L6936-R008 on MP-2026-00016, all 12 pieces actually in WIP) and the dust guard handed
+  it out as an Exact Match row. `_warehouse_sec_qty` is deliberately NOT rounded: a crumb must
+  stay 0.00008 Nos, not become 0, or `_batch_has_free_stock` falls back to Kg alone.
 - **`Sales Order Drawing Raw Material.grade` is the sheet's, not the Item's.** It is the
   one grade field with no `fetch_from` — the customer's sheet fills it, and
   `_check_raw_material_grades` refuses a value that is not in the master (blank is legal),
