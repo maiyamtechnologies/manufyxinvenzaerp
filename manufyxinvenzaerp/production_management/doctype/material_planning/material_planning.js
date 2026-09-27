@@ -2822,7 +2822,9 @@ function _add_reservation_buttons(frm) {
 	grid.add_custom_button(
 		frappe.utils.icon("lock", "xs") + " " + __("Reserve"),
 		function () {
-			let has_batch = (frm.doc.material_mapping || []).some(r => r.batch && !r.is_reserved);
+			let has_batch = (frm.doc.material_mapping || []).some(
+				r => r.batch && !r.is_reserved && !r.fully_transferred && (flt(r.transferred_qty || 0) < flt(r.qty || 0) - 0.001)
+			);
 			if (!has_batch) {
 				frappe.msgprint(__("No un-reserved rows with a batch to reserve."));
 				return;
@@ -2832,7 +2834,7 @@ function _add_reservation_buttons(frm) {
 			// unless the row is flagged to reserve stock without dimensions.
 			let missing_sec = (frm.doc.material_mapping || []).filter(function(r) {
 				let group = r.batch_parent_item_group || "";
-				return r.batch && !r.is_reserved && !r.reserve_without_dimensions
+				return r.batch && !r.is_reserved && !r.fully_transferred && (flt(r.transferred_qty || 0) < flt(r.qty || 0) - 0.001) && !r.reserve_without_dimensions
 					&& (group === "Structurals" || group === "Plates")
 					&& !flt(r.batch_sec_qty);
 			});
@@ -3531,7 +3533,9 @@ function _add_exact_match_reservation_buttons(frm) {
 	grid.add_custom_button(
 		frappe.utils.icon("lock", "xs") + " " + __("Reserve"),
 		function () {
-			let has_unreserved = (frm.doc.available_raw_materials || []).some(r => !r.is_reserved);
+			let has_unreserved = (frm.doc.available_raw_materials || []).some(
+				r => !r.is_reserved && !r.fully_transferred && (flt(r.transferred_qty || 0) < flt(r.required_qty || 0) - 0.001)
+			);
 			if (!has_unreserved) {
 				frappe.msgprint(__("No un-reserved rows to reserve."));
 				return;

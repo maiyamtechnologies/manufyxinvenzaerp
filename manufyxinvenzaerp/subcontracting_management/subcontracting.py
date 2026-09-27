@@ -1292,7 +1292,7 @@ def check_soe_completion_before_confirm(doc):
     return {"ready": True}
 
 
-def validate_supplier_operation_entry(doc, method):
+def validate_supplier_operation_entry(doc, method=None):
     """Per-drawing Nos tracking + validation.
 
     For all operations:
@@ -1410,11 +1410,25 @@ def validate_supplier_operation_entry(doc, method):
         total_kg = sum(flt(r.weight_kg) for r in (doc.consumption_log or []))
         available_kg = flt(doc.available_to_consume_kg)
         if available_kg > 0 and total_kg > available_kg:
-            frappe.throw(
-                _("You have entered {0} Kg, but only {1} Kg is available to consume.")
-                .format(flt(total_kg, 3), flt(available_kg, 3)),
-                title=_("Exceeds Available to Consume"),
+            raw_tol = frappe.db.get_single_value(
+                "Manufyxinvenza Settings", "weight_difference_tolerance"
             )
+            tolerance = flt(raw_tol) if raw_tol is not None and str(raw_tol).strip() != "" else 0.05
+            diff = flt(total_kg - available_kg, 3)
+            if diff > tolerance:
+                frappe.throw(
+                    _("You have entered {0} Kg, but only {1} Kg is available to consume.")
+                    .format(flt(total_kg, 3), flt(available_kg, 3)),
+                    title=_("Exceeds Available to Consume"),
+                )
+            else:
+                frappe.msgprint(
+                    _("You have entered {0} Kg, but only {1} Kg is available to consume (difference: {2} Kg). "
+                      "This is untracked based on allowed tolerance ({3} Kg), you can proceed further.")
+                    .format(flt(total_kg, 3), flt(available_kg, 3), diff, tolerance),
+                    indicator="orange",
+                    title=_("Weight Difference Within Tolerance"),
+                )
 
     # --- 6. Per-drawing Nos ceiling on the Consumption Log, for EVERY operation.
     #

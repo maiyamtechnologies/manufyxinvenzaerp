@@ -591,9 +591,12 @@ class MaterialPlanning(Document):
         rows += [r for r in (self.available_raw_materials or []) if r.item_code]
         outstanding = [r for r in (self.unavailable_items or []) if r.item_code]
 
+        def _is_row_done(r):
+            return bool(r.is_reserved) or bool(r.get("fully_transferred")) or flt(r.get("transferred_qty")) > 0.0005
+
         if not rows:
             self.planning_status = "Working" if outstanding else "Open"
-        elif outstanding or not all(r.is_reserved for r in rows):
+        elif outstanding or not all(_is_row_done(r) for r in rows):
             self.planning_status = "Working"
         else:
             self.planning_status = "Batch Mapping Completed"
@@ -763,7 +766,7 @@ class MaterialPlanning(Document):
         into Material Mapping so the user can assign a batch manually."""
         keep = []
         for row in (self.available_raw_materials or []):
-            if not row.get("skip_auto_suggest_batch") or row.get("is_reserved"):
+            if not row.get("skip_auto_suggest_batch") or row.get("is_reserved") or _row_has_shipped(row):
                 keep.append(row)
                 continue
             self.append("material_mapping", {
@@ -833,6 +836,13 @@ class MaterialPlanning(Document):
             if not row.batch:
                 continue
 
+            # Skip stock-coverage check for rows that have already been fully transferred
+            if bool(row.get("fully_transferred")) or (
+                flt(row.get("transferred_qty")) >= flt(row.qty) - 0.001
+                and flt(row.get("transferred_qty")) > 0
+            ):
+                continue
+
             group = row.batch_parent_item_group or ""
 
             # Only validate stock coverage for Structurals/Plates
@@ -842,29 +852,22 @@ class MaterialPlanning(Document):
             batch_stock = _get_batch_total_stock(row.batch, self.for_warehouse)
             reserved_by_others = _get_batch_reserved_by_others(row.batch, mp_name, exclude_table="material_mapping")
             allocated_so_far = batch_allocated.get(row.batch, 0.0)
-            # Rounded to the 3 decimals this table stores, and compared that way
-            # below. A batch shared by many rows is checked by re-adding every
-            # row's claim, and summing ten unrounded floats drifts: a receipt
-            # that filled a batch EXACTLY to the last row (2826 Kg over the
-            # PLATE8 rows of MP-2026-00015) left 239.6899999999996 free against
-            # a required 239.690 and was refused for a difference the message
-            # itself printed as "0.0 Kg". The whole receipt's allocation went
-            # down with it (PR-26-00008).
             available = flt(max(0.0, batch_stock - reserved_by_others - allocated_so_far), 3)
 
             # Skip stock-coverage check when the batch has no stock in the source
             # warehouse — it was either already transferred out or not yet received.
-            # Throwing here would prevent any save after a partial transfer.
             if not batch_stock:
                 batch_allocated[row.batch] = allocated_so_far
                 continue
 
+            transferred = flt(row.get("transferred_qty") or 0.0)
+
             if row.reserve_without_dimensions:
                 # Bypass the dimension/calc check — this row shares a batch whose
-                # size deliberately differs from the requirement. Exactly the
-                # Required Qty is reserved (see _apply_rwd_fractional_nos), so
-                # that is what has to fit in free stock.
-                required_qty = flt(row.qty)
+                # size deliberately differs from the requirement.
+                required_qty = max(0.0, flt(row.qty) - transferred)
+                if required_qty <= 0.0005:
+                    continue
                 difference = flt(required_qty - available, 3)
                 if difference > 0:
                     frappe.throw(
@@ -944,7 +947,11 @@ class MaterialPlanning(Document):
                 )
                 shortfall_warnings.append(message)
 
-            difference = flt(batch_calc_qty - available, 3)
+            needed_qty = max(0.0, batch_calc_qty - transferred)
+            if needed_qty <= 0.0005:
+                continue
+
+            difference = flt(needed_qty - available, 3)
             if difference > 0:
                 frappe.throw(
                     _("Row {0} — Batch <b>{1}</b><br>"
@@ -956,11 +963,11 @@ class MaterialPlanning(Document):
                       "(Calculated Qty − Free stock)").format(
                         row.idx, row.batch,
                         flt(batch_stock, 3), flt(reserved_by_others, 3),
-                        flt(available, 3), flt(batch_calc_qty, 3), difference
+                        flt(available, 3), flt(needed_qty, 3), difference
                     ),
                     title=_("Material Mapping Quantity Difference"),
                 )
-            batch_allocated[row.batch] = flt(allocated_so_far + batch_calc_qty, 3)
+            batch_allocated[row.batch] = flt(allocated_so_far + needed_qty, 3)
 
         if shortfall_warnings:
             frappe.msgprint(
@@ -3547,6 +3554,11 @@ def reserve_batches(material_planning_name):
     for row in mp.material_mapping:
         if not row.batch:
             continue
+        if bool(row.get("fully_transferred")) or (
+            flt(row.get("transferred_qty")) >= flt(row.qty) - 0.001
+            and flt(row.get("transferred_qty")) > 0
+        ):
+            continue
         if row.is_reserved:
             # Count already-reserved rows toward intra-doc tracking so
             # subsequent new rows see a realistic remaining balance.
@@ -3564,7 +3576,10 @@ def reserve_batches(material_planning_name):
             continue
 
         batch_calc_qty = flt(row.batch_calc_qty)
-        required_qty = flt(row.qty)
+        transferred = flt(row.get("transferred_qty") or 0.0)
+        required_qty = max(0.0, flt(row.qty) - transferred)
+        if required_qty <= 0.0005:
+            continue
 
         if row.reserve_without_dimensions and row.batch_parent_item_group in ("Structurals", "Plates"):
             # Shared batch: reserve exactly the Required Qty and show that weight
@@ -3572,19 +3587,19 @@ def reserve_batches(material_planning_name):
             # done by hand at transfer time on the Material Issue Plan, which
             # books the surplus as excess to return.
             to_reserve = required_qty
-            row.batch_calc_qty = flt(required_qty, 3)
-            row.batch_sec_qty = _sec_nos_for_weight(row, required_qty)
+            row.batch_calc_qty = flt(row.qty, 3)
+            row.batch_sec_qty = _sec_nos_for_weight(row, row.qty)
         elif batch_calc_qty > 0 and row.batch_parent_item_group in ("Structurals", "Plates"):
             # When a different-dimension batch is assigned, batch_calc_qty is the
             # Kg we actually take from that batch (Structurals/Plates only).
-            if batch_calc_qty < required_qty:
+            if batch_calc_qty < flt(row.qty):
                 frappe.throw(
                     _("Row {0}: Calculated Qty ({1} Kg) is less than Required Qty ({2} Kg) for item {3}. "
                       "Increase NOS so the allocated batch material covers the requirement.").format(
-                        row.idx, flt(batch_calc_qty, 3), required_qty, row.item_code
+                        row.idx, flt(batch_calc_qty, 3), flt(row.qty), row.item_code
                     )
                 )
-            to_reserve = batch_calc_qty
+            to_reserve = max(0.0, batch_calc_qty - transferred)
         else:
             to_reserve = required_qty
 
@@ -4203,6 +4218,12 @@ def reserve_exact_match_batches(material_planning_name):
     nonbatch_allocated = {}  # (item_code, warehouse) → qty allocated within this doc
 
     for row in mp.available_raw_materials:
+        if bool(row.get("fully_transferred")) or (
+            flt(row.get("transferred_qty")) >= flt(row.required_qty) - 0.001
+            and flt(row.get("transferred_qty")) > 0
+        ):
+            continue
+
         if row.is_reserved:
             if row.batch_no:
                 batch_allocated_here[row.batch_no] = (
@@ -4213,7 +4234,10 @@ def reserve_exact_match_batches(material_planning_name):
                 nonbatch_allocated[key] = nonbatch_allocated.get(key, 0.0) + flt(row.reserved_qty)
             continue
 
-        required_qty = flt(row.required_qty)
+        transferred = flt(row.get("transferred_qty") or 0.0)
+        required_qty = max(0.0, flt(row.required_qty) - transferred)
+        if required_qty <= 0.0005:
+            continue
 
         if row.batch_no:
             # ── Batch item ──────────────────────────────────────────────────
@@ -4409,14 +4433,20 @@ def check_mapping_batch_availability(doc):
             continue
 
         base_qty = flt(row.get("qty") if isinstance(row, dict) else row.qty)
+        transferred = flt(row.get("transferred_qty") if isinstance(row, dict) else getattr(row, "transferred_qty", 0))
+        is_fully_transferred = bool(row.get("fully_transferred") if isinstance(row, dict) else getattr(row, "fully_transferred", 0))
+        if is_fully_transferred or (transferred >= base_qty - 0.001 and transferred > 0):
+            continue
+
         batch_calc_qty = flt(row.get("batch_calc_qty") if isinstance(row, dict) else getattr(row, "batch_calc_qty", 0))
         group = (row.get("batch_parent_item_group") if isinstance(row, dict) else getattr(row, "batch_parent_item_group", "")) or ""
         reserve_without_dim = int(row.get("reserve_without_dimensions") if isinstance(row, dict) else getattr(row, "reserve_without_dimensions", 0))
         if reserve_without_dim and group in ("Structurals", "Plates"):
             # Shared batch — exactly the Required Qty is reserved, no rounding.
-            required_qty = base_qty
+            required_qty = max(0.0, base_qty - transferred)
         else:
-            required_qty = batch_calc_qty if (batch_calc_qty > 0 and group in ("Structurals", "Plates")) else base_qty
+            calc_rem = max(0.0, batch_calc_qty - transferred) if batch_calc_qty > 0 else 0
+            required_qty = calc_rem if (calc_rem > 0 and group in ("Structurals", "Plates")) else max(0.0, base_qty - transferred)
 
         batch_stock = _get_batch_total_stock(batch, warehouse)
         reserved_by_others = _get_batch_reserved_by_others(batch, mp_name, exclude_table="material_mapping")
@@ -4880,7 +4910,7 @@ def reassign_batch(material_planning_name, source_table, row_name, new_batch_no,
     # can't be reserved yet -- that's a warning to surface, not a failure to roll
     # back. Any OTHER validation error (e.g. missing warehouse) still propagates
     # normally, unchanged from before this phase.
-    if any(not r.is_reserved and r.batch for r in mp.material_mapping):
+    if any(not r.is_reserved and r.batch and not _row_has_shipped(r) for r in mp.material_mapping):
         try:
             reserve_batches(material_planning_name)
         except frappe.ValidationError as e:
@@ -4888,7 +4918,7 @@ def reassign_batch(material_planning_name, source_table, row_name, new_batch_no,
                 raise
             warnings.append({"reason": str(e)})
         mp = frappe.get_doc("Material Planning", material_planning_name)
-    if any(not r.is_reserved and r.batch_no for r in mp.available_raw_materials):
+    if any(not r.is_reserved and r.batch_no and not _row_has_shipped(r) for r in mp.available_raw_materials):
         try:
             reserve_exact_match_batches(material_planning_name)
         except frappe.ValidationError as e:
