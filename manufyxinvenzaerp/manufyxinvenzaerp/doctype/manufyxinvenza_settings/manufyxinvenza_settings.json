@@ -16,7 +16,9 @@
   "warn_on_duplicate_duno",
   "finished_goods_section",
   "edit_fg_stock_kg",
-  "fg_weight_difference_warning_percent"
+  "fg_weight_difference_warning_percent",
+  "consumption_section",
+  "weight_difference_tolerance"
  ],
  "fields": [
   {
@@ -100,6 +102,19 @@
    "default": "5",
    "depends_on": "eval:doc.edit_fg_stock_kg",
    "description": "On the Final Stock Entry, show a warning when the Kg entered for a drawing differs from its planned weight (Nos × Cust Weight (per Nos)) by more than this percentage, in either direction. It is only a warning: the entry can still be saved. Set 0 to warn on any difference. Applies only when Edit FG Stock Kg is ticked."
+  },
+  {
+   "fieldname": "consumption_section",
+   "fieldtype": "Section Break",
+   "label": "Consumption & Operations"
+  },
+  {
+   "default": "0.05",
+   "description": "Allowed weight difference tolerance in Kg for operation consumption entries (e.g. 0.05 Kg). If consumption weight exceeds available transferred weight within this tolerance, a warning is shown instead of blocking.",
+   "fieldname": "weight_difference_tolerance",
+   "fieldtype": "Float",
+   "label": "Weight Difference Tolerance (Kg)",
+   "precision": "3"
   }
  ],
  "issingle": 1,
