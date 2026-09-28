@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-28 12:44:36_
+_Generated: 2026-09-28 12:55:01_
 
 ## Modules
 
@@ -1751,39 +1751,40 @@ Functions:
   - 1115:_final_fg_rows:
   - 1212:_soe_consumed_kg:
   - 1256:check_soe_completion_before_confirm:
-  - 1295:validate_supplier_operation_entry:
-  - 1481:_soe_drawing_target_nos:
-  - 1492:_validate_completed_status:
-  - 1574:before_cancel_supplier_operation_entry:
-  - 1602:_sync_soe_inspection_items:
-  - 1640:before_submit_supplier_operation_entry:
-  - 1674:_propagate_available_to_next:
-  - 1696:_propagate_drawing_nos_to_next:
-  - 1736:_update_sco_drawing_item_completion:
-  - 1760:on_update_supplier_operation_entry:
-  - 1772:_push_sco_completion_to_wo:
-  - 1812:on_submit_supplier_operation_entry:
-  - 1846:before_delete_supplier_operation_entry:
-  - 1868:on_cancel_subcontracting_order:
-  - 1892:_build_soe_drawing_rows:
-  - 1939:_create_soes_for_sco:
-  - 2032:_get_mp_total_weight:
-  - 2060:_get_mp_actual_transferred_weight:
-  - 2106:_refresh_wo_drawing_transferred_weights:
-  - 2149:_get_sco_transfer_warehouses:
-  - 2161:_get_sco_supplier_warehouse:
-  - 2178:_get_wo_transfer_warehouses:
-  - 2192:_refresh_sco_drawing_transferred_weights:
-  - 2234:_get_mp_drawing_weight:
-  - 2251:_get_mp_drawing_weights_by_duno:
-  - 2277:_get_mp_mapped_weight_by_duno:
-  - 2359:_get_mp_excess_by_duno:
-  - 2382:_sec_qty_for_reserved:
-  - 2396:_get_mp_reserved_batches:
-  - 2546:_get_pp_planned_qty:
-  - 2562:_get_supplier_wh_consumption_items:
-  - 2653:_build_jc_drawing_rows:
-  - 2686:_populate_jcs_for_wo:
+  - 1295:_consumption_log_changed:
+  - 1305:validate_supplier_operation_entry:
+  - 1495:_soe_drawing_target_nos:
+  - 1506:_validate_completed_status:
+  - 1588:before_cancel_supplier_operation_entry:
+  - 1616:_sync_soe_inspection_items:
+  - 1654:before_submit_supplier_operation_entry:
+  - 1688:_propagate_available_to_next:
+  - 1710:_propagate_drawing_nos_to_next:
+  - 1750:_update_sco_drawing_item_completion:
+  - 1774:on_update_supplier_operation_entry:
+  - 1786:_push_sco_completion_to_wo:
+  - 1826:on_submit_supplier_operation_entry:
+  - 1860:before_delete_supplier_operation_entry:
+  - 1882:on_cancel_subcontracting_order:
+  - 1906:_build_soe_drawing_rows:
+  - 1953:_create_soes_for_sco:
+  - 2046:_get_mp_total_weight:
+  - 2074:_get_mp_actual_transferred_weight:
+  - 2120:_refresh_wo_drawing_transferred_weights:
+  - 2163:_get_sco_transfer_warehouses:
+  - 2175:_get_sco_supplier_warehouse:
+  - 2192:_get_wo_transfer_warehouses:
+  - 2206:_refresh_sco_drawing_transferred_weights:
+  - 2248:_get_mp_drawing_weight:
+  - 2265:_get_mp_drawing_weights_by_duno:
+  - 2291:_get_mp_mapped_weight_by_duno:
+  - 2373:_get_mp_excess_by_duno:
+  - 2396:_sec_qty_for_reserved:
+  - 2410:_get_mp_reserved_batches:
+  - 2560:_get_pp_planned_qty:
+  - 2576:_get_supplier_wh_consumption_items:
+  - 2667:_build_jc_drawing_rows:
+  - 2700:_populate_jcs_for_wo:
 
 ### tests/_chk_tmp.py
 Functions:
@@ -2996,7 +2997,8 @@ Functions:
 
 ### tests/_zz_probe_pp2.py
 Functions:
-  - 3:run:
+  - 3:_msgs:
+  - 10:run:
 
 ### tests/_zz_probe_pp.py
 Functions:
@@ -3139,11 +3141,11 @@ Functions:
 - `subcontracting_management/subcontracting.py:853` — `get_final_stock_entry_preview`
 - `subcontracting_management/subcontracting.py:951` — `create_finished_goods_entry`
 - `subcontracting_management/subcontracting.py:1256` — `check_soe_completion_before_confirm`
-- `subcontracting_management/subcontracting.py:2637` — ``
-- `subcontracting_management/subcontracting.py:2640` — ``
-- `subcontracting_management/subcontracting.py:2643` — ``
-- `subcontracting_management/subcontracting.py:2646` — ``
-- `subcontracting_management/subcontracting.py:2649` — ``
+- `subcontracting_management/subcontracting.py:2651` — ``
+- `subcontracting_management/subcontracting.py:2654` — ``
+- `subcontracting_management/subcontracting.py:2657` — ``
+- `subcontracting_management/subcontracting.py:2660` — ``
+- `subcontracting_management/subcontracting.py:2663` — ``
 - `subcontracting_management/doctype/material_issue_plan/material_issue_plan.py:50` — `create_from_subcontracting_order`
 - `subcontracting_management/doctype/material_issue_plan/material_issue_plan.py:69` — ``
 - `subcontracting_management/doctype/material_issue_plan/material_issue_plan.py:72` — `populate_from_production_plan`

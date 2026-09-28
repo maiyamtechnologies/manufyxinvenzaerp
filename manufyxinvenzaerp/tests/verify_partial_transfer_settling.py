@@ -125,3 +125,18 @@ def _tolerance():
     src = inspect.getsource(subcontracting.validate_supplier_operation_entry)
     check("Op-1 blocks only beyond the tolerance", "if diff > tolerance:" in src, True)
     check("within it, a warning instead", '"Weight Difference Within Tolerance"' in src, True)
+
+    # The popup only on the save that changed the log; every other save, status change
+    # and submit gets the bottom-of-screen notification (2026-09-28).
+    check("otherwise the bottom notification, not a popup",
+          "frappe.msgprint(message, indicator=\"orange\", alert=True)" in src
+          and "if _consumption_log_changed(doc):" in src, True)
+    doc = frappe.new_doc("Supplier Operation Entry")
+    doc.append("consumption_log", {"drawing": "D1", "qty_nos": 1, "weight_kg": 555.891})
+    check("a new entry with a log counts as changed", subcontracting._consumption_log_changed(doc), True)
+    doc.name, doc.flags.__islocal = "ZZ-SOE", False
+    doc.set("__islocal", 0)
+    doc._doc_before_save = frappe.copy_doc(doc)
+    check("saved again unchanged: not changed", subcontracting._consumption_log_changed(doc), False)
+    doc.append("consumption_log", {"drawing": "D2", "qty_nos": 1, "weight_kg": 556.606})
+    check("a row added: changed", subcontracting._consumption_log_changed(doc), True)

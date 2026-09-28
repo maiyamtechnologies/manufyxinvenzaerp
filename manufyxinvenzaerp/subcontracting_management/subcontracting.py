@@ -1292,6 +1292,16 @@ def check_soe_completion_before_confirm(doc):
     return {"ready": True}
 
 
+def _consumption_log_changed(doc):
+    """Did this save add, remove or change a Consumption Log row? A new entry counts as
+    changed when it has any log at all."""
+    def rows(d):
+        return [(r.get("drawing"), flt(r.get("qty_nos"), 3), flt(r.get("weight_kg"), 3))
+                for r in (d.get("consumption_log") or [])]
+    before = doc.get_doc_before_save() if not doc.is_new() else None
+    return rows(doc) != (rows(before) if before else [])
+
+
 def validate_supplier_operation_entry(doc, method=None):
     """Per-drawing Nos tracking + validation.
 
@@ -1422,13 +1432,17 @@ def validate_supplier_operation_entry(doc, method=None):
                     title=_("Exceeds Available to Consume"),
                 )
             else:
-                frappe.msgprint(
-                    _("You have entered {0} Kg, but only {1} Kg is available to consume (difference: {2} Kg). "
-                      "This is untracked based on allowed tolerance ({3} Kg), you can proceed further.")
-                    .format(flt(total_kg, 3), flt(available_kg, 3), diff, tolerance),
-                    indicator="orange",
-                    title=_("Weight Difference Within Tolerance"),
-                )
+                message = _("You have entered {0} Kg, but only {1} Kg is available to consume (difference: {2} Kg). "
+                            "This is untracked based on allowed tolerance ({3} Kg), you can proceed further.") \
+                    .format(flt(total_kg, 3), flt(available_kg, 3), diff, tolerance)
+                # The popup is for the save that CHANGED the log -- that is when the
+                # difference is news. Every later save, status change and submit only
+                # repeats it, so those get the bottom-of-screen notification instead.
+                if _consumption_log_changed(doc):
+                    frappe.msgprint(message, indicator="orange",
+                                    title=_("Weight Difference Within Tolerance"))
+                else:
+                    frappe.msgprint(message, indicator="orange", alert=True)
 
     # --- 6. Per-drawing Nos ceiling on the Consumption Log, for EVERY operation.
     #
