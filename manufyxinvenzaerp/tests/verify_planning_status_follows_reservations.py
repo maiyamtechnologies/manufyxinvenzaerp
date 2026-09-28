@@ -62,7 +62,11 @@ def run():
     src = inspect.getsource(mp_module.MaterialPlanning._auto_update_planning_status)
     check("it no longer returns early when already complete",
           'if self.planning_status == "Batch Mapping Completed":\n            return' in src, False)
-    check("an unreserved row keeps it Working", "not all(r.is_reserved for r in rows)" in src, True)
+    # Since 2026-09-28 a row sent IN FULL counts as settled too (it has nothing left to
+    # hold); a row sent in part still needs the rest reserved (_row_still_to_send).
+    check("an unreserved row keeps it Working",
+          "not all(_is_row_done(r) for r in rows)" in src
+          and "bool(r.is_reserved) or not _row_still_to_send(r)" in src, True)
     check("and an outstanding Unavailable Item does too", "outstanding or not all(" in src, True)
 
     print()
@@ -107,12 +111,17 @@ def run():
         _save(doc)
         check("every row reserved reads complete", _status(name), "Batch Mapping Completed")
 
+        # A row that still has material to send -- one sent in full is settled whether
+        # or not it is reserved, so unreserving it proves nothing.
         doc = frappe.get_doc("Material Planning", name)
-        first = ([r for r in doc.material_mapping if r.item_code]
-                 or [r for r in doc.available_raw_materials if r.item_code])[0]
-        first.is_reserved = 0
-        _save(doc)
-        check("unreserve one and it falls back", _status(name), "Working")
+        pending = [r for r in list(doc.material_mapping) + list(doc.available_raw_materials)
+                   if r.item_code and mp_module._row_still_to_send(r)]
+        if pending:
+            pending[0].is_reserved = 0
+            _save(doc)
+            check("unreserve one and it falls back", _status(name), "Working")
+        else:
+            print("   (every row of %s is sent in full -- unreserve check not exercised)" % name)
 
         doc = frappe.get_doc("Material Planning", name)
         for r in doc.material_mapping:

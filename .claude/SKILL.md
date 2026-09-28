@@ -309,6 +309,22 @@ manufyxinvenzaerp/
   (ISMB400-L6936-R008 on MP-2026-00016, all 12 pieces actually in WIP) and the dust guard handed
   it out as an Exact Match row. `_warehouse_sec_qty` is deliberately NOT rounded: a crumb must
   stay 0.00008 Nos, not become 0, or `_batch_has_free_stock` falls back to Kg alone.
+- **"Has it shipped?" and "is it settled?" are different questions.** `_row_has_shipped`
+  (any Kg moved) locks the batch; `_row_still_to_send` (not fully_transferred, and
+  transferred_qty short of qty / required_qty by more than a gram) decides whether the row
+  still needs a reservation. The planning status, Check Mapping's "not reserved" issues and
+  `reassign_batch`'s re-reserve all use the second. Using the first there read a plan
+  "Batch Mapping Completed" with 60 Kg of a 100 Kg row sent in part and the rest unreserved
+  (MP-2026-00017). A transfer normally keeps the remainder reserved
+  (`_release_rows_by_qty`), so this only arises after a manual unreserve — and Reserve then
+  reserves only the remaining Kg (`batch_calc_qty − transferred_qty`).
+- **Settings added later need a default written on migrate.** A Single field nobody has
+  saved reads 0 / 0.0, never its JSON default and never None — so `if raw is None` fallbacks
+  are dead code. `setup.set_fg_settings_defaults` writes the default where no row exists;
+  add every new numeric/check setting to it. `weight_difference_tolerance` missed this and
+  was 0 (strict) on live, keeping SCO-SOE-0027's 2 g difference blocked.
+- **Scratch scripts are not committed.** `tests/_*.py` and `tests/zz_tmp_*.py` are
+  gitignored — several change data when run. Real checks are `verify_*.py` / `test_*.py`.
 - **`Sales Order Drawing Raw Material.grade` is the sheet's, not the Item's.** It is the
   one grade field with no `fetch_from` — the customer's sheet fills it, and
   `_check_raw_material_grades` refuses a value that is not in the master (blank is legal),

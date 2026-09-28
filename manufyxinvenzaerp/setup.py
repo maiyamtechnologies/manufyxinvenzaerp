@@ -6029,6 +6029,10 @@ def set_fg_settings_defaults():
         ("fg_weight_difference_warning_percent", 5),
         # Return NA on the transfer popup, for an off-cut under 1 Kg (2026-09-26).
         ("excess_return_na_below_kg", 1),
+        # Op-1 consumption may exceed what was transferred by this much (rounding
+        # between the plan's rows and the Drawing's header). Unsaved, it read 0.0 --
+        # strict -- so the 2 g case on SCO-SOE-0027 stayed blocked on live (2026-09-28).
+        ("weight_difference_tolerance", 0.05),
     ):
         if not frappe.db.sql(
             "SELECT 1 FROM `tabSingles` WHERE doctype=%s AND field=%s",
