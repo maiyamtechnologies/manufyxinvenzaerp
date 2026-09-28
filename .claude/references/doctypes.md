@@ -1,6 +1,6 @@
 # doctypes — manufyxinvenzaerp
 
-_Generated: 2026-09-26 18:07:21_
+_Generated: 2026-09-28 12:55:01_
 
 ## drawing
 
@@ -505,6 +505,7 @@ _Generated: 2026-09-26 18:07:21_
 | ` _fill_consolidate_spec_grade` | no |
 | ` _recalculate_consolidate_items` | no |
 | ` _auto_update_planning_status` | no |
+| ` _is_row_done` | no |
 | ` _validate_batch_not_over_allocated` | no |
 | ` _set_row_excess` | no |
 | ` _update_weight_summary` | no |
@@ -591,6 +592,8 @@ _Generated: 2026-09-26 18:07:21_
 | ` auto_suggest_consolidate_dimensions` | no |
 | ` auto_purchase_from_mp` | no |
 | ` _row_has_shipped` | no |
+| ` _row_still_to_send` | no |
+| ` _part_sent_note` | no |
 | ` _collect_batch_mapping_issues` | no |
 | ` complete_batch_mapping` | no |
 

@@ -214,3 +214,26 @@ We audited all downstream code to confirm whether this difference would cause ac
    - `Stock Entry` (type `Manufacture`) strictly derives its consumption items from physical `tabBin` balances in the supplier warehouse (`_get_supplier_wh_consumption_items`), ensuring 100% reconciliation with purchase transfers.
 3. **If Tolerance Needs Adjustment:**
    - Users/Admins can modify the tolerance at any time in **Manufyxinvenza Settings** -> **Consumption & Operations** -> **Weight Difference Tolerance (Kg)** without requiring a code deploy. Setting it to `0` restores strict zero-tolerance enforcement.
+
+---
+
+## 6. Review follow-up (Claude, 2026-09-28)
+
+Reviewed and fixed after deploy:
+
+1. **Tolerance was 0 on live.** A Single field nobody saved reads `0.0`, not `None`, so the
+   `0.05` fallback above never applied and SCO-SOE-0027 stayed blocked. Now written by
+   `setup.set_fg_settings_defaults` on migrate (only where no value exists).
+2. **Status counted part-sent rows as done.** `_is_row_done` used "any Kg transferred", so
+   40 of 100 Kg sent with 60 unreserved read "Batch Mapping Completed", and Check Mapping
+   skipped the row too. Both now use `_row_still_to_send`; Check Mapping says
+   "40 of 100 Kg already sent; 60 Kg still to reserve".
+3. **Section 3.4 correction:** the Final Stock Entry does not read the Bin balance
+   directly. `_consumption_for_completed` consumes each finished drawing's share, capped at
+   the drawing's need and at the physical stock at the supplier. It never reads the SOE
+   log's Kg, so the conclusion (the tolerance is safe downstream) stands.
+4. Explanatory comments removed from `validate` (PR-26-00008 rounding, RWD) restored.
+5. The 25 scratch scripts committed with this change are untracked and gitignored.
+
+Tests: `verify_partial_transfer_settling` (new, 15 checks); `verify_planning_status_follows_reservations`
+and `verify_transferred_row_locked` updated.

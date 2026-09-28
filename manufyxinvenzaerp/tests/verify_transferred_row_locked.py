@@ -139,10 +139,12 @@ def run():
     print()
     print("=== Check Mapping stops calling shipped rows unreserved ===")
     issues_src = inspect.getsource(mp_mod._collect_batch_mapping_issues)
+    # Rows sent IN FULL are skipped; a row sent in part with the rest unreserved is
+    # reported since 2026-09-28 (verify_partial_transfer_settling runs both cases).
     check("the Material Mapping check skips them",
-          "if r.batch and not r.is_reserved and not _row_has_shipped(r):" in issues_src, True)
+          "if r.batch and not r.is_reserved and _row_still_to_send(r):" in issues_src, True)
     check("the Exact Match check skips them",
-          "if r.batch_no and not r.is_reserved and not _row_has_shipped(r):" in issues_src, True)
+          "if r.batch_no and not r.is_reserved and _row_still_to_send(r):" in issues_src, True)
     shipped = inspect.getsource(mp_mod._row_has_shipped)
     check("partly shipped counts as shipped",
           'flt(row.get("transferred_qty")) > 0.0005' in shipped, True)

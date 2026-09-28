@@ -591,8 +591,13 @@ class MaterialPlanning(Document):
         rows += [r for r in (self.available_raw_materials or []) if r.item_code]
         outstanding = [r for r in (self.unavailable_items or []) if r.item_code]
 
+        # A row is settled when it is reserved or has been sent in full. Sent in PART and
+        # not reserved for the rest is not: the remainder has nothing holding it, and
+        # counting any transfer as done read "Batch Mapping Completed" with 60 Kg of a
+        # 100 Kg row unreserved -- the state MP-2026-00017 was in before its balance
+        # could be sent.
         def _is_row_done(r):
-            return bool(r.is_reserved) or bool(r.get("fully_transferred")) or flt(r.get("transferred_qty")) > 0.0005
+            return bool(r.is_reserved) or not _row_still_to_send(r)
 
         if not rows:
             self.planning_status = "Working" if outstanding else "Open"
@@ -852,10 +857,19 @@ class MaterialPlanning(Document):
             batch_stock = _get_batch_total_stock(row.batch, self.for_warehouse)
             reserved_by_others = _get_batch_reserved_by_others(row.batch, mp_name, exclude_table="material_mapping")
             allocated_so_far = batch_allocated.get(row.batch, 0.0)
+            # Rounded to the 3 decimals this table stores, and compared that way
+            # below. A batch shared by many rows is checked by re-adding every
+            # row's claim, and summing ten unrounded floats drifts: a receipt
+            # that filled a batch EXACTLY to the last row (2826 Kg over the
+            # PLATE8 rows of MP-2026-00015) left 239.6899999999996 free against
+            # a required 239.690 and was refused for a difference the message
+            # itself printed as "0.0 Kg". The whole receipt's allocation went
+            # down with it (PR-26-00008).
             available = flt(max(0.0, batch_stock - reserved_by_others - allocated_so_far), 3)
 
             # Skip stock-coverage check when the batch has no stock in the source
             # warehouse — it was either already transferred out or not yet received.
+            # Throwing here would prevent any save after a partial transfer.
             if not batch_stock:
                 batch_allocated[row.batch] = allocated_so_far
                 continue
@@ -864,7 +878,10 @@ class MaterialPlanning(Document):
 
             if row.reserve_without_dimensions:
                 # Bypass the dimension/calc check — this row shares a batch whose
-                # size deliberately differs from the requirement.
+                # size deliberately differs from the requirement. Exactly the
+                # Required Qty is reserved (see _apply_rwd_fractional_nos), so
+                # that is what has to fit in free stock -- less whatever of it has
+                # already been sent, which is no longer in the warehouse to find.
                 required_qty = max(0.0, flt(row.qty) - transferred)
                 if required_qty <= 0.0005:
                     continue
@@ -2179,6 +2196,13 @@ def _batch_has_free_stock(remaining_kg, batch_total_kg, batch_total_sec):
     batches for nothing. Measured against the batch's own piece weight, so a genuine
     part-piece (Reserve Without Dimensions) is still offered."""
     if flt(remaining_kg) <= BATCH_FREE_EPSILON:
+        return False
+    # A WHOLE batch that is a few grams with no pieces left is a cutting crumb, not
+    # stock: PLT10-T10-L186-W180-R009 holds 0.002 Kg and 0 Nos, and was offered as a
+    # 0 Nos row. Below 0.01 Kg -- the line Check Mapping already draws for dust. The
+    # whole batch, not what is left of it: a batch that simply does not count pieces
+    # still offers its last grams (verify_mp_batch_dust).
+    if flt(batch_total_sec) <= 0 and flt(batch_total_kg) < 0.01:
         return False
     if flt(batch_total_sec) > 0 and flt(batch_total_kg) > 0:
         return _alloc_sec_qty(remaining_kg, batch_total_kg, batch_total_sec) >= 0.001
@@ -4910,7 +4934,7 @@ def reassign_batch(material_planning_name, source_table, row_name, new_batch_no,
     # can't be reserved yet -- that's a warning to surface, not a failure to roll
     # back. Any OTHER validation error (e.g. missing warehouse) still propagates
     # normally, unchanged from before this phase.
-    if any(not r.is_reserved and r.batch and not _row_has_shipped(r) for r in mp.material_mapping):
+    if any(not r.is_reserved and r.batch and _row_still_to_send(r) for r in mp.material_mapping):
         try:
             reserve_batches(material_planning_name)
         except frappe.ValidationError as e:
@@ -4918,7 +4942,7 @@ def reassign_batch(material_planning_name, source_table, row_name, new_batch_no,
                 raise
             warnings.append({"reason": str(e)})
         mp = frappe.get_doc("Material Planning", material_planning_name)
-    if any(not r.is_reserved and r.batch_no and not _row_has_shipped(r) for r in mp.available_raw_materials):
+    if any(not r.is_reserved and r.batch_no and _row_still_to_send(r) for r in mp.available_raw_materials):
         try:
             reserve_exact_match_batches(material_planning_name)
         except frappe.ValidationError as e:
@@ -5605,6 +5629,29 @@ def _row_has_shipped(row):
     return bool(row.get("fully_transferred")) or flt(row.get("transferred_qty")) > 0.0005
 
 
+def _row_still_to_send(row):
+    """Is some of this row's material still waiting to leave the warehouse?
+
+    The other half of _row_has_shipped. That one answers "has anything moved" -- partly
+    shipped counts -- which is right for locking the batch, and wrong for deciding the row
+    needs nothing more: a row sent in part still has a balance to hold. Measured the way
+    _release_rows_by_qty marks fully_transferred: against qty on Material Mapping and
+    required_qty on Exact Match, to within a gram."""
+    if row.get("fully_transferred"):
+        return False
+    need = flt(row.get("required_qty") if row.get("required_qty") is not None else row.get("qty"))
+    return flt(row.get("transferred_qty")) < flt(need - 0.001, 3)
+
+
+def _part_sent_note(row, need):
+    """' 40 of 100 Kg already sent; 60 Kg still to reserve.' for a part-shipped row."""
+    sent = flt(row.get("transferred_qty"), 3)
+    if sent <= 0.0005:
+        return ""
+    return " " + _("{0} of {1} Kg already sent; {2} Kg still to reserve.").format(
+        sent, flt(need, 3), flt(flt(need) - sent, 3))
+
+
 def _collect_batch_mapping_issues(mp):
     """Return a list of human-readable issue strings for the given MP doc.
     Empty list = everything is clean and the mapping can be marked complete."""
@@ -5645,19 +5692,24 @@ def _collect_batch_mapping_issues(mp):
     # reserved" -- and telling the user to go and reserve it again would have them
     # holding stock that has already left the warehouse. MP-2026-00260 reported 32 such
     # issues the moment its first transfer went out, every one of them settled work.
+    #
+    # A row sent in PART is one of these when the rest is not reserved: nothing holds the
+    # balance, and the plan would otherwise read complete over it.
     for r in (mp.material_mapping or []):
-        if r.batch and not r.is_reserved and not _row_has_shipped(r):
+        if r.batch and not r.is_reserved and _row_still_to_send(r):
             issues.append(
                 _("Material Mapping Row {0} — Batch <b>{1}</b> ({2}): Batch selected but not reserved. "
                   "Run <b>Reserve Batches</b> first.").format(r.idx, r.batch, r.item_code)
+                + _part_sent_note(r, r.qty)
             )
 
     # 5. Exact Match rows with batch but not reserved (same exclusion as 4).
     for r in (mp.available_raw_materials or []):
-        if r.batch_no and not r.is_reserved and not _row_has_shipped(r):
+        if r.batch_no and not r.is_reserved and _row_still_to_send(r):
             issues.append(
                 _("Exact Match Row {0} — Batch <b>{1}</b> ({2}): Batch selected but not reserved. "
                   "Run <b>Reserve Exact Match Batches</b> first.").format(r.idx, r.batch_no, r.item_code)
+                + _part_sent_note(r, r.required_qty)
             )
 
     # 6. Over-allocation: total reserved across ALL MPs vs actual stock
