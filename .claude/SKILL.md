@@ -15,13 +15,14 @@ description: >
 
 | Key         | Value                                                    |
 |-------------|----------------------------------------------------------|
-| Bench       | frappe-bench1                                            |
-| Site        | manufact                                                 |
-| App         | manufyxinvenzaerp                                        |
+| Bench       | frappe-bench11 (v16) — frappe-bench1 is the v15 reference |
+| Site        | manufactv16 (copy of live, migrated) — manufact on bench1 |
+| App         | manufyxinvenzaerp (branch `v16-migration`)               |
 | App root    | apps/manufyxinvenzaerp/                                  |
 | Python pkg  | apps/manufyxinvenzaerp/manufyxinvenzaerp/                |
-| Frappe      | v15                                                      |
-| ERPNext     | v15                                                      |
+| Frappe      | v16 (version-16)                                         |
+| ERPNext     | v16 (version-16); hrms, india_compliance version-16      |
+| Python/Node | 3.14 / 24 (`nvm` v24.15 — the shell default is Node 20)  |
 
 ## First thing every session
 
@@ -214,11 +215,15 @@ manufyxinvenzaerp/
   change request, then deleted outright on 2026-08-20 (1,827 lines). Subcontracting Order and
   Operation Entry do that work instead. Do not re-add anything to those two doctypes without
   checking why they were reverted.
-- **`bom_class_override.py` is a copy of ERPNext's `bom.py`.** Its module-level functions
-  (`get_children`, `item_query`, `make_variant_bom`, `get_bom_items`, `get_list_context`) are
-  ERPNext's own, called by the BOM form and tree view by dotted path. A dead-code sweep will
-  flag them as unreferenced because nothing in THIS app calls them. Removing them breaks the
-  BOM form.
+- **`bom_class_override.py` is a thin subclass of ERPNext's BOM — keep it thin.** It was a
+  full 1,655-line copy of v15's `bom.py`, which would not even import on v16 (`BOM Scrap Item`
+  became `BOM Secondary Item`; `get_operating_cost_per_unit` was removed). It now overrides
+  only five methods — `before_insert`, `set_bom_material_details`, `manage_default_bom`,
+  `calculate_rm_cost`, `get_exploded_items` — each ERPNext v16's own method with our change
+  marked `manufyx:`. On an ERPNext upgrade, re-copy those five from the new `bom.py` and
+  re-apply the marked lines; never copy the whole file again. ERPNext's module-level
+  functions (`get_children`, `item_query`, …) are re-exported from ERPNext at the top so any
+  old dotted path still resolves; the BOM form itself calls ERPNext's copies.
 - **DUNO/Mark No is unique only WITHIN a Sales Order, and a plan must not break that.**
   `unique` is 0 on both Drawing and Sales Order DUNO Item, and the marks are the
   customer's own (`1B1`…`1B22`, `TYPE 1`) — so two orders reusing one is normal, and
@@ -246,18 +251,19 @@ manufyxinvenzaerp/
   nothing connecting the loss to the save. Writes go through `db_set`, which is also
   what stops the three-way sync recursing — and avoids re-running BOM costing as a
   side effect of correcting a label. `verify_rate_schedule_sync.py` check 4 is that case.
-- **Frappe's child-table grid has a hard 11-column budget, and blowing it is silent.**
-  `grid.js setup_visible_columns` walks fields in order adding up `columns`, and the
-  first time the running total passes 11 it **returns** — dropping that column and
-  every one after it, with no error. The total starts at 1, so the widths may sum to
-  at most 10. This is why Purchase Receipt showed no Accepted Warehouse: it was always
-  `in_list_view`, but six custom columns exhausted the budget before it was reached, so
-  Length/Width/Thickness/Rate/Amount/Net Amount were invisible too. `setup.py
-  layout_purchase_receipt_item_grid` now spends it deliberately. **Production Plan Item
-  is still over budget** (26 against 11) — `planned_qty`, `warehouse` and
-  `planned_start_date` do not render there. Anything added to a grid must take width
-  from something else.
-- **`cannot_add_rows` is NOT a DocField property in Frappe v15.116.0.** Grep
+- **v16 removed the child-table grid's 11-column budget — every `in_list_view` column
+  now renders.** v15's `grid.js setup_visible_columns` stopped at the first column that
+  pushed the running width past 11 and silently dropped it and everything after it (why
+  Purchase Receipt once showed no Accepted Warehouse). v16 deleted that line: all
+  `in_list_view` columns show, and a grid wider than 10 gets a horizontal scrollbar
+  (`grid_row.js`). So grids that were silently truncated on v15 are now WIDER — e.g.
+  Sales Order DUNO Item 5 → 15 columns, Material Planning Unavailable Item 5 → 15, Purchase
+  Order Item 6 → 12. To hide a column, turn its `in_list_view` off — but mind that
+  Material Planning's CSV **Download** picks its columns by `in_list_view`
+  (`_add_io_buttons` in material_planning.js), so hiding a column there also drops it from
+  the download. `layout_*_grid` in setup.py still set the widths deliberately; the
+  "budget" reasoning in their docstrings describes v15.
+- **`cannot_add_rows` is NOT a DocField property (v15.116 and v16 both).** Grep
   `docfield.json` — it is not there. It exists only as a runtime flag the browser reads
   off the grid object (`grid.js`: `this.cannot_add_rows || (this.df && this.df.cannot_add_rows)`),
   so a doctype sync discards the key and the JSON alone does nothing. Set it on the
@@ -348,6 +354,30 @@ manufyxinvenzaerp/
   still that one requirement. With no Item No the stamped weight itself is the tie-breaker.
   `drawing_planned_weight` on a row stays the WHOLE requirement's weight — `_consumption_for_completed`
   reads it as a consumption cap, so changing that meaning moves the ledger.
+- **Desk routes are `/desk/...` on v16, and never hard-coded.** `/app/...` only survives
+  through a redirect (full page reload). Build links with `frappe.utils.get_form_link(doctype,
+  name)` in JS and `frappe.utils.get_absolute_url` / `get_url_to_form` in Python; workspace
+  shortcuts to reports use `type: "Report"`, not a URL.
+- **v16 validates Link fields that v15 silently let through.** v15's
+  `base_document.get_invalid_links` skipped the check whenever the Link had `fetch_from`
+  dependents (`item_code` → Material Spec/Grade, DUNO `item` → `item_name`, …) and the
+  target did not exist. v16 checks it, so a row pointing at a missing Item now fails the
+  save with "Could not find Row #N: …". The BOM-sheet import stages rows with a raw INSERT
+  and only WARNS about FG / material codes missing from the Item master — on v16 the Sales
+  Order will not save again until those items exist. Live data had no such dangling links
+  at migration (2026-09-30).
+- **India Compliance's own custom fields are NOT ours to export.** Customize Form's export
+  takes every custom field on a doctype, and 468 IC fields (module GST India / Income Tax
+  India / Audit Trail) had ended up in our `custom/*.json`, rewriting IC's definitions with
+  an old snapshot on every migrate (HSN Code back to Data, e-Waybill transport fields not
+  editable after submit, Tax Category fields IC deleted re-created). They were removed on
+  2026-09-30 and `patches/v16/restore_india_compliance_custom_fields` re-applied IC's own.
+  After any re-export, drop fields whose `module` is an IC module before committing.
+- **v16's own stock reservation stays off Production Plan and Job Work Order.**
+  `setup.hide_v16_stock_reservation_on_pp_and_sco` hides their `reserve_stock` box —
+  Material Planning owns reservations, and a second system would lock the same batches.
+- **`frappe.get_doc` takes (doctype, name) only on v16** — it is a singledispatch
+  function; a third positional argument (v15 ignored it) raises TypeError.
 - **No scheduler_events** are registered (all commented out in hooks.py).
 
 ## This bench does not hot-reload
@@ -388,7 +418,7 @@ two the wrong way round costs the same hour as forgetting the reloader.
 ## Batch quantities do not live in the ledger's batch_no
 
 `Stock Ledger Entry.batch_no` is empty for anything received through a Purchase Receipt:
-Frappe v15 records the batch in a **Serial and Batch Bundle** instead, and only some
+Frappe (v15 and v16) records the batch in a **Serial and Batch Bundle** instead, and only some
 flows (Stock Entry rows written with `use_serial_batch_fields`) fill the column in.
 
 So `SUM(actual_qty) ... GROUP BY batch_no` silently reports **zero for exactly the

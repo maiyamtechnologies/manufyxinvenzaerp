@@ -24,3 +24,4 @@ manufyxinvenzaerp.patches.v1.repair_batch_sec_qty_stranded
 manufyxinvenzaerp.patches.v1.backfill_soe_wt_per_pcs
 manufyxinvenzaerp.patches.v1.backfill_so_delivery_plan
 manufyxinvenzaerp.patches.v1.inspection_feedback_to_rows
+manufyxinvenzaerp.patches.v16.restore_india_compliance_custom_fields

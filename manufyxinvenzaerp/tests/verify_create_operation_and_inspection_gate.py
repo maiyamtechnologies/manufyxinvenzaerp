@@ -14,6 +14,7 @@ Run via: bench --site manufact execute manufyxinvenzaerp.tests.verify_create_ope
 """
 
 import frappe
+from manufyxinvenzaerp.tests.create_full_test_entry import fill_process_planning_parties
 from frappe.utils import today
 
 
@@ -51,6 +52,7 @@ def run():
         "create_operation": 1, "inspection_mandatory": 1,
     })
     pp.insert(ignore_permissions=True)
+    fill_process_planning_parties(pp)
     pp.submit()
     print("Created Production Plan:", pp.name)
 

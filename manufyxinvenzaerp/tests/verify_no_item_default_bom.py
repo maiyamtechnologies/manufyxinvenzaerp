@@ -93,7 +93,15 @@ def run():
           'frappe.db.set_value("Item", self.item, "default_bom", None)' in body, True)
     check("and clears the flag on the BOM",
           'self.db_set("is_default", 0)' in body, True)
-    check("still called on submit", "\t\tself.manage_default_bom()" in src, True)
+    # The override is a thin subclass, so on_submit / on_cancel / on_update_after_submit
+    # are ERPNext's own -- and they must still be the ones calling it.
+    import inspect
+
+    from erpnext.manufacturing.doctype.bom.bom import BOM as ERPNextBOM
+
+    for event in ("on_submit", "on_cancel", "on_update_after_submit"):
+        check("still called on %s" % event.replace("on_", ""),
+              "self.manage_default_bom()" in inspect.getsource(getattr(ERPNextBOM, event)), True)
 
     setup = open(frappe.get_app_path("manufyxinvenzaerp", "setup.py")).read()
     check("and a migrate sweeps up anything set elsewhere",

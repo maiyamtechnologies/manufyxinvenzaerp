@@ -176,7 +176,7 @@ def run():
         # A child row has no form of its own, so a link to it opens nothing.
         check("and links to the plan's own form",
               rss._route("Production Plan Item", pp_rows[0].parent),
-              "/app/production-plan/%s" % frappe.utils.quoted(pp_rows[0].parent))
+              frappe.utils.get_absolute_url("Production Plan", pp_rows[0].parent))
 
         print()
         print("=== 9. Seeding a blank row is not treated as an edit ===")

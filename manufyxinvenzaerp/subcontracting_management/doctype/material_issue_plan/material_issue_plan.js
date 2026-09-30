@@ -416,7 +416,7 @@ function _create_final_stock_entry(frm, weights) {
 						? __("A draft Final Stock Entry already existed for this Job Work Order and has been rebuilt with these figures. ")
 						: "")
 					+ __("Review and submit the stock entry: ") +
-					'<a href="/app/stock-entry/' + encodeURIComponent(se_name) + '">' + se_name + "</a>",
+					'<a href="' + frappe.utils.get_form_link("Stock Entry", se_name) + '">' + se_name + "</a>",
 				indicator: already ? "orange" : "green",
 			});
 		},
@@ -667,7 +667,7 @@ function _check_transfer_readiness(frm, on_proceed) {
 				// here to explain the gap. Name the plan and the weight so it is obvious
 				// where to go and what is at stake.
 				let per_mp = (d.unreserved_summary || []).map((s) =>
-					`<li><a href="/app/material-planning/${encodeURIComponent(s.material_planning)}" target="_blank"><b>${frappe.utils.escape_html(s.material_planning)}</b></a> — ${s.rows} ${__("row(s)")}, ${format_number(s.qty, null, 3)} Kg</li>`
+					`<li><a href="${frappe.utils.get_form_link("Material Planning", s.material_planning)}" target="_blank"><b>${frappe.utils.escape_html(s.material_planning)}</b></a> — ${s.rows} ${__("row(s)")}, ${format_number(s.qty, null, 3)} Kg</li>`
 				).join("");
 				html += `<div style="border:1px solid #f59e0b;background:#fffbeb;border-radius:6px;padding:12px;margin-bottom:12px;">
 					<p style="margin:0 0 6px;font-weight:bold;color:#92400e;font-size:13px;">
@@ -2370,7 +2370,7 @@ function _show_return_excess_dialog(frm) {
 						freeze_message: __("Creating return entry…"),
 						callback(r) {
 							if (r.message) {
-								frappe.msgprint({ title: __("Return Excess Entry Created"), message: __("Return Stock Entry: ") + '<a href="/app/stock-entry/' + encodeURIComponent(r.message) + '">' + r.message + "</a>", indicator: "green" });
+								frappe.msgprint({ title: __("Return Excess Entry Created"), message: __("Return Stock Entry: ") + '<a href="' + frappe.utils.get_form_link("Stock Entry", r.message) + '">' + r.message + "</a>", indicator: "green" });
 								frm.reload_doc();
 							}
 						},
@@ -2602,7 +2602,7 @@ function _mip_batch_cell_html(r) {
 	if (r.batch_no) return frappe.utils.escape_html(r.batch_no);
 	if (r.purchase_receipt) {
 		return __("Purchased via {0}", [
-			`<a href="/app/purchase-receipt/${encodeURIComponent(r.purchase_receipt)}" target="_blank">`
+			`<a href="${frappe.utils.get_form_link("Purchase Receipt", r.purchase_receipt)}" target="_blank">`
 			+ `${frappe.utils.escape_html(r.purchase_receipt)}</a>`,
 		]);
 	}

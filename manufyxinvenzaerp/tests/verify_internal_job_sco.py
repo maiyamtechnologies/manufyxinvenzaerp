@@ -8,6 +8,7 @@ Run via: bench --site manufact execute manufyxinvenzaerp.tests.verify_internal_j
 """
 
 import frappe
+from manufyxinvenzaerp.tests.create_full_test_entry import fill_process_planning_parties
 
 
 def run():
@@ -34,6 +35,7 @@ def run():
 	pp.append("custom_process_planning", {"operation_name": "Fit-up", "work_type": "Internal Jobcard"})
 	pp.append("custom_process_planning", {"operation_name": "Welding", "work_type": "Internal Jobcard"})
 	pp.insert(ignore_permissions=True)
+	fill_process_planning_parties(pp)
 	pp.submit()
 	print("Internal-Job Production Plan created+submitted:", pp.name)
 

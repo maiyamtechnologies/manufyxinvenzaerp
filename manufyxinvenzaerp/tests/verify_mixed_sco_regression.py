@@ -9,6 +9,7 @@ Run via: bench --site manufact execute manufyxinvenzaerp.tests.verify_mixed_sco_
 """
 
 import frappe
+from manufyxinvenzaerp.tests.create_full_test_entry import fill_process_planning_parties
 
 
 def run():
@@ -49,6 +50,7 @@ def run():
 	pp2.append("custom_process_planning", {"operation_name": "Fit-up", "work_type": "Subcontractor"})
 	pp2.append("custom_process_planning", {"operation_name": "Welding", "work_type": "Internal Jobcard"})
 	pp2.insert(ignore_permissions=True)
+	fill_process_planning_parties(pp2)
 	pp2.submit()
 
 	sco_name = create_sco_from_production_plan(pp2.name)
