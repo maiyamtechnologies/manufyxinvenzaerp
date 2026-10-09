@@ -1,9 +1,13 @@
 name: Deploy to Production
 
+# Auto-deploy is PAUSED while main moves to Frappe v16 on the new server.
+# Re-enable (restore the push trigger) after the deploy SSH keys/secrets point
+# to the new server. workflow_dispatch keeps the file valid; do not run it manually.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+#  push:
+#    branches:
+#      - main
 
 concurrency:
   group: production-deploy
