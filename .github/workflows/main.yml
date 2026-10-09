@@ -72,7 +72,7 @@ jobs:
 
     services:
       mariadb:
-        image: mariadb:10.6
+        image: mariadb:10.11  # what the v16 migration was verified on
         env:
           MYSQL_ROOT_PASSWORD: root
         ports:
@@ -113,13 +113,13 @@ jobs:
         id: setup-python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.14"  # ERPNext v16 requires-python >=3.14
 
       - name: Setup Node
         id: setup-node
         uses: actions/setup-node@v7
         with:
-          node-version: "18"
+          node-version: "24"  # frappe v16 engines: node >=24
 
       - name: Install system dependencies
         id: install-sysdeps
@@ -170,11 +170,11 @@ jobs:
       - name: Init bench + get apps
         id: init-bench
         run: |
-          bench init --skip-redis-config-generation --python "$(which python3)" --frappe-branch version-15 test-bench
+          bench init --skip-redis-config-generation --python "$(which python3)" --frappe-branch version-16 test-bench
           cd test-bench
-          bench get-app erpnext --branch version-15
-          bench get-app hrms --branch version-15
-          bench get-app india_compliance https://github.com/resilient-tech/india-compliance.git --branch version-15
+          bench get-app erpnext --branch version-16
+          bench get-app hrms --branch version-16
+          bench get-app india_compliance https://github.com/resilient-tech/india-compliance.git --branch version-16
           bench get-app manufyxinvenzaerp "$GITHUB_WORKSPACE/manufyxinvenzaerp"
 
       - name: Configure site + install apps

@@ -31,6 +31,7 @@ Run via: bench --site manufact execute manufyxinvenzaerp.tests.verify_excess_mat
 """
 
 import frappe
+from manufyxinvenzaerp.tests.create_full_test_entry import fill_process_planning_parties
 from frappe.utils import flt, today
 
 from manufyxinvenzaerp.tests.create_full_test_entry import get_ctx, ensure_item
@@ -86,6 +87,7 @@ def run():
     })
     pp.append("custom_process_planning", {"operation_name": "Material Issue", "work_type": "Internal Jobcard"})
     pp.insert(ignore_permissions=True)
+    fill_process_planning_parties(pp)
     pp.submit()
     print("Created Production Plan:", pp.name)
 

@@ -1,6 +1,6 @@
 # api — manufyxinvenzaerp
 
-_Generated: 2026-09-28 12:55:01_
+_Generated: 2026-09-30 23:34:00_
 
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
@@ -11,18 +11,6 @@ All `@frappe.whitelist()` methods. Call from JS:
 |--------|------|
 | `@frappe.validate_and_sanitize_search_inputs` | 28 |
 | `get_fund_usage` | 56 |
-## drawing_management/bom_class_override.py
-
-| Method | Line |
-|--------|------|
-| `get_bom_items` | 1256 |
-| `get_children` | 1289 |
-| `get_bom_diff` | 1468 |
-| `@frappe.validate_and_sanitize_search_inputs` | 1523 |
-| `make_variant_bom` | 1575 |
-| `get_routing` | 353 |
-| `get_bom_material_detail` | 424 |
-| `update_cost` | 509 |
 ## drawing_management/doctype/drawing/drawing.py
 
 | Method | Line |
@@ -176,7 +164,7 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 | Method | Line |
 |--------|------|
-| `get_pr_mp_allocations` | 1351 |
+| `get_pr_mp_allocations` | 1357 |
 | `get_pr_item_uom` | 16 |
 | `get_mp_for_pr` | 275 |
 | `diagnose_mp_allocation` | 296 |
@@ -301,4 +289,4 @@ All `@frappe.whitelist()` methods. Call from JS:
 
 ## Total
 
-_165 whitelisted methods_
+_157 whitelisted methods_

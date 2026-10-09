@@ -191,7 +191,7 @@ frappe.ui.form.on("Purchase Receipt", {
 				// for transfer). Say exactly that instead of claiming it's ready.
 				let sections = Object.entries(by_mp).map(function([mp, rows]) {
 					let mp_safe = frappe.utils.escape_html(mp);
-					let mp_link = `<a href="/app/material-planning/${encodeURIComponent(mp)}" target="_blank"><b>${mp_safe}</b></a>`;
+					let mp_link = `<a href="${frappe.utils.get_form_link("Material Planning", mp)}" target="_blank"><b>${mp_safe}</b></a>`;
 					let row_html = rows.map(function(r) {
 						return `<tr>
 							<td style="padding:3px 6px">${frappe.utils.escape_html(String(r.batch_no == null ? "" : r.batch_no))}</td>

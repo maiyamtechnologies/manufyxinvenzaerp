@@ -174,8 +174,8 @@
   {
    "color": "Grey",
    "label": "Manufyxinvenza Stock Balance",
-   "type": "URL",
-   "url": "/app/query-report/Manufyxinvenza%20Stock%20Balance"
+   "link_to": "Manufyxinvenza Stock Balance",
+   "type": "Report"
   },
   {
    "color": "Grey",
@@ -219,8 +219,8 @@
   {
    "color": "Grey",
    "label": "Customer Fund Usage",
-   "type": "URL",
-   "url": "/app/query-report/Customer%20Fund%20Usage"
+   "link_to": "Customer Fund Usage",
+   "type": "Report"
   },
   {
    "color": "Grey",

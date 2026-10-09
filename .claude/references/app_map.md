@@ -1,6 +1,6 @@
 # app_map — manufyxinvenzaerp
 
-_Generated: 2026-09-28 12:55:01_
+_Generated: 2026-09-30 23:34:00_
 
 ## Modules
 
@@ -27,7 +27,7 @@ _Generated: 2026-09-28 12:55:01_
 
 ## Python files
 
-_Total: 392_
+_Total: 369_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
@@ -92,6 +92,8 @@ _Total: 392_
 - material_request_management/__init__.py
 - material_request_management/material_request.py
 - patches/__init__.py
+- patches/v16/__init__.py
+- patches/v16/restore_india_compliance_custom_fields.py
 - patches/v1/backfill_drawing_rate_schedule_type.py
 - patches/v1/backfill_duno_calculated_weight.py
 - patches/v1/backfill_fg_entry_mip_ref.py
@@ -228,23 +230,15 @@ _Total: 392_
 - subcontracting_management/subcontracting.py
 - templates/__init__.py
 - templates/pages/__init__.py
-- tests/_chk_tmp.py
 - tests/create_full_test_entry.py
 - tests/create_test_data.py
 - tests/find_cascade_fixture.py
 - tests/find_clean_mp.py
 - tests/_find_mip_excess.py
 - tests/__init__.py
-- tests/_mfx_probe.py
 - tests/move_fixtures_to_custom_json.py
-- tests/_probe_ab.py
-- tests/_probe_tmp.py
-- tests/_render_challan.py
 - tests/reset_transactions.py
 - tests/revert_wo_jc_cleanup.py
-- tests/_showmsg.py
-- tests/_t_close.py
-- tests/_t_cs.py
 - tests/test_alternate_item.py
 - tests/test_classification_logic.py
 - tests/test_e2e_material_planning.py
@@ -253,8 +247,6 @@ _Total: 392_
 - tests/test_purchase_order_creation.py
 - tests/test_unavailable_actions.py
 - tests/test_whitelist_coverage.py
-- tests/_t_loss.py
-- tests/_t_sample.py
 - tests/verify_arm_reserve_without_dimensions.py
 - tests/verify_auto_purchase_gated.py
 - tests/verify_batch_nos_per_warehouse.py
@@ -402,21 +394,6 @@ _Total: 392_
 - tests/verify_wo_jc_standard2.py
 - tests/verify_wo_jc_standard.py
 - tests/verify_work_type_any_order.py
-- tests/_v.py
-- tests/_zz_probe_pp2.py
-- tests/_zz_probe_pp.py
-- tests/_zz_remap_mp16b.py
-- tests/_zz_remap_mp16.py
-- tests/zz_tmp_batchchk.py
-- tests/zz_tmp_mp14_bar_ffd.py
-- tests/zz_tmp_mp14_batchqty.py
-- tests/zz_tmp_mp14_cascade.py
-- tests/zz_tmp_mp14_chain_audit.py
-- tests/zz_tmp_mp14_checkmap.py
-- tests/zz_tmp_mp14_overalloc.py
-- tests/zz_tmp_mp14_plate_bound.py
-- tests/zz_tmp_mp14_plate_ffd.py
-- tests/zz_tmp_vs.py
 - utils/decision_log.py
 - utils/dimension_formula.py
 - utils/__init__.py
@@ -1157,22 +1134,6 @@ Functions:
   - 165:_prune:
 
 ### drawing_management/bom_class_override.py
-Functions:
-  - 1061:get_bom_item_rate:
-  - 1096:get_valuation_rate:
-  - 1152:get_list_context:
-  - 1157:get_bom_items_as_dict:
-  - 1256:get_bom_items:
-  - 1263:validate_bom_no:
-  - 1289:get_children:
-  - 1330:add_additional_cost:
-  - 1347:add_non_stock_items_cost:
-  - 1380:add_operations_cost:
-  - 1468:get_bom_diff:
-  - 1524:item_query:
-  - 1575:make_variant_bom:
-  - 1613:get_op_cost_from_sub_assemblies:
-  - 1631:get_scrap_items_from_sub_assemblies:
 
 ### drawing_management/drawing_utils.py
 Functions:
@@ -1208,13 +1169,13 @@ Functions:
   - 153:get_rate_schedule_conflict:
   - 177:propagate:
   - 219:_route:
-  - 233:announce:
-  - 284:seed_production_plan_rows:
-  - 319:_is_insert:
-  - 333:_sync_if_edited:
-  - 343:on_update_drawing:
-  - 348:on_update_bom:
-  - 353:on_update_production_plan:
+  - 231:announce:
+  - 282:seed_production_plan_rows:
+  - 317:_is_insert:
+  - 331:_sync_if_edited:
+  - 341:on_update_drawing:
+  - 346:on_update_bom:
+  - 351:on_update_production_plan:
 
 ### drawing_management/sales_order.py
 Functions:
@@ -1492,8 +1453,8 @@ Functions:
   - 1143:_allocate_pr_items_individually:
   - 1198:_msgprint_pending_mapping:
   - 1223:on_submit_purchase_receipt:
-  - 1339:_get_batch_from_bundle:
-  - 1351:get_pr_mp_allocations:
+  - 1345:_get_batch_from_bundle:
+  - 1357:get_pr_mp_allocations:
 
 ### rfq_management/request_for_quotation.py
 Functions:
@@ -1576,57 +1537,58 @@ Functions:
 Functions:
   - 1612:create_default_warehouse_types:
   - 1626:after_install:
-  - 1689:after_migrate:
-  - 1760:clear_item_default_boms:
-  - 1786:setup_storage_location:
-  - 1808:seed_material_grades:
-  - 1843:prepare_material_spec_link:
-  - 1877:create_item_client_script:
-  - 1893:create_item_custom_fields:
-  - 1995:create_purchase_order_custom_fields:
-  - 2119:hide_purchase_order_weight_fields:
-  - 2133:create_purchase_order_client_script:
-  - 2149:create_purchase_receipt_custom_fields:
-  - 2351:layout_purchase_receipt_item_grid:
-  - 2423:layout_stock_entry_detail_grid:
-  - 2458:create_rate_schedule_sync_fields:
-  - 2574:create_batch_custom_fields:
-  - 2763:create_purchase_receipt_client_script:
-  - 2779:create_material_request_custom_fields:
-  - 2922:create_material_request_client_script:
-  - 2938:create_rfq_custom_fields:
-  - 3032:create_rfq_client_script:
-  - 3048:create_sq_custom_fields:
-  - 3145:create_sq_client_script:
-  - 3161:create_bom_custom_fields:
-  - 3319:create_so_custom_fields:
-  - 3455:create_so_client_script:
-  - 3476:create_so_delivery_plan_fields:
-  - 3685:create_so_delivery_plan_script:
-  - 3701:create_bom_client_script:
-  - 3721:create_production_plan_custom_fields:
-  - 4039:layout_production_plan_item_grid:
-  - 4101:create_production_plan_client_script:
-  - 4374:create_stock_entry_custom_fields:
-  - 4635:hide_duplicate_sco_field:
-  - 4662:create_stock_entry_client_script:
-  - 4699:create_doctype_label_translations:
-  - 4722:remove_sco_purchase_order_mandatory:
-  - 4733:add_sco_working_status:
-  - 4771:hide_sco_job_worker_warehouse:
-  - 4800:hide_sco_unused_tabs:
-  - 4826:hide_sco_amount_fields:
-  - 4854:make_sco_job_worker_conditional:
-  - 4889:create_sco_custom_fields:
-  - 5641:create_sco_client_script:
-  - 5657:create_sco_ops_client_script:
-  - 5673:create_soe_client_script:
-  - 5689:create_manufacturing_settings_custom_fields:
-  - 5728:create_material_planning_auto_purchase_fields:
-  - 5791:create_payment_request_custom_fields:
-  - 5873:create_fg_sales_custom_fields:
-  - 5978:create_fg_property_setters:
-  - 6017:set_fg_settings_defaults:
+  - 1690:after_migrate:
+  - 1762:clear_item_default_boms:
+  - 1788:setup_storage_location:
+  - 1810:seed_material_grades:
+  - 1845:prepare_material_spec_link:
+  - 1879:create_item_client_script:
+  - 1895:create_item_custom_fields:
+  - 1997:create_purchase_order_custom_fields:
+  - 2121:hide_purchase_order_weight_fields:
+  - 2135:create_purchase_order_client_script:
+  - 2151:create_purchase_receipt_custom_fields:
+  - 2353:layout_purchase_receipt_item_grid:
+  - 2425:layout_stock_entry_detail_grid:
+  - 2460:create_rate_schedule_sync_fields:
+  - 2576:create_batch_custom_fields:
+  - 2765:create_purchase_receipt_client_script:
+  - 2781:create_material_request_custom_fields:
+  - 2924:create_material_request_client_script:
+  - 2940:create_rfq_custom_fields:
+  - 3034:create_rfq_client_script:
+  - 3050:create_sq_custom_fields:
+  - 3147:create_sq_client_script:
+  - 3163:create_bom_custom_fields:
+  - 3321:create_so_custom_fields:
+  - 3457:create_so_client_script:
+  - 3478:create_so_delivery_plan_fields:
+  - 3687:create_so_delivery_plan_script:
+  - 3703:create_bom_client_script:
+  - 3723:create_production_plan_custom_fields:
+  - 4041:layout_production_plan_item_grid:
+  - 4103:create_production_plan_client_script:
+  - 4376:create_stock_entry_custom_fields:
+  - 4637:hide_duplicate_sco_field:
+  - 4664:create_stock_entry_client_script:
+  - 4701:create_doctype_label_translations:
+  - 4724:remove_sco_purchase_order_mandatory:
+  - 4735:hide_v16_stock_reservation_on_pp_and_sco:
+  - 4764:add_sco_working_status:
+  - 4802:hide_sco_job_worker_warehouse:
+  - 4831:hide_sco_unused_tabs:
+  - 4857:hide_sco_amount_fields:
+  - 4885:make_sco_job_worker_conditional:
+  - 4920:create_sco_custom_fields:
+  - 5672:create_sco_client_script:
+  - 5688:create_sco_ops_client_script:
+  - 5704:create_soe_client_script:
+  - 5720:create_manufacturing_settings_custom_fields:
+  - 5759:create_material_planning_auto_purchase_fields:
+  - 5822:create_payment_request_custom_fields:
+  - 5904:create_fg_sales_custom_fields:
+  - 6009:create_fg_property_setters:
+  - 6048:set_fg_settings_defaults:
 
 ### sq_management/supplier_quotation.py
 Functions:
@@ -1786,20 +1748,17 @@ Functions:
   - 2667:_build_jc_drawing_rows:
   - 2700:_populate_jcs_for_wo:
 
-### tests/_chk_tmp.py
-Functions:
-  - 2:run:
-
 ### tests/create_full_test_entry.py
 Functions:
   - 32:get_ctx:
-  - 61:ensure_item:
-  - 80:ensure_fg_item:
-  - 100:ensure_batch:
-  - 119:make_receipt:
-  - 142:make_bom:
-  - 181:make_material_planning:
-  - 200:run:
+  - 61:fill_process_planning_parties:
+  - 89:ensure_item:
+  - 108:ensure_fg_item:
+  - 128:ensure_batch:
+  - 147:make_receipt:
+  - 170:make_bom:
+  - 209:make_material_planning:
+  - 228:run:
 
 ### tests/create_test_data.py
 Functions:
@@ -1823,26 +1782,10 @@ Functions:
 Functions:
   - 4:run:
 
-### tests/_mfx_probe.py
-Functions:
-  - 4:run:
-
 ### tests/move_fixtures_to_custom_json.py
 Functions:
   - 64:_all_target_doctypes:
   - 70:run:
-
-### tests/_probe_ab.py
-Functions:
-  - 5:run:
-
-### tests/_probe_tmp.py
-Functions:
-  - 2:run:
-
-### tests/_render_challan.py
-Functions:
-  - 7:run:
 
 ### tests/reset_transactions.py
 Functions:
@@ -1864,18 +1807,6 @@ Functions:
 ### tests/revert_wo_jc_cleanup.py
 Functions:
   - 106:run:
-
-### tests/_showmsg.py
-Functions:
-  - 4:run:
-
-### tests/_t_close.py
-Functions:
-  - 5:run:
-
-### tests/_t_cs.py
-Functions:
-  - 4:run:
 
 ### tests/test_alternate_item.py
 Functions:
@@ -1944,15 +1875,6 @@ Functions:
   - 34:_app_root:
   - 38:_whitelisted_methods:
   - 67:_front_end_calls:
-
-### tests/_t_loss.py
-Functions:
-  - 5:run:
-
-### tests/_t_sample.py
-Functions:
-  - 17:_wh:
-  - 25:run:
 
 ### tests/verify_arm_reserve_without_dimensions.py
 Functions:
@@ -2142,7 +2064,7 @@ Functions:
 
 ### tests/verify_create_operation_and_inspection_gate.py
 Functions:
-  - 20:run:
+  - 21:run:
 
 ### tests/verify_cross_item_batch_reassign.py
 Functions:
@@ -2265,7 +2187,7 @@ Functions:
   - 26:check:
   - 32:run:
   - 105:_build_sales_order:
-  - 160:_cleanup:
+  - 165:_cleanup:
 
 ### tests/verify_drawing_split_plans.py
 Functions:
@@ -2303,23 +2225,23 @@ Functions:
 
 ### tests/verify_excess_claim_lifecycle.py
 Functions:
-  - 52:check:
-  - 57:_throws:
-  - 66:run:
+  - 53:check:
+  - 58:_throws:
+  - 67:run:
 
 ### tests/verify_excess_material_mapping.py
 Functions:
-  - 21:run:
+  - 22:run:
 
 ### tests/verify_excess_material_mapping_row_btn.py
 Functions:
-  - 48:run:
+  - 49:run:
 
 ### tests/verify_excess_partial_and_flags.py
 Functions:
-  - 34:check:
-  - 39:_throws:
-  - 47:run:
+  - 35:check:
+  - 40:_throws:
+  - 48:run:
 
 ### tests/verify_excess_plan_sizes.py
 Functions:
@@ -2551,7 +2473,7 @@ Functions:
 
 ### tests/verify_internal_job_sco.py
 Functions:
-  - 13:run:
+  - 14:run:
 
 ### tests/verify_manual_mr_multi_supplier.py
 Functions:
@@ -2595,7 +2517,7 @@ Functions:
 
 ### tests/verify_mip_consolidated_allocation.py
 Functions:
-  - 33:run:
+  - 34:run:
 
 ### tests/verify_mip_consolidate_items.py
 Functions:
@@ -2622,7 +2544,7 @@ Functions:
 
 ### tests/verify_mip_post_purchase_refresh.py
 Functions:
-  - 27:run:
+  - 28:run:
 
 ### tests/verify_mip_raw_material_slimmed.py
 Functions:
@@ -2633,7 +2555,7 @@ Functions:
 
 ### tests/verify_mixed_sco_regression.py
 Functions:
-  - 14:run:
+  - 15:run:
 
 ### tests/verify_mp_batch_dust.py
 Functions:
@@ -2697,7 +2619,7 @@ Functions:
 Functions:
   - 30:check:
   - 36:run:
-  - 110:_item_with_a_bom:
+  - 118:_item_with_a_bom:
 
 ### tests/verify_nos_labels.py
 Functions:
@@ -2991,68 +2913,6 @@ Functions:
   - 44:_throws:
   - 52:run:
 
-### tests/_v.py
-Functions:
-  - 6:run:
-
-### tests/_zz_probe_pp2.py
-Functions:
-  - 3:_msgs:
-  - 10:run:
-
-### tests/_zz_probe_pp.py
-Functions:
-  - 4:run:
-
-### tests/_zz_remap_mp16b.py
-Functions:
-  - 17:run:
-
-### tests/_zz_remap_mp16.py
-Functions:
-  - 10:run:
-
-### tests/zz_tmp_batchchk.py
-Functions:
-  - 3:run:
-
-### tests/zz_tmp_mp14_bar_ffd.py
-Functions:
-  - 11:ffd:
-  - 25:run:
-
-### tests/zz_tmp_mp14_batchqty.py
-Functions:
-  - 7:run:
-
-### tests/zz_tmp_mp14_cascade.py
-Functions:
-  - 5:run:
-
-### tests/zz_tmp_mp14_chain_audit.py
-Functions:
-  - 18:run:
-
-### tests/zz_tmp_mp14_checkmap.py
-Functions:
-  - 5:run:
-
-### tests/zz_tmp_mp14_overalloc.py
-Functions:
-  - 10:run:
-
-### tests/zz_tmp_mp14_plate_bound.py
-Functions:
-  - 14:run:
-
-### tests/zz_tmp_mp14_plate_ffd.py
-Functions:
-  - 11:run:
-
-### tests/zz_tmp_vs.py
-Functions:
-  - 2:run:
-
 ### utils/decision_log.py
 Functions:
   - 32:log_decision:
@@ -3089,14 +2949,6 @@ Functions:
 - `drawing_management/drawing_utils.py:319` — `parse_drawing_items_csv`
 - `drawing_management/drawing_utils.py:440` — `update_customer_provided_weight`
 - `drawing_management/rate_schedule_sync.py:153` — `get_rate_schedule_conflict`
-- `drawing_management/bom_class_override.py:353` — `get_routing`
-- `drawing_management/bom_class_override.py:424` — `get_bom_material_detail`
-- `drawing_management/bom_class_override.py:509` — `update_cost`
-- `drawing_management/bom_class_override.py:1256` — `get_bom_items`
-- `drawing_management/bom_class_override.py:1289` — `get_children`
-- `drawing_management/bom_class_override.py:1468` — `get_bom_diff`
-- `drawing_management/bom_class_override.py:1523` — `@frappe.validate_and_sanitize_search_inputs`
-- `drawing_management/bom_class_override.py:1575` — `make_variant_bom`
 - `drawing_management/so_drawing_import.py:139` — `parse_bom_excel`
 - `drawing_management/so_drawing_import.py:406` — `create_drawings_from_import`
 - `drawing_management/so_drawing_import.py:606` — `process_drawings`
@@ -3226,7 +3078,7 @@ Functions:
 - `purchase_receipt_management/purchase_receipt.py:296` — `diagnose_mp_allocation`
 - `purchase_receipt_management/purchase_receipt.py:337` — `retry_mp_allocation`
 - `purchase_receipt_management/purchase_receipt.py:539` — `allocate_pr_stock_to_mp`
-- `purchase_receipt_management/purchase_receipt.py:1351` — `get_pr_mp_allocations`
+- `purchase_receipt_management/purchase_receipt.py:1357` — `get_pr_mp_allocations`
 - `selling_management/mapping.py:22` — `make_delivery_note`
 - `selling_management/mapping.py:182` — `make_sales_invoice_from_so`
 - `selling_management/mapping.py:201` — `make_sales_invoice_from_dn`

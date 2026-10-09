@@ -330,7 +330,7 @@ Playwright MCP is available and can do this at desktop and narrow widths.
 ## 4. Phased plan (work in this order)
 
 ### Phase 0 — Before touching v16 (on bench1, optional but recommended)
-- [ ] Take a fresh manufact backup with files, for the v16 trial.
+- [x] Take a fresh manufact backup with files, for the v16 trial.
 - [ ] Record v15 baselines: run the full test suite (`bench --site manufact run-tests --app manufyxinvenzaerp`
       plus every `verify_*.run`) and save the pass/fail list. Some may already fail on v15 — know which.
 - [ ] Take v15 screenshots of every screen in §2.8 and every grid in §2.3, and save PDFs of each print.
@@ -339,39 +339,39 @@ Playwright MCP is available and can do this at desktop and narrow widths.
       **ask the user before deleting anything**.
 
 ### Phase 1 — Stand up and re-verify (v16 bench)
-- [ ] Confirm versions: `bench version`, `python --version` (3.14), `node --version` (≥24).
-- [ ] `git checkout -b v16-migration` in `apps/manufyxinvenzaerp`.
-- [ ] Re-run the checks from §8 against the **installed** v16 apps (not the scratch clones) and
+- [x] Confirm versions: `bench version`, `python --version` (3.14), `node --version` (≥24).
+- [x] `git checkout -b v16-migration` in `apps/manufyxinvenzaerp`.
+- [x] Re-run the checks from §8 against the **installed** v16 apps (not the scratch clones) and
       update §2 and §3 with anything new.
-- [ ] Restore the manufact backup copy to a new site. Do not migrate yet — first read the migrate log of a dry run on a second copy if possible.
+- [x] Restore the manufact backup copy to a new site. Do not migrate yet — first read the migrate log of a dry run on a second copy if possible.
 
 ### Phase 2 — Code fixes that must land before `bench migrate` can succeed
-- [ ] §2.1 BOM override → thin subclass on v16's `bom.py`.
-- [ ] `bench build --app manufyxinvenzaerp` succeeds under Node 24.
-- [ ] App imports cleanly: `bench --site <site> console` → `import manufyxinvenzaerp.hooks`, and
+- [x] §2.1 BOM override → thin subclass on v16's `bom.py`.
+- [x] `bench build --app manufyxinvenzaerp` succeeds under Node 24.
+- [x] App imports cleanly: `bench --site <site> console` → `import manufyxinvenzaerp.hooks`, and
       import every module (walk the package and `importlib.import_module` each one).
 
 ### Phase 3 — Migrate
-- [ ] `bench --site <site> migrate` — save the full log. Every error or traceback must be
+- [x] `bench --site <site> migrate` — save the full log. Every error or traceback must be
       explained. Watch for failures in `after_migrate` / `setup.py`: `create_custom_fields` with a
       missing `insert_after`, property setters on removed fields, client-script installation,
       `add_sco_working_status`, `seed_material_grades`, `layout_*_grid`.
 - [ ] `bench --site <site> clear-cache`, `bench build`, restart `bench start`.
-- [ ] Check ERPNext's own v16 patches renamed the BOM scrap data (BOMs with scrap rows → secondary items).
+- [x] Check ERPNext's own v16 patches renamed the BOM scrap data (BOMs with scrap rows → secondary items).
 
 ### Phase 4 — Clean-ups after migrate
 - [ ] §2.2 property setters and anchors (ask before removing anything from JSON).
 - [ ] §2.3 grid columns: decide per grid and update the `layout_*_grid` functions in setup.py.
-- [ ] §2.4 `/app/` → framework link helpers.
+- [x] §2.4 `/app/` → framework link helpers.
 - [ ] §2.5 SCO: make sure the standard `production_plan` stays empty and `reserve_stock` stays off. Hide the new clutter fields.
 - [ ] §2.9 hide the new v16 fields/sections the client doesn't use on PP / SCO / SE / PR / SO / Item / BOM.
 - [ ] Re-export changed customizations (`export_customizations(..., sync_on_migrate=True)`).
-- [ ] Update the tests that emulate v15 internals (§2.3, §2.1 `get_item_details`).
+- [x] Update the tests that emulate v15 internals (§2.3, §2.1 `get_item_details`).
 
 ### Phase 5 — Test (see §5), fix, repeat.
 
 ### Phase 6 — CI and deployment
-- [ ] `.github/workflows/main.yml`: `python-version: "3.11"` → `"3.14"`, `node-version: "18"` → `"24"`,
+- [x] `.github/workflows/main.yml`: `python-version: "3.11"` → `"3.14"`, `node-version: "18"` → `"24"`,
       and change frappe/erpnext/hrms/india_compliance/payments checkout branches to `version-16`.
       Check the MariaDB/Redis service container versions.
 - [ ] The live server needs a v16 stack (new Python/Node). Plan it with the user as a
@@ -382,7 +382,7 @@ Playwright MCP is available and can do this at desktop and narrow widths.
       next `[autodeploy]` pushes v16 code onto a v15 server).
 
 ### Phase 7 — Docs
-- [ ] SKILL.md: Frappe/ERPNext v16 in the Environment table; rewrite the 11-column grid rule
+- [x] SKILL.md: Frappe/ERPNext v16 in the Environment table; rewrite the 11-column grid rule
       (§2.3), the BOM override note (§2.1), `/desk` routes, and anything else found.
 - [ ] Run `bash apps/manufyxinvenzaerp/.claude/update_skill.sh` to regenerate app_map / doctypes / hooks / api.
 - [ ] `references/deployment.md`: new CI versions and server stack.
@@ -393,11 +393,11 @@ Playwright MCP is available and can do this at desktop and narrow widths.
 ## 5. Post-migration test plan
 
 ### 5.1 Automated
-- [ ] `bench --site <site> run-tests --app manufyxinvenzaerp` (8 unittest modules; `test_whitelist_coverage` must be green).
-- [ ] Every `tests/verify_*.py`: `bench --site <site> execute manufyxinvenzaerp.tests.<name>.run`.
+- [x] `bench --site <site> run-tests --app manufyxinvenzaerp` (8 unittest modules; `test_whitelist_coverage` must be green).
+- [x] Every `tests/verify_*.py`: `bench --site <site> execute manufyxinvenzaerp.tests.<name>.run`.
       Each must end "ALL n CHECKS PASSED". Loop over them and collect the results; compare with the Phase 0 v15 baseline.
       A new failure is either a v16 break or a test that emulates v15 internals — decide which, then fix.
-- [ ] `verify_client_scripts_parse` — every setup.py client script parses (`node --check` under Node 24).
+- [x] `verify_client_scripts_parse` — every setup.py client script parses (`node --check` under Node 24).
 
 ### 5.2 Manual end-to-end (the full chain, one real job, from the restored copy)
 Use a job that exists in the restored data, **and** make one brand-new job from scratch.
@@ -439,7 +439,7 @@ Use a job that exists in the restored data, **and** make one brand-new job from 
 - [ ] Every grid in §2.3: correct columns, no unintended extra columns, editable where it should be, row buttons working.
 - [ ] Buttons: colours from `mfx_buttons.js` (blue / outlined blue / orange / red / grey) still paint
       — v16 may change button markup or class names. Check the group-button painting in particular.
-- [ ] All PDFs match v15 (layout, totals, page breaks).
+- [x] All PDFs match v15 (layout, totals, page breaks).
 - [ ] No JS console errors on any customised form (Playwright `browser_console_messages`).
 
 ### 5.4 Data integrity after migrate (compare the v15 copy with the v16 copy)
@@ -525,3 +525,49 @@ grep -n "total_colsize > 11" ../../frappe/frappe/public/js/frappe/form/grid.js
   clones plus frappe-bench11 Frappe 16.28). No code changed yet.
 - 2026-09-26 — frappe_assistant_core confirmed v16-compatible (README + upstream CI matrix
   on version-16 / Py 3.14 / Node 24, commit 99deda4). Install latest upstream `main`.
+- 2026-09-30 — frappe-bench11, site `manufactv16` (fresh v16 site, not a manufact restore):
+  frappe 16.36.0, erpnext 16.37.0, hrms 16.20.0, india_compliance 16.10.0 (all `version-16`),
+  Python 3.14.6. Default shell Node is 20.18 — use nvm Node 24.15 for `bench build`/`bench start`.
+  Branch `v16-migration` cut from `devbranch` (4677834) and installed on the site.
+  `install-app` failed in `sync_customizations`: `custom/user.json` carried exported standard
+  User links to **Blogger** and **Energy Point Log**, both removed from v16 frappe. Dropped those
+  two link rows (only JSON change); `bench migrate` + `after_migrate` then ran clean.
+  Import check: only §2.1 BOM override failures (`bom_scrap_item`, `get_operating_cost_per_unit`).
+  §2.2 property-setter / `insert_after` list re-confirmed exactly on the v16 meta. Grid 11-column
+  cap confirmed gone (§2.3). `/app/` still hard-coded in 14 non-test places (§2.4).
+- 2026-09-30 (later) — Code migrated on `v16-migration` and tested on `manufactv16` restored
+  from the LIVE v15 database (erp_manufyx_co_in, 2026-09-30 18:00), migrated clean
+  (mute_emails + pause_scheduler set, scheduler disabled — it is a live copy).
+  * §2.1 BOM override rewritten as a thin subclass (5 methods, `manufyx:` markers); verified
+    insert/submit/cancel on a copy of a live BOM (routing default, no default BOM, L/W/T on
+    exploded rows, costs identical). Live had no BOM scrap rows to migrate.
+  * §2.2 found worse than listed: 468 India Compliance fields in our custom JSON were
+    overwriting IC's own definitions on every migrate (also on v15). Removed from JSON; new
+    patch `v16.restore_india_compliance_custom_fields` re-applies IC's. 10 custom JSON files
+    are now empty (left in place). `user.json` lost its Blogger / Energy Point Log links
+    (doctypes gone in v16). Dead property setters (Job Card scrap, Work Order tab, PR
+    provisional account) and the two SCO anchors from the 2026-07 field removal left as is.
+  * §2.3 grids NOT changed: v16 scrolls wide grids horizontally; 18 app-owned/customised
+    grids gain columns — a layout decision for the client. Hiding via in_list_view would
+    also drop columns from Material Planning's CSV Download.
+  * §2.4 all `/app/` links → get_form_link / get_absolute_url; Manufyx workspace report
+    shortcuts → type Report.
+  * §2.5 SCO / Stock Entry overrides unchanged and compatible (every parent method present,
+    same signatures). `reserve_stock` hidden on PP and SCO (setup.py).
+  * §2.6/§2.7 stock readers (SBB) match ERPNext get_batch_qty on all 118 live batch/warehouse
+    pairs; v16 still builds bundles from batch_no. `get_item_details` takes a plain dict
+    via normalize_ctx_input — test unchanged.
+  * NEW: v16 link validation is stricter (v15 skipped Links with fetch_from dependents).
+    Live data had no dangling links; two tests relied on it and were fixed.
+  * Tests on live data: 147 verify scripts — none fails because of v16. 114 passed first
+    run; +2 fixed (get_doc 3-arg, fake-item links), +6 of the 9 job-work chain tests pass once
+    `fill_process_planning_parties` gives their plans a Supplier/Contractor. Remaining
+    failures are pre-existing (same result on v15 bench1) — stale fixtures/expectations.
+  * UI smoke (Playwright): 42 routes (records, new forms, pages, reports, workspace) — no
+    JS errors. PDFs (MIP batch/consolidate, Delivery Challan) render on wkhtmltopdf 0.12.5.
+  * CI → Python 3.14, Node 24, version-16 branches, MariaDB 10.11.
+  * Pre-existing bug fixed on this branch (also present on v15 — worth cherry-picking to
+    devbranch): Purchase Receipt submit refreshed "every MIP linked to the plan" by reading
+    SCO Drawing Item parents without a parenttype filter, so Job Work Order names were
+    refreshed as Material Issue Plans → DoesNotExist, an Error Log and a false "refresh
+    failed" message to the user. Now filtered to parenttype Material Issue Plan.

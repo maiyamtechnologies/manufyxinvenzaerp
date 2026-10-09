@@ -251,12 +251,12 @@ def run():
     check("it refuses to book against a system figure of zero",
           "if system_kg <= 0:" in cons_src, True)
 
-    mip = frappe.get_doc("Material Issue Plan", {"docstatus": ["<", 2]}, "name") \
-        if frappe.db.exists("Material Issue Plan", {"docstatus": ["<", 2]}) else None
+    # v16's get_doc takes (doctype, name) only -- v15 silently ignored a third argument.
+    mip = frappe.db.get_value("Material Issue Plan", {"docstatus": ["<", 2]}, "name")
     if not mip:
         print("   No Material Issue Plan on this site to book against.")
     else:
-        doc = frappe.get_doc("Material Issue Plan", mip.name)
+        doc = frappe.get_doc("Material Issue Plan", mip)
         before = len(doc.excess_return_items or [])
         # Same measurements on both: only the system figure differs, so only the system
         # figure can decide which one books.
@@ -269,6 +269,11 @@ def run():
              "custom_thickness": 0.0, "uom": "Kg"},
         ]
         measured = {"length": 1000, "width": 0, "sec_qty": 4}
+        # The two item codes are placeholders and _log_consolidated_excess saves the plan.
+        # v15 never noticed: it skipped link validation for any Link with fetch_from
+        # dependents when the target was missing. v16 checks it, so say so explicitly --
+        # the booking rule is under test here, not the links. Rolled back below.
+        doc.flags.ignore_links = True
         try:
             _log_consolidated_excess(doc, items, {"__MFX_NONE": measured, "__MFX_OVER": measured})
             booked = [r.item_code for r in (doc.excess_return_items or [])][before:]

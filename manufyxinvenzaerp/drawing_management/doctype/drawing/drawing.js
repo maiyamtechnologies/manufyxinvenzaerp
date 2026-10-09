@@ -56,8 +56,8 @@ frappe.ui.form.on("Drawing", {
                                         if (r.message) {
                                             frappe.msgprint({
                                                 title: __("BOM Created"),
-                                                message: __("BOM created") + ': <a href="/app/bom/' +
-                                                    encodeURIComponent(r.message) + '" target="_blank">' +
+                                                message: __("BOM created") + ': <a href="' +
+                                                    frappe.utils.get_form_link("BOM", r.message) + '" target="_blank">' +
                                                     r.message + "</a>",
                                                 indicator: "green",
                                             });

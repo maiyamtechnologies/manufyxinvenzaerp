@@ -58,6 +58,34 @@ def get_ctx():
 
 # ── Item factory ──────────────────────────────────────────────────────────────
 
+def fill_process_planning_parties(pp):
+    """Give every Process Planning row the Supplier/Contractor it needs to submit.
+
+    A Production Plan refuses to submit while any Process Planning row has no party
+    (production_plan.before_submit_process_planning). The fixtures in these checks
+    predate that rule and built their rows without one, so every check that submits
+    a plan stopped at the plan instead of reaching what it was written to test.
+
+    Subcontractor rows take the plan's own Vendor/Contractor where it has one -- that
+    is who the Job Work Order goes to -- and any enabled Supplier otherwise. Internal
+    Jobcard rows take a Contractor, and one is created if the site has none. Rows that
+    already carry a party are left alone."""
+    supplier = pp.get("custom_vendor_contractor") or frappe.db.get_value(
+        "Supplier", {"disabled": 0}, "name")
+    contractor = frappe.db.get_value("Contractor", {}, "name")
+    if not contractor:
+        contractor = frappe.get_doc({"doctype": "Contractor",
+                                     "contractor_name": "ZZTEST Contractor"}).insert(
+            ignore_permissions=True).name
+    for row in pp.get("custom_process_planning") or []:
+        if row.get("party"):
+            continue
+        if row.work_type == "Subcontractor":
+            row.party_type, row.party = "Supplier", supplier
+        elif row.work_type == "Internal Jobcard":
+            row.party_type, row.party = "Contractor", contractor
+
+
 def ensure_item(ctx, code, name, uom="Kg", batch_tracked=True):
     if frappe.db.exists("Item", code):
         return code

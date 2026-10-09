@@ -1355,7 +1355,7 @@ frappe.ui.form.on("Material Planning", {
 			).then(function(rows) {
 				if (rows && rows.length) {
 					let links = rows.map((r) =>
-						'<a href="/app/material-request/' + encodeURIComponent(r.name) + '">' + r.name + "</a>").join(", ");
+						'<a href="' + frappe.utils.get_form_link("Material Request", r.name) + '">' + r.name + "</a>").join(", ");
 					frappe.msgprint({
 						title: __("Cannot Refetch Raw Materials"),
 						indicator: "red",
@@ -3777,9 +3777,9 @@ function _do_auto_purchase(frm) {
 				frappe.msgprint({
 					title: __("Auto Purchase Complete"),
 					message:
-						__("Material Request: ") + '<a href="/app/material-request/' + encodeURIComponent(m.mr) + '">' + m.mr + '</a><br>' +
-						__("Purchase Order: ")   + '<a href="/app/purchase-order/'   + encodeURIComponent(m.po) + '">' + m.po + '</a><br>' +
-						__("Purchase Receipt: ") + '<a href="/app/purchase-receipt/' + encodeURIComponent(m.pr) + '">' + m.pr + '</a>',
+						__("Material Request: ") + '<a href="' + frappe.utils.get_form_link("Material Request", m.mr) + '">' + m.mr + '</a><br>' +
+						__("Purchase Order: ")   + '<a href="' + frappe.utils.get_form_link("Purchase Order", m.po) + '">' + m.po + '</a><br>' +
+						__("Purchase Receipt: ") + '<a href="' + frappe.utils.get_form_link("Purchase Receipt", m.pr) + '">' + m.pr + '</a>',
 					indicator: "green",
 				});
 				frm._grid_btns_added = false;

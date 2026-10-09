@@ -220,14 +220,12 @@ def _route(doctype, name):
     """Desk URL for a document.
 
     A Production Plan Item is a child row and has no form of its own, so it is
-    routed to its PARENT plan -- linking to /app/production-plan-item/<row hash>
-    opens nothing.
+    routed to its PARENT plan -- linking to the row's own route opens nothing.
+    The route itself comes from Frappe (/desk/... on v16), never hard-coded.
     """
     if doctype == "Production Plan Item":
         doctype = "Production Plan"
-    return "/app/{0}/{1}".format(
-        frappe.scrub(doctype).replace("_", "-"), frappe.utils.quoted(name)
-    )
+    return frappe.utils.get_absolute_url(doctype, name)
 
 
 def announce(result, schedule):

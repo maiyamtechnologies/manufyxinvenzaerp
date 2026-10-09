@@ -1309,9 +1309,15 @@ def on_submit_purchase_receipt(doc, method):
 
     # Refresh MIP raw-material snapshots for any MIPs linked to affected MPs
     if affected_mps:
+        # SCO Drawing Item is the child table of BOTH Material Issue Plan (drawing_items)
+        # and Subcontracting Order (custom_drawing_items). Without the parenttype filter
+        # the Job Work Order's own rows came back too, and each one was "refreshed" as a
+        # Material Issue Plan -- DoesNotExist, logged, and shown to the user as a failed
+        # refresh on every receipt against a plan that already had a Job Work Order.
         mip_rows = frappe.db.get_all(
             "SCO Drawing Item",
-            filters={"material_planning": ("in", affected_mps)},
+            filters={"material_planning": ("in", affected_mps),
+                     "parenttype": "Material Issue Plan"},
             fields=["parent"],
             distinct=True,
         )

@@ -147,6 +147,11 @@ def _build_sales_order():
             "length": 1000, "sec_qty": 1, "unit_weight": uw,
             "qty": flt(uw, 3), "uom": "Kg",
         })
+    # Row 3's FG item does not exist, on purpose. v15 let that save through (it skipped
+    # link validation whenever the Link had fetch_from dependents -- item -> item_name
+    # here); v16 checks it. The real import stages these rows with a raw INSERT, which
+    # skips validation the same way, so bypassing it here builds what the import builds.
+    so.flags.ignore_links = True
     so.save(ignore_permissions=True)
     # Create Drawing now refuses an unverified order on the server (sep14 plan D25).
     # This fixture carries a broken row on purpose, which Verify would reject, so the

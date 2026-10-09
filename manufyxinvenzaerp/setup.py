@@ -32,7 +32,7 @@ frappe.ui.form.on("BOM", {
 \t\t\t\t\t\t\t\tif (r.message) {
 \t\t\t\t\t\t\t\t\tfrappe.msgprint({
 \t\t\t\t\t\t\t\t\t\ttitle: __("Production Plan Created"),
-\t\t\t\t\t\t\t\t\t\tmessage: __("Production Plan created") + ': <a href="/app/production-plan/' + encodeURIComponent(r.message) + '" target="_blank">' + r.message + '</a>',
+\t\t\t\t\t\t\t\t\t\tmessage: __("Production Plan created") + ': <a href="' + frappe.utils.get_form_link("Production Plan", r.message) + '" target="_blank">' + r.message + '</a>',
 \t\t\t\t\t\t\t\t\t\tindicator: "green",
 \t\t\t\t\t\t\t\t\t});
 \t\t\t\t\t\t\t\t}
@@ -1663,6 +1663,7 @@ def after_install():
     create_stock_entry_client_script()
     create_doctype_label_translations()
     remove_sco_purchase_order_mandatory()
+    hide_v16_stock_reservation_on_pp_and_sco()
     hide_sco_job_worker_warehouse()
     hide_sco_unused_tabs()
     hide_sco_amount_fields()
@@ -1732,6 +1733,7 @@ def after_migrate():
     create_stock_entry_client_script()
     create_doctype_label_translations()
     remove_sco_purchase_order_mandatory()
+    hide_v16_stock_reservation_on_pp_and_sco()
     hide_sco_job_worker_warehouse()
     hide_sco_unused_tabs()
     hide_sco_amount_fields()
@@ -4730,6 +4732,35 @@ def remove_sco_purchase_order_mandatory():
     frappe.db.commit()
 
 
+def hide_v16_stock_reservation_on_pp_and_sco():
+    """Keep ERPNext v16's own stock reservation off Production Plan and Job Work Order.
+
+    v16 put a `reserve_stock` checkbox on both. Ticked, ERPNext writes Stock Reservation
+    Entries for the plan's / order's raw material on submit. Material Planning already
+    owns every reservation on this site (reserved_qty on its Exact Match and Material
+    Mapping rows, checked by _get_batch_reserved_by_others), so a second, independent
+    reservation system on the same batches would lock stock that Material Planning
+    believes is free, and the transfer to the supplier would then fail on "reserved
+    stock" with nothing on the plan to explain it.
+
+    Stock reservation stays enabled in Stock Settings -- Sales Orders use it -- so the
+    box would be live. It defaults to 0 and nothing sets it; hiding it just stops
+    anyone ticking it. The fields only exist from v16, hence the has_field guard."""
+    for doctype in ("Production Plan", "Subcontracting Order"):
+        if not frappe.get_meta(doctype).has_field("reserve_stock"):
+            continue
+        frappe.make_property_setter(
+            {
+                "doctype": doctype,
+                "fieldname": "reserve_stock",
+                "property": "hidden",
+                "value": 1,
+                "property_type": "Check",
+            }
+        )
+    frappe.db.commit()
+
+
 def add_sco_working_status():
     """Add "Working" to the Job Work Order's Status options.
 
@@ -5280,7 +5311,7 @@ function render_soe_summary(frm) {
                         + (consumed ? " <small class='text-muted'>of " + format_number(gross, null, 3) + "</small>" : "");
                 return "<tr>"
                     + "<td class='text-center'>" + (d.sequence_id || "") + "</td>"
-                    + "<td><a href='/app/supplier-operation-entry/" + encodeURIComponent(d.name) + "' style='color:#0ea5e9;text-decoration:underline;'>"
+                    + "<td><a href='" + frappe.utils.get_form_link("Supplier Operation Entry", d.name) + "' style='color:#0ea5e9;text-decoration:underline;'>"
                         + frappe.utils.escape_html(d.operation || "") + "</a></td>"
                     // Who carries this operation out -- a Supplier or a Contractor,
                     // copied from the Production Plan's Process Planning row.
