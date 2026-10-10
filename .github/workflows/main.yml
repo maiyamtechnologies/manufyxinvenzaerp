@@ -190,6 +190,13 @@ jobs:
             --admin-password admin \
             --no-mariadb-socket
           bench --site test-site.local install-app erpnext
+          # The base records a real site gets from the setup wizard: the Item Group
+          # tree ("All Item Groups"), the units of measure ("Kg", "Nos"), territories
+          # and the rest. A CI site never runs the wizard, so without this every test
+          # that creates an Item fails in setUpClass with "Could not find Parent Item
+          # Group: All Item Groups, Default Unit of Measure: Kg". Before the apps
+          # below, whose own install builds on the item groups.
+          bench --site test-site.local execute erpnext.setup.setup_wizard.operations.install_fixtures.install --args "['India']"
           bench --site test-site.local install-app hrms
           bench --site test-site.local install-app india_compliance
           bench --site test-site.local install-app manufyxinvenzaerp
