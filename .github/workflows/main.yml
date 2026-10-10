@@ -316,7 +316,13 @@ jobs:
             # ~/.local/bin) and Node 24 (nvm, which frappe v16 needs to build) are
             # put on PATH here or `bench` is simply "command not found".
             export PATH="$HOME/.local/bin:$PATH"
-            if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1; fi
+            # nvm loads its DEFAULT alias, which on this server was Node 20 -- the build
+            # then died with "The engine node is incompatible ... Expected >=24". Ask for
+            # 24 explicitly; `nvm alias default 24` on the server makes it the default too.
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then
+              . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
+              nvm use 24 >/dev/null 2>&1 || true
+            fi
 
             APP="manufyxinvenzaerp"
             BENCH_PATH="${BENCH_PATH:-$HOME/frappe-v16}"
@@ -402,6 +408,26 @@ jobs:
               WORKER_STATUS=${PIPESTATUS[0]}
               [ "$WEB_STATUS" -eq 0 ] && [ "$WORKER_STATUS" -eq 0 ]
             }
+
+            # ── Preflight: refuse BEFORE the backup if the deploy cannot finish ──
+            # Both of these failed the first v16 deploy halfway, after the code had
+            # been pulled: the build (Node too old) and the restart (no sudo for
+            # supervisorctl -- which `bench restart` needs as well). Checked first,
+            # so a server that is not ready is reported, not half-deployed.
+            NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')
+            if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 24 ]; then
+              log "ERROR: Node $(node -v 2>/dev/null || echo 'not found') -- frappe v16 needs Node 24 to build."
+              log "Fix once on the server (as $USER):  nvm install 24 && nvm alias default 24"
+              log "Nothing has been changed on the server."
+              exit 1
+            fi
+            if ! sudo -n supervisorctl status >/dev/null 2>&1; then
+              log "ERROR: $USER cannot run 'sudo supervisorctl' without a password, so the"
+              log "processes cannot be restarted (bench restart needs it too)."
+              log "Fix once on the server:  cd $BENCH_PATH && sudo bench setup sudoers $USER"
+              log "Nothing has been changed on the server."
+              exit 1
+            fi
 
             log "============================================"
             log " AUTO DEPLOY STARTED"
