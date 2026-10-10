@@ -1609,6 +1609,19 @@ function _so_show_table_popup(frm, fieldname) {
 """.strip()
 
 
+def enable_batch_numbers():
+    """Turn on Stock Settings > Activate Serial / Batch No for Item.
+
+    Every raw material this app plans, reserves and transfers is a batch, and from
+    v16 ERPNext refuses to save an item with Has Batch No while this switch is off --
+    which it is on any new site. A site upgraded from v15 has it on already (ERPNext's
+    own patch sets it where batch items exist); a site the app is installed on fresh
+    does not, and could not create a single raw-material item.
+    """
+    if not frappe.db.get_single_value("Stock Settings", "enable_serial_and_batch_no_for_item"):
+        frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
+
+
 def create_default_warehouse_types():
     """Ensure the Warehouse Type master records ERPNext's own
     Company.create_default_warehouses() links to already exist. Core creates a
@@ -1624,6 +1637,7 @@ def create_default_warehouse_types():
 
 
 def after_install():
+    enable_batch_numbers()
     create_default_warehouse_types()
     seed_material_grades()
     create_item_custom_fields()
