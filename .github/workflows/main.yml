@@ -1,13 +1,14 @@
 name: Deploy to Production
 
-# Auto-deploy is PAUSED while main moves to Frappe v16 on the new server.
-# Re-enable (restore the push trigger) after the deploy SSH keys/secrets point
-# to the new server. workflow_dispatch keeps the file valid; do not run it manually.
+# Push to main deploys to the v16 server (frappe-v16 bench), once the repository
+# variable LIVE_DEPLOY is "true". workflow_dispatch re-runs the same pipeline by
+# hand (Actions → Deploy to Production → Run workflow) -- e.g. after a failed run
+# whose cause was fixed on the server rather than in the code.
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
-#  push:
-#    branches:
-#      - main
 
 concurrency:
   group: production-deploy
@@ -235,11 +236,25 @@ jobs:
             --data-urlencode "text=${MESSAGE}"
 
   # ── Deploy ───────────────────────────────────────────────────────────────────
+  # The v16 server (since 2026-10) runs ONE bench for several sites. Two rules follow
+  # from that, and this job is built around them:
+  #
+  #   * App code is per bench, not per site. Pulling this app changes what EVERY site
+  #     with manufyxinvenzaerp installed runs, so every such site is backed up and
+  #     migrated together -- a site left un-migrated would run new code on an old
+  #     schema. Sites without the app are not touched at all: no backup, no cache
+  #     clear, no migrate.
+  #   * `bench restart` restarts the web server for the whole bench -- every site goes
+  #     502 for a few seconds. So it is not used. The web server is reloaded
+  #     gracefully (gunicorn HUP: new workers start, old ones finish their requests),
+  #     and the background workers are restarted, which no user sees.
+  #     HUP only loads new code when gunicorn runs WITHOUT --preload, which bench
+  #     puts in by default; see the setup notes in the deploy log if it is still there.
   deploy:
     name: SSH Deploy
     runs-on: ubuntu-latest
     needs: [prepare, test]
-    timeout-minutes: 30
+    timeout-minutes: 40
     # The live server is only touched when the repository variable LIVE_DEPLOY is
     # set to "true" (Settings → Secrets and variables → Actions → Variables).
     # With it unset the test gate still runs on every push, so the pipeline can be
@@ -269,295 +284,308 @@ jobs:
         env:
           DEPLOY_TAG: ${{ needs.prepare.outputs.tag }}
           TESTS_SKIPPED: ${{ needs.prepare.outputs.urgent == 'true' && '1' || '0' }}
+          # Repository variables (Settings → Secrets and variables → Actions →
+          # Variables). BENCH_PATH is the bench folder -- the one holding apps/ and
+          # sites/. DEPLOY_SITES is optional: leave it unset and every site with this
+          # app installed is deployed, which is what you want; set it (space
+          # separated) only to name them explicitly. A site that has the app but is
+          # missing from DEPLOY_SITES stops the deploy before anything changes.
+          BENCH_PATH: ${{ vars.BENCH_PATH }}
+          DEPLOY_SITES: ${{ vars.DEPLOY_SITES }}
         with:
-          # Forwarded into the remote shell so the Deploy Log record can say how
-          # this deploy was started and whether the suite ran. Only these two --
-          # the commit sha, message and branch are read from git on the server,
-          # because a commit message with a quote in it would otherwise have to
-          # survive a round trip through two shells.
-          envs: DEPLOY_TAG,TESTS_SKIPPED
+          # Forwarded into the remote shell. The commit sha, message and branch are
+          # read from git on the server instead, because a commit message with a
+          # quote in it would otherwise have to survive a round trip through two
+          # shells.
+          envs: DEPLOY_TAG,TESTS_SKIPPED,BENCH_PATH,DEPLOY_SITES
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 20m
+          command_timeout: 30m
           script: |
             # ── Setup ────────────────────────────────────────────────────────
-            BENCH_PATH="/home/manufyxv15/frappe-bench"
-            APP_PATH="$BENCH_PATH/apps/manufyxinvenzaerp"
+            # A non-interactive SSH shell does not read ~/.bashrc, so bench (pipx,
+            # ~/.local/bin) and Node 24 (nvm, which frappe v16 needs to build) are
+            # put on PATH here or `bench` is simply "command not found".
+            export PATH="$HOME/.local/bin:$PATH"
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh" >/dev/null 2>&1; fi
+
+            APP="manufyxinvenzaerp"
+            BENCH_PATH="${BENCH_PATH:-$HOME/frappe-v16}"
+            BENCH_NAME="$(basename "$BENCH_PATH")"
+            APP_PATH="$BENCH_PATH/apps/$APP"
             LOG_DIR="$BENCH_PATH/Auto-deploy-logs"
             LOG_FILE="$LOG_DIR/deploy_$(date +'%Y-%m-%d_%H-%M-%S').log"
-            SITE="erp.manufyx.co.in"
+            SAFE_DIR="$BENCH_PATH/deploy-backups"
             DEPLOY_STARTED="$(date +'%Y-%m-%d %H:%M:%S')"
             DEPLOY_TAG="${DEPLOY_TAG:-autodeploy}"
             TESTS_SKIPPED="${TESTS_SKIPPED:-0}"
-            BACKUP_FILE=""
             ROLLBACK_COMMIT=""
+            SITES=""
+            BACKUPS=""
 
             mkdir -p "$LOG_DIR"
+            log() { echo "$*" | tee -a "$LOG_FILE"; }
+            step() { log ""; log "$1"; log "--------------------------------------------"; }
+
+            cd "$BENCH_PATH" || { log "ERROR: Bench path not found: $BENCH_PATH"; exit 1; }
 
             # ── Deploy Log → ERP ─────────────────────────────────────────────
             # The log this script writes lives on the server, readable only over
             # SSH -- which is exactly the person who cannot read it when a deploy
             # fails out of hours. This copies the same log into a Deploy Log record
-            # so it can be read, and its status seen, from the ERP itself.
+            # on every deployed site so it can be read from the ERP itself.
             #
             # Every call is swallowed. A deploy that actually worked must never be
-            # reported as failed because recording it failed: `|| true` here, and
-            # the Python side catches everything as well. It is also why this is
-            # never called before Step 1 -- on a server mid-upgrade the function may
-            # not exist yet, and a missing function is not a reason to stop.
-            # Built up in one variable rather than a multi-line command: every line
-            # of this script sits inside a YAML block scalar, and a backslash
-            # continuation that starts at column 0 ends the block early and breaks
-            # the whole workflow file.
+            # reported as failed because recording it failed. Built up in one
+            # variable rather than a multi-line command: every line of this script
+            # sits inside a YAML block scalar, and a backslash continuation that
+            # starts at column 0 ends the block early and breaks the workflow file.
             record_deploy_log() {
               STATUS="$1"
               FAILED_STEP="${2:-}"
               cd "$BENCH_PATH" 2>/dev/null || return 0
-              KW="{'status': '$STATUS'"
-              KW="$KW, 'log_file': '$LOG_FILE'"
-              KW="$KW, 'started': '$DEPLOY_STARTED'"
-              KW="$KW, 'site': '$SITE'"
-              KW="$KW, 'backup_file': '$BACKUP_FILE'"
-              KW="$KW, 'rollback_commit': '$ROLLBACK_COMMIT'"
-              KW="$KW, 'failed_step': '$FAILED_STEP'"
-              KW="$KW, 'trigger_tag': '$DEPLOY_TAG'"
-              KW="$KW, 'tests_skipped': '$TESTS_SKIPPED'}"
-              bench --site "$SITE" execute manufyxinvenzaerp.deploy_log.record --kwargs "$KW" >/dev/null 2>&1 || true
+              for S in $SITES; do
+                BK=$(echo "$BACKUPS" | tr ' ' '\n' | grep -F "/${S}--" | head -n1)
+                KW="{'status': '$STATUS'"
+                KW="$KW, 'log_file': '$LOG_FILE'"
+                KW="$KW, 'started': '$DEPLOY_STARTED'"
+                KW="$KW, 'site': '$S'"
+                KW="$KW, 'backup_file': '$BK'"
+                KW="$KW, 'rollback_commit': '$ROLLBACK_COMMIT'"
+                KW="$KW, 'failed_step': '$FAILED_STEP'"
+                KW="$KW, 'trigger_tag': '$DEPLOY_TAG'"
+                KW="$KW, 'tests_skipped': '$TESTS_SKIPPED'}"
+                bench --site "$S" execute "$APP.deploy_log.record" --kwargs "$KW" >/dev/null 2>&1 || true
+              done
             }
 
-            echo "============================================" | tee -a "$LOG_FILE"
-            echo " AUTO DEPLOY STARTED"                        | tee -a "$LOG_FILE"
-            echo " Date     : $(date)"                         | tee -a "$LOG_FILE"
-            echo " App Path : $APP_PATH"                       | tee -a "$LOG_FILE"
-            echo " Site     : $SITE"                           | tee -a "$LOG_FILE"
-            echo "============================================" | tee -a "$LOG_FILE"
+            # ── Reload without taking other sites down ───────────────────────
+            # Web: gunicorn HUP through supervisor -- new workers come up on the new
+            # code while the old ones finish what they are serving, so no site sees
+            # a 502. That only works without --preload (a preloaded master hands the
+            # OLD code to every new worker); with it the web group is restarted
+            # instead, a few seconds of 502 for every site on the bench, and the log
+            # says how to remove --preload so the next deploy is seamless.
+            # Workers: restarted. A background job in progress is finished first
+            # (RQ warm shutdown); nobody using a site notices.
+            # No supervisor access (sudo) at all: plain `bench restart`.
+            reload_processes() {
+              if ! sudo -n supervisorctl status >/dev/null 2>&1; then
+                log "WARNING: no passwordless sudo for supervisorctl -- using bench restart (all sites restart)."
+                log "Fix once:  sudo bench setup sudoers \$USER"
+                bench restart 2>&1 | tee -a "$LOG_FILE"
+                return ${PIPESTATUS[0]}
+              fi
+              WEB="${BENCH_NAME}-web:${BENCH_NAME}-frappe-web"
+              if pgrep -u "$(id -u)" -f "$BENCH_PATH/env/bin/gunicorn.*--preload" >/dev/null; then
+                log "NOTE: gunicorn runs with --preload, so a graceful reload cannot load new code."
+                log "      Restarting the web server instead: a few seconds of 502 for every site."
+                log "      For zero-downtime deploys, remove '--preload' from the frappe-web command in"
+                log "      $BENCH_PATH/config/supervisor.conf, then: sudo supervisorctl reread && sudo supervisorctl update"
+                sudo -n supervisorctl restart "$WEB" 2>&1 | tee -a "$LOG_FILE"
+                WEB_STATUS=${PIPESTATUS[0]}
+              else
+                sudo -n supervisorctl signal HUP "$WEB" 2>&1 | tee -a "$LOG_FILE"
+                WEB_STATUS=${PIPESTATUS[0]}
+                log "Web server reloaded gracefully (HUP) -- no downtime for any site."
+              fi
+              sudo -n supervisorctl restart "${BENCH_NAME}-workers:" 2>&1 | tee -a "$LOG_FILE"
+              WORKER_STATUS=${PIPESTATUS[0]}
+              [ "$WEB_STATUS" -eq 0 ] && [ "$WORKER_STATUS" -eq 0 ]
+            }
 
-            # ── Step 0: Backup, before anything is touched ───────────────────
-            # Nothing below runs until there is a database backup on disk and it
-            # has actually been written. A deploy that cannot be undone is not a
-            # deploy anyone should start.
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 0/6] Backup — taken before any change" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
+            log "============================================"
+            log " AUTO DEPLOY STARTED"
+            log " Date     : $(date)"
+            log " Bench    : $BENCH_PATH"
+            log " App Path : $APP_PATH"
+            log "============================================"
 
-            cd "$BENCH_PATH" || { echo "ERROR: Bench path not found" | tee -a "$LOG_FILE"; exit 1; }
-
-            bench --site "$SITE" backup 2>&1 | tee -a "$LOG_FILE"
-            BACKUP_STATUS=${PIPESTATUS[0]}
-            if [ $BACKUP_STATUS -ne 0 ]; then
-              echo "ERROR: backup failed with exit code $BACKUP_STATUS — deploy aborted" | tee -a "$LOG_FILE"
-              echo "Nothing has been changed on the server." | tee -a "$LOG_FILE"
+            # ── Which sites ──────────────────────────────────────────────────
+            # Every site with this app installed shares its code, so every one of
+            # them is deployed. Read from each site's own installed-apps list.
+            step "[STEP 0/6] Sites with $APP installed"
+            INSTALLED=""
+            for D in "$BENCH_PATH"/sites/*/; do
+              S="$(basename "$D")"
+              [ -f "$D/site_config.json" ] || continue
+              if bench --site "$S" list-apps 2>/dev/null | grep -qw "$APP"; then
+                INSTALLED="$INSTALLED $S"
+              fi
+            done
+            INSTALLED="$(echo $INSTALLED)"
+            if [ -z "$INSTALLED" ]; then
+              log "ERROR: no site on this bench has $APP installed -- nothing to deploy."
               exit 1
             fi
-
-            BACKUP_DIR="$BENCH_PATH/sites/$SITE/private/backups"
-            FRESH=$(ls -t "$BACKUP_DIR"/*-database.sql.gz 2>/dev/null | head -n1)
-
-            if [ -z "$FRESH" ] || [ ! -s "$FRESH" ]; then
-              echo "ERROR: no non-empty backup file found in $BACKUP_DIR — deploy aborted" | tee -a "$LOG_FILE"
-              echo "Nothing has been changed on the server." | tee -a "$LOG_FILE"
-              exit 1
+            if [ -n "$DEPLOY_SITES" ]; then
+              for S in $INSTALLED; do
+                if ! echo " $DEPLOY_SITES " | grep -q " $S "; then
+                  log "ERROR: $S has $APP installed but is not in DEPLOY_SITES ($DEPLOY_SITES)."
+                  log "It would run the new code on an old schema. Add it, or uninstall the app from it."
+                  log "Nothing has been changed on the server."
+                  exit 1
+                fi
+              done
             fi
+            SITES="$INSTALLED"
+            log "Deploying to : $SITES"
+            log "Not touched  : every other site on this bench"
 
-            # The file has to be readable as a gzip archive, not merely present.
-            # A truncated or half-written dump passes an existence check and then
-            # fails at the moment it is actually needed, which is the worst
-            # possible time to discover it.
-            if ! gzip -t "$FRESH" 2>&1 | tee -a "$LOG_FILE"; then
-              echo "ERROR: backup failed its integrity check — deploy aborted" | tee -a "$LOG_FILE"
-              echo "Nothing has been changed on the server." | tee -a "$LOG_FILE"
-              exit 1
-            fi
-
-            # Kept out of Frappe's own backup directory on purpose. Frappe prunes
-            # that folder on its own schedule (keep_backups_for_hours), and a
-            # deploy backup that quietly disappears before anyone notices a
-            # problem is not a backup. This copy is ours and is pruned only by the
-            # line at the bottom of this script.
-            SAFE_DIR="$BENCH_PATH/deploy-backups"
+            # ── Backup, before anything is touched ───────────────────────────
+            # Nothing below runs until every deployed site has a database backup on
+            # disk that reads back as a valid gzip. A deploy that cannot be undone
+            # is not a deploy anyone should start. Kept outside Frappe's own backup
+            # folder, which Frappe prunes on its own schedule.
+            step "[STEP 1/6] Backup — taken before any change"
             mkdir -p "$SAFE_DIR"
             STAMP=$(date +'%Y-%m-%d_%H-%M-%S')
-            BACKUP_FILE="$SAFE_DIR/${STAMP}-predeploy-database.sql.gz"
-            cp "$FRESH" "$BACKUP_FILE"
-
-            # The site's own config travels with it: without site_config.json the
-            # dump cannot be restored into a working site.
-            cp "$BENCH_PATH/sites/$SITE/site_config.json" \
-               "$SAFE_DIR/${STAMP}-predeploy-site_config.json" 2>/dev/null || true
-
-            if [ ! -s "$BACKUP_FILE" ] || ! gzip -t "$BACKUP_FILE" 2>/dev/null; then
-              echo "ERROR: the preserved copy is unreadable — deploy aborted" | tee -a "$LOG_FILE"
-              exit 1
-            fi
-
-            echo "Backup taken   : $FRESH" | tee -a "$LOG_FILE"
-            echo "Preserved copy : $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))" | tee -a "$LOG_FILE"
-            echo "Integrity      : gzip -t passed on both" | tee -a "$LOG_FILE"
-            echo "✅ Backup verified and preserved before any change" | tee -a "$LOG_FILE"
+            for S in $SITES; do
+              bench --site "$S" backup 2>&1 | tee -a "$LOG_FILE"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                log "ERROR: backup of $S failed — deploy aborted. Nothing has been changed."
+                exit 1
+              fi
+              FRESH=$(ls -t "$BENCH_PATH/sites/$S/private/backups/"*-database.sql.gz 2>/dev/null | head -n1)
+              if [ -z "$FRESH" ] || [ ! -s "$FRESH" ] || ! gzip -t "$FRESH" 2>>"$LOG_FILE"; then
+                log "ERROR: no readable backup for $S — deploy aborted. Nothing has been changed."
+                exit 1
+              fi
+              # Named <site>--<stamp> so each site's backups can be told apart and
+              # pruned on their own.
+              COPY="$SAFE_DIR/${S}--${STAMP}-predeploy-database.sql.gz"
+              cp "$FRESH" "$COPY"
+              cp "$BENCH_PATH/sites/$S/site_config.json" "$SAFE_DIR/${S}--${STAMP}-predeploy-site_config.json" 2>/dev/null || true
+              if [ ! -s "$COPY" ] || ! gzip -t "$COPY" 2>/dev/null; then
+                log "ERROR: the preserved copy for $S is unreadable — deploy aborted."
+                exit 1
+              fi
+              BACKUPS="$BACKUPS $COPY"
+              log "✅ $S backed up: $COPY ($(du -h "$COPY" | cut -f1))"
+            done
 
             # The commit the server is on right now. If anything below fails, the
             # code goes back to exactly this.
-            cd "$APP_PATH" || { echo "ERROR: App path not found: $APP_PATH" | tee -a "$LOG_FILE"; exit 1; }
+            cd "$APP_PATH" || { log "ERROR: App path not found: $APP_PATH"; exit 1; }
             ROLLBACK_COMMIT=$(git rev-parse HEAD)
-            echo "Rollback point: $ROLLBACK_COMMIT" | tee -a "$LOG_FILE"
+            log "Rollback point: $ROLLBACK_COMMIT"
 
             # Anything edited directly on the server is stashed, not discarded.
             # git pull would refuse to run over it, and the rollback below does a
             # hard reset -- either way an uncommitted hotfix somebody made on live
             # would be gone. Stashing keeps it recoverable with `git stash list`.
             if [ -n "$(git status --porcelain)" ]; then
-              echo "" | tee -a "$LOG_FILE"
-              echo "NOTE: the server has uncommitted local changes:" | tee -a "$LOG_FILE"
+              log ""
+              log "NOTE: the server has uncommitted local changes:"
               git status --short | tee -a "$LOG_FILE"
               STASH_LABEL="pre-deploy $(date +'%Y-%m-%d %H:%M:%S')"
               git stash push -u -m "$STASH_LABEL" 2>&1 | tee -a "$LOG_FILE"
-              echo "They have been stashed as: $STASH_LABEL" | tee -a "$LOG_FILE"
-              echo "Recover with:  cd $APP_PATH && git stash list && git stash pop" | tee -a "$LOG_FILE"
-              echo "" | tee -a "$LOG_FILE"
+              log "They have been stashed as: $STASH_LABEL"
+              log "Recover with:  cd $APP_PATH && git stash list && git stash pop"
             fi
 
             # ── Rollback, used by every failure below ────────────────────────
             # The code is put back automatically: that is safe, and it fixes the
             # common failures (a bad build, an import error, a broken client
-            # script) by returning the site to the version that was working.
+            # script) by returning the sites to the version that was working.
             #
             # The DATABASE is deliberately NOT restored automatically. A restore
             # would discard every transaction users have made since the backup was
-            # taken minutes earlier, and on a live ERP that is worse than the
-            # failure it is trying to undo. The exact command is printed instead,
-            # so a human decides.
+            # taken minutes earlier. The exact commands are printed instead.
             rollback() {
               REASON="$1"
-              echo "" | tee -a "$LOG_FILE"
-              echo "============================================" | tee -a "$LOG_FILE"
-              echo " ROLLING BACK — $REASON" | tee -a "$LOG_FILE"
-              echo "============================================" | tee -a "$LOG_FILE"
-
+              log ""
+              log "============================================"
+              log " ROLLING BACK — $REASON"
+              log "============================================"
               cd "$APP_PATH" && git reset --hard "$ROLLBACK_COMMIT" 2>&1 | tee -a "$LOG_FILE"
               cd "$BENCH_PATH" || exit 1
-              bench build --app manufyxinvenzaerp 2>&1 | tee -a "$LOG_FILE" || true
-              bench --site "$SITE" clear-cache 2>&1 | tee -a "$LOG_FILE" || true
-              bench restart 2>&1 | tee -a "$LOG_FILE" || true
-
-              echo "" | tee -a "$LOG_FILE"
-              echo "Code is back on $ROLLBACK_COMMIT and the site has been restarted." | tee -a "$LOG_FILE"
-              echo "" | tee -a "$LOG_FILE"
-              echo "If the DATABASE also needs restoring, run this on the server:" | tee -a "$LOG_FILE"
-              echo "  cd $BENCH_PATH" | tee -a "$LOG_FILE"
-              echo "  bench --site $SITE restore $BACKUP_FILE" | tee -a "$LOG_FILE"
-              echo "" | tee -a "$LOG_FILE"
-              echo "That discards anything done on the site since the backup, so check first." | tee -a "$LOG_FILE"
-
-              # Recorded AFTER the code has been reset and the site restarted, so
-              # the app is back on a known-good commit and can be asked to write
-              # the record. Doing it before the reset would ask a half-deployed
-              # app to log its own failure.
+              bench build --app "$APP" 2>&1 | tee -a "$LOG_FILE" || true
+              for S in $SITES; do
+                bench --site "$S" clear-cache 2>&1 | tee -a "$LOG_FILE" || true
+              done
+              reload_processes || true
+              log ""
+              log "Code is back on $ROLLBACK_COMMIT and reloaded."
+              log ""
+              log "If a DATABASE also needs restoring, run on the server (per site):"
+              for B in $BACKUPS; do
+                S=$(basename "$B" | sed 's/--.*//')
+                log "  cd $BENCH_PATH && bench --site $S restore $B"
+              done
+              log "That discards anything done on the site since the backup, so check first."
+              # After the reset, so a known-good app writes its own failure record.
               record_deploy_log "Rolled Back" "$REASON"
-
               exit 1
             }
 
-            # ── Step 1: Git Pull ─────────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 1/6] Git Pull" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
-
-            git pull 2>&1 | tee -a "$LOG_FILE"
-            GIT_STATUS=${PIPESTATUS[0]}
-
-            if [ $GIT_STATUS -ne 0 ]; then
-              echo "ERROR: git pull failed with exit code $GIT_STATUS" | tee -a "$LOG_FILE"
+            # ── Git Pull ─────────────────────────────────────────────────────
+            # --ff-only: the server only ever moves forward along main. A server
+            # checkout that has diverged is a problem to look at, not to merge into.
+            step "[STEP 2/6] Git Pull"
+            git pull --ff-only 2>&1 | tee -a "$LOG_FILE"
+            if [ ${PIPESTATUS[0]} -ne 0 ]; then
               rollback "git pull failed"
             fi
-            echo "✅ Git pull successful" | tee -a "$LOG_FILE"
+            log "✅ Now on $(git rev-parse --short HEAD): $(git log -1 --format=%s)"
 
-            # ── Step 2: Bench Build ──────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 2/6] Bench Build — compiling JS/CSS/Vue assets" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
-
-            cd "$BENCH_PATH" || { echo "ERROR: Bench path not found" | tee -a "$LOG_FILE"; exit 1; }
-
-            bench build --app manufyxinvenzaerp 2>&1 | tee -a "$LOG_FILE"
-            BUILD_STATUS=${PIPESTATUS[0]}
-
-            if [ $BUILD_STATUS -ne 0 ]; then
-              echo "ERROR: bench build failed with exit code $BUILD_STATUS" | tee -a "$LOG_FILE"
+            # ── Build this app's assets only ─────────────────────────────────
+            step "[STEP 3/6] Bench Build — $APP assets only"
+            cd "$BENCH_PATH" || exit 1
+            bench build --app "$APP" 2>&1 | tee -a "$LOG_FILE"
+            if [ ${PIPESTATUS[0]} -ne 0 ]; then
               rollback "bench build failed"
             fi
-            echo "✅ Bench build successful" | tee -a "$LOG_FILE"
+            log "✅ Build successful"
 
-            # ── Step 3: Clear Cache ──────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 3/6] Clear Cache — removing stale metadata & controllers" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
+            # ── Per site: clear cache, migrate ───────────────────────────────
+            step "[STEP 4/6] Clear cache + migrate — $SITES"
+            for S in $SITES; do
+              log "· $S: clear-cache"
+              bench --site "$S" clear-cache 2>&1 | tee -a "$LOG_FILE"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                rollback "clear-cache failed on $S"
+              fi
+              log "· $S: migrate"
+              bench --site "$S" migrate 2>&1 | tee -a "$LOG_FILE"
+              if [ ${PIPESTATUS[0]} -ne 0 ]; then
+                log "A failed migrate is the one case where the database may also need"
+                log "restoring — the schema may be part-changed. Read the commands below."
+                rollback "bench migrate failed on $S"
+              fi
+              log "✅ $S migrated"
+            done
 
-            bench --site "$SITE" clear-cache 2>&1 | tee -a "$LOG_FILE"
-            CACHE_STATUS=${PIPESTATUS[0]}
-
-            if [ $CACHE_STATUS -ne 0 ]; then
-              echo "ERROR: clear-cache failed with exit code $CACHE_STATUS" | tee -a "$LOG_FILE"
-              rollback "clear-cache failed"
+            # ── Reload ───────────────────────────────────────────────────────
+            step "[STEP 5/6] Reload — graceful, other sites stay up"
+            if ! reload_processes; then
+              rollback "reload failed"
             fi
-            echo "✅ Cache cleared successfully" | tee -a "$LOG_FILE"
-
-            # ── Step 4: Bench Migrate ────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 4/6] Bench Migrate — applying schema changes" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
-
-            bench --site "$SITE" migrate 2>&1 | tee -a "$LOG_FILE"
-            MIGRATE_STATUS=${PIPESTATUS[0]}
-
-            if [ $MIGRATE_STATUS -ne 0 ]; then
-              echo "ERROR: bench migrate failed with exit code $MIGRATE_STATUS" | tee -a "$LOG_FILE"
-              echo "A failed migrate is the one case where the database may also need" | tee -a "$LOG_FILE"
-              echo "restoring — the schema may be part-changed. Read the command below." | tee -a "$LOG_FILE"
-              rollback "bench migrate failed"
-            fi
-            echo "✅ Bench migrate successful" | tee -a "$LOG_FILE"
-
-            # ── Step 5: Bench Restart ────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "[STEP 5/6] Bench Restart — reloading workers & scheduler" | tee -a "$LOG_FILE"
-            echo "--------------------------------------------" | tee -a "$LOG_FILE"
-
-            bench restart 2>&1 | tee -a "$LOG_FILE"
-            RESTART_STATUS=${PIPESTATUS[0]}
-
-            if [ $RESTART_STATUS -ne 0 ]; then
-              echo "ERROR: bench restart failed with exit code $RESTART_STATUS" | tee -a "$LOG_FILE"
-              rollback "bench restart failed"
-            fi
-            echo "✅ Bench restart successful" | tee -a "$LOG_FILE"
+            log "✅ Reloaded"
 
             # ── Summary ──────────────────────────────────────────────────────
-            echo "" | tee -a "$LOG_FILE"
-            echo "============================================" | tee -a "$LOG_FILE"
-            echo " ✅ DEPLOY COMPLETED SUCCESSFULLY"           | tee -a "$LOG_FILE"
-            echo " Finished : $(date)"                         | tee -a "$LOG_FILE"
-            echo " Log file : $LOG_FILE"                       | tee -a "$LOG_FILE"
-            echo " Backup   : $BACKUP_FILE"                    | tee -a "$LOG_FILE"
-            echo " (kept, in case something surfaces later)"   | tee -a "$LOG_FILE"
-            echo "============================================" | tee -a "$LOG_FILE"
+            step "[STEP 6/6] Done"
+            log "============================================"
+            log " ✅ DEPLOY COMPLETED SUCCESSFULLY"
+            log " Sites    : $SITES"
+            log " Finished : $(date)"
+            log " Log file : $LOG_FILE"
+            log " Backups  : $BACKUPS"
+            log "============================================"
 
-            # ── Record it in the ERP ─────────────────────────────────────────
-            # Last, so the record covers the whole run including the restart. The
-            # Python side prunes its own old records to the same count the server
-            # keeps below, so a Deploy Log never outlives the file it points at.
+            # Last, so the record covers the whole run including the reload.
             record_deploy_log "Completed" ""
 
-            # ── Old log cleanup (keep last 20 deploys only) ──────────────────
+            # ── Retention ────────────────────────────────────────────────────
+            # Logs: last 20 deploys. Backups: last 10 per site, by count rather than
+            # age so a quiet week cannot age them all out.
             cd "$LOG_DIR" && ls -t | tail -n +21 | xargs -r rm --
-
-            # ── Preserved backups: keep the last 10 deploys ──────────────────
-            # Ten deploys back is far enough to cover a problem noticed days
-            # later, and this prunes by count rather than age so a quiet week
-            # cannot age them all out.
-            cd "$SAFE_DIR" && ls -t *-predeploy-database.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm --
-            cd "$SAFE_DIR" && ls -t *-predeploy-site_config.json 2>/dev/null | tail -n +11 | xargs -r rm --
+            for S in $SITES; do
+              cd "$SAFE_DIR" && ls -t "${S}--"*-predeploy-database.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm --
+              cd "$SAFE_DIR" && ls -t "${S}--"*-predeploy-site_config.json 2>/dev/null | tail -n +11 | xargs -r rm --
+            done
 
       - name: Notify Telegram - Deploy completed
         env:
@@ -566,7 +594,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
-            --data-urlencode "text=Live deploy completed. A pre-deploy database backup was taken and kept in frappe-bench/deploy-backups (last 10 retained)."
+            --data-urlencode "text=Live deploy completed on every site with Manufyxinvenza installed; other sites on the bench were not touched. Pre-deploy backups are in <bench>/deploy-backups (last 10 per site)."
 
       - name: Notify Telegram - Issue detected
         if: failure()
@@ -583,7 +611,7 @@ jobs:
             *) STEP_DESC="Unknown step" ;;
           esac
 
-          MESSAGE="Issue: ${STEP_DESC} process failed. The code was rolled back to the previous commit and the site restarted. A pre-deploy database backup is in frappe-bench/deploy-backups - the deploy log names the exact file and the restore command, if the database also needs putting back."
+          MESSAGE="Issue: ${STEP_DESC} process failed. If it got past the backup, the code was rolled back to the previous commit and reloaded. Pre-deploy backups are in <bench>/deploy-backups - the deploy log names each file and the restore command, if a database also needs putting back."
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${CHAT_ID}" \
