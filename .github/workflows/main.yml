@@ -385,7 +385,7 @@ jobs:
             # (RQ warm shutdown); nobody using a site notices.
             # No supervisor access (sudo) at all: plain `bench restart`.
             reload_processes() {
-              if ! sudo -n supervisorctl status >/dev/null 2>&1; then
+              if ! sudo -n supervisorctl pid >/dev/null 2>&1; then
                 log "WARNING: no passwordless sudo for supervisorctl -- using bench restart (all sites restart)."
                 log "Fix once:  sudo bench setup sudoers \$USER"
                 bench restart 2>&1 | tee -a "$LOG_FILE"
@@ -414,6 +414,9 @@ jobs:
             # been pulled: the build (Node too old) and the restart (no sudo for
             # supervisorctl -- which `bench restart` needs as well). Checked first,
             # so a server that is not ready is reported, not half-deployed.
+            # `pid`, not `status`: status exits non-zero whenever ANY program on the
+            # server is not RUNNING (a stopped v15 worker, say), which read as "no
+            # sudo" and refused a server that was ready. pid only asks supervisord.
             NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')
             if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 24 ]; then
               log "ERROR: Node $(node -v 2>/dev/null || echo 'not found') -- frappe v16 needs Node 24 to build."
@@ -421,7 +424,7 @@ jobs:
               log "Nothing has been changed on the server."
               exit 1
             fi
-            if ! sudo -n supervisorctl status >/dev/null 2>&1; then
+            if ! sudo -n supervisorctl pid >/dev/null 2>&1; then
               log "ERROR: $USER cannot run 'sudo supervisorctl' without a password, so the"
               log "processes cannot be restarted (bench restart needs it too)."
               log "Fix once on the server:  cd $BENCH_PATH && sudo bench setup sudoers $USER"
