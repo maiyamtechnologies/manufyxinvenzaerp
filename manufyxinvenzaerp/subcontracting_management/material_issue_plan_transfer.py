@@ -249,10 +249,19 @@ def _tag_stock_entry(se_dict, mip_name, ctx):
 def _slip_numbers(**slips):
     """The paper slip numbers typed in a popup, keyed by their Stock Entry field.
 
-    All optional (client, Oct 2026): a blank box sets nothing, so the field stays
-    free to be typed on the draft before it is submitted.
+    A blank box sets nothing, so the field stays free to be typed on the draft
+    before it is submitted.
     """
     return {field: str(value).strip() for field, value in slips.items() if value and str(value).strip()}
+
+
+def _require_mrs_number(mrs_number):
+    """MRS No. is mandatory on every transfer that sends raw material to the supplier
+    (client, 22 Oct 2026) -- the popups that ask for it. The leg into CNC asks for no
+    slips and is not checked."""
+    if not (mrs_number and str(mrs_number).strip()):
+        frappe.throw(_("Enter the MRS No. (Material Request Slip) before transferring."),
+                     title=_("MRS No. Required"))
 
 
 @frappe.whitelist()
@@ -2059,6 +2068,8 @@ def create_mip_partial_transfer(mip_name, selected_items_json, transfer_type, ex
     if not mip.source_warehouse:
         frappe.throw(_("Please set the Source Warehouse (RM) on this Material Issue Plan first."))
 
+    if transfer_type != "cnc":
+        _require_mrs_number(mrs_number)
     if transfer_type == "cnc":
         if not mip.cnc_warehouse:
             frappe.throw(_("No CNC Warehouse set on this Material Issue Plan."))
@@ -2190,6 +2201,7 @@ def create_mip_cnc_partial_forward(mip_name, selected_items_json, mrs_number=Non
     selected = _json.loads(selected_items_json) if isinstance(selected_items_json, str) else selected_items_json
     if not selected:
         frappe.throw(_("No items selected for transfer."))
+    _require_mrs_number(mrs_number)
 
     mip = frappe.get_doc("Material Issue Plan", mip_name)
     _ensure_mip_editable(mip)

@@ -1,8 +1,8 @@
 // Data Works
 //
-// One-time go-live clean-up: delete the transactions and test data, build the new warehouses and
-// storage locations, load the rate schedules. Each button shows what it will do first, then asks
-// for the site name. The work runs in the background and the log below follows it.
+// One-time go-live clean-up: delete the transactions and test data. Each button shows what it
+// will do first, then asks for the site name. The work runs in the background and the log below
+// follows it.
 
 frappe.pages["data-works"].on_page_load = function (wrapper) {
 	const page = frappe.ui.make_app_page({

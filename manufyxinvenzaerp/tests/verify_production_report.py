@@ -129,7 +129,8 @@ def run():
         check("  and a quantity in %s" % unit,
               ("%s (%s)" % (operation, unit) if unit == "Kg" else "%s NOS" % operation) in labels,
               True)
-        check("  and a gap of its own", "%s Gap (Days, approx.)" % operation in labels, True)
+        check("  and its cycle time", all("%s %s" % (operation, suffix) in labels
+                                          for suffix in ("Start Date", "End Date", "No. of Days")), True)
         # The status a row shows for an operation must be that operation's status on
         # that job -- the check that the pivot put the values where the labels say.
         for s in soes:

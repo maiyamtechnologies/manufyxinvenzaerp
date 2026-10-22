@@ -1694,6 +1694,7 @@ def after_install():
     # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
     create_fg_sales_custom_fields()
     create_fg_property_setters()
+    create_oct22_change_fields()
     set_fg_settings_defaults()
     from manufyxinvenzaerp.production_management.production_utils import (
         create_operations_workstations_routing,
@@ -1764,6 +1765,7 @@ def after_migrate():
     # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
     create_fg_sales_custom_fields()
     create_fg_property_setters()
+    create_oct22_change_fields()
     set_fg_settings_defaults()
     from manufyxinvenzaerp.production_management.production_utils import (
         create_operations_workstations_routing,
@@ -5313,10 +5315,24 @@ frappe.ui.form.on("Subcontracting Order", {
 // visible to somebody who thought to compare two fields on another tab. Nothing
 // blocks a partial transfer -- it is a supported way to work -- so the fix is to
 // state the gap where the operations are read, not to refuse the operations.
+// What is still waiting, item by item (subcontracting.get_pending_transfer), read
+// before the table is drawn. Totals alone hid a short item behind another sent over
+// plan: SC-ORD-2026-00003 showed Fully Transferred with 193.424 Kg of PLATE16 still
+// in stores. The Kg difference is only the fallback for a job with no plan to ask.
+function fetch_pending_transfer(frm, done) {
+    frappe.call({
+        method: "manufyxinvenzaerp.subcontracting_management.subcontracting.get_pending_transfer",
+        args: { sco_name: frm.doc.name },
+        callback(r) { frm.__mfx_pending_transfer = r.message || null; done(); },
+        error() { frm.__mfx_pending_transfer = null; done(); },
+    });
+}
+
 function transfer_gap_banner(frm) {
     var planned = flt(frm.doc.custom_mapped_weight_kg || 0);
     var sent = flt(frm.doc.custom_transferred_weight_kg || 0);
-    var pending = flt(planned - sent);
+    var by_item = frm.__mfx_pending_transfer;
+    var pending = by_item ? flt(by_item.kg) : flt(planned - sent);
     // Rounded before comparing: these are sums of 3-decimal weights, so a job that
     // sent everything lands a few millionths off zero and would read as pending.
     var short = Math.round(pending * 1000) / 1000 > 0;
@@ -5341,6 +5357,8 @@ function transfer_gap_banner(frm) {
         + cell(short ? "Not Yet Transferred" : "Fully Transferred", pending, tone.ink)
         + (short
             ? "<div style='flex:2 1 260px;font-size:11px;color:" + tone.ink + ";padding-top:14px'>"
+              + (by_item ? by_item.item_count + " item(s) on " + frappe.utils.escape_html(by_item.mip)
+                  + " not yet sent. " : "")
               + "Operations below are running on the transferred weight only. Material still "
               + "in stores &mdash; CNC Process rows go out on their own transfer &mdash; will "
               + "not reach the supplier by finishing these operations.</div>"
@@ -5356,7 +5374,7 @@ function render_soe_summary(frm) {
         $w.html("<div class='text-muted'>Save and submit the Subcontracting Order to create operations.</div>");
         return;
     }
-    frappe.call({
+    fetch_pending_transfer(frm, function() { frappe.call({
         method: "manufyxinvenzaerp.subcontracting_management.subcontracting.get_soe_summary",
         args: { sco_name: frm.doc.name },
         callback(r) {
@@ -5414,6 +5432,9 @@ function render_soe_summary(frm) {
             }).join("");
             var html = transfer_gap_banner(frm)
                 + "<div style='margin-bottom:8px'><button class='btn btn-xs btn-default sco-ops-refresh'>&#8635; Refresh</button></div>"
+                // Scrolls inside its own box: on a narrow screen the table ran under the
+                // form's side panel.
+                + "<div style='overflow-x:auto'>"
                 + "<table class='table table-bordered' style='margin-top:4px'>"
                 + "<thead><tr>"
                 + "<th class='text-center' style='width:60px'>Seq</th>"
@@ -5427,11 +5448,12 @@ function render_soe_summary(frm) {
                 + "<th class='text-center' style='width:110px'>Entry</th>"
                 + "<th class='text-center' style='width:70px'>Drawings</th>"
                 + "<th class='text-center' style='width:50px'>Print</th>"
-                + "</tr></thead><tbody>" + body + "</tbody></table>"
+                + "</tr></thead><tbody>" + body + "</tbody></table></div>"
                 + "<div class='text-muted' style='margin-top:6px;font-size:11px'>"
                 + "Op-1 Available = Transferred (Kg). Op-2+ Available = what is still left to consume, "
                 + "with what arrived shown beside it. Difference = Overall Qty less Total Consumed &mdash; "
-                + "what this operation still owes.</div>";
+                + "what this operation still owes.</div>"
+                + allocation_table(rows);
             $w.html(html);
             $w.find(".sco-ops-refresh").on("click", function() { render_soe_summary(frm); });
             $w.find(".sco-drw-btn").on("click", function() {
@@ -5443,12 +5465,40 @@ function render_soe_summary(frm) {
                 print_contractor_sheet(frm, rows, rows[idx].supplier || rows[idx].contractor);
             });
         }
+    }); });
+}
+
+// The number each Supplier/Contractor works under -- the order's own, with -1, -2 ...
+// when the job is split between parties -- and the operations it covers. Its own table
+// below the operations, for reference, so the operations table keeps its width.
+function allocation_table(rows) {
+    var esc = frappe.utils.escape_html;
+    var groups = [], by_no = {};
+    rows.forEach(function(d) {
+        var no = d.jwo_allocation_no || "";
+        if (!no) return;
+        if (!by_no[no]) {
+            by_no[no] = { no: no, party: d.supplier || d.contractor || "", ops: [] };
+            groups.push(by_no[no]);
+        }
+        by_no[no].ops.push((d.sequence_id || "") + ". " + (d.operation || ""));
     });
+    if (!groups.length) return "";
+    return "<div style='margin-top:14px;font-weight:600'>Allocation No.</div>"
+        + "<div style='overflow-x:auto'><table class='table table-bordered' style='margin-top:4px;max-width:900px'>"
+        + "<thead><tr><th style='width:220px'>Allocation No.</th><th>Supplier/Contractor</th><th>Operations</th></tr></thead><tbody>"
+        + groups.map(function(g) {
+            return "<tr><td style='white-space:nowrap'>" + esc(g.no) + "</td><td>" + esc(g.party)
+                + "</td><td>" + esc(g.ops.join(", ")) + "</td></tr>";
+        }).join("")
+        + "</tbody></table></div>";
 }
 
 // Contractor-wise issue sheet (client, Oct 2026): everything one Supplier/Contractor
 // is given on this Job Work Order -- the operations assigned to them and the drawings
-// they work on -- printed from the browser. No rates, by request; signatures at the foot.
+// they work on -- printed from the browser, with signatures at the foot. Headed by the
+// party's own Allocation No. (JWO-...-1, -2), and each drawing shows its Fabrication
+// and Painting Rate Schedule No. with the rate per Kg (client, 22 Oct 2026).
 function print_contractor_sheet(frm, rows, party) {
     var esc = frappe.utils.escape_html;
     var ops = rows.filter(function(d) { return (d.supplier || d.contractor) === party; });
@@ -5471,17 +5521,21 @@ function print_contractor_sheet(frm, rows, party) {
     frappe.call({
         method: "frappe.client.get_list",
         args: { doctype: "Drawing", filters: { name: ["in", drawings.map(function(d) { return d.drawing; })] },
-                fields: ["name", "sales_order", "customer_name"], limit_page_length: 0 },
+                fields: ["name", "sales_order", "customer_name", "rate_schedule", "rs_rate_per_kg",
+                         "painting_rate_schedule", "prs_rate_per_kg"], limit_page_length: 0 },
         callback: function(r) {
             var uniq = function(f) {
                 return Array.from(new Set((r.message || []).map(function(d) { return d[f]; }).filter(Boolean)));
             };
+            var rates = {};
+            (r.message || []).forEach(function(d) { rates[d.name] = d; });
             var sales_orders = uniq("sales_order");
             var customers = uniq("customer_name");
             var td = "style='border:1px solid #999;padding:4px 6px'";
             var tdr = "style='border:1px solid #999;padding:4px 6px;text-align:right'";
             var info = [
                 ["Job Work Order", frm.doc.name],
+                ["Allocation No.", (ops[0] && ops[0].jwo_allocation_no) || frm.doc.name],
                 ["Date", frappe.datetime.str_to_user(frm.doc.transaction_date)],
                 ["Production Plan", frm.doc.custom_production_plan || ""],
                 ["Sales Order", sales_orders.join(", ")],
@@ -5498,12 +5552,17 @@ function print_contractor_sheet(frm, rows, party) {
             var nos = 0, kg = 0;
             var drw_rows = drawings.map(function(d) {
                 var w = kg_by_drawing[d.drawing] || flt(d.planned_weight_kg);
+                var rs = rates[d.drawing] || {};
+                var rate = function(v) { return v ? format_number(flt(v), null, 2) : ""; };
                 nos += flt(d.qty_to_manufacture);
                 kg += w;
                 return "<tr><td " + td + ">" + esc(d.drawing || "") + "</td><td " + td + ">"
                     + esc(d.customer_drawing_number || "") + "</td><td " + td + ">" + esc(d.duno_mark_no || "")
                     + "</td><td " + tdr + ">" + format_number(flt(d.qty_to_manufacture), null, 3)
-                    + "</td><td " + tdr + ">" + format_number(w, null, 3) + "</td></tr>";
+                    + "</td><td " + tdr + ">" + format_number(w, null, 3)
+                    + "</td><td " + td + ">" + esc(rs.rate_schedule || "") + "</td><td " + tdr + ">" + rate(rs.rs_rate_per_kg)
+                    + "</td><td " + td + ">" + esc(rs.painting_rate_schedule || "") + "</td><td " + tdr + ">" + rate(rs.prs_rate_per_kg)
+                    + "</td></tr>";
             }).join("");
             var table = function(head, body, foot) {
                 return "<table style='border-collapse:collapse;width:100%;margin:6px 0 14px;font-size:12px'>"
@@ -5515,7 +5574,8 @@ function print_contractor_sheet(frm, rows, party) {
                 return "<div style='flex:1;text-align:center'><div style='border-top:1px solid #333;margin:0 18px;padding-top:4px'>"
                     + label + "</div></div>";
             };
-            var html = "<!doctype html><html><head><meta charset='utf-8'><title>" + esc(frm.doc.name + " - " + party)
+            var html = "<!doctype html><html><head><meta charset='utf-8'><title>"
+                + esc(((ops[0] && ops[0].jwo_allocation_no) || frm.doc.name) + " - " + party)
                 + "</title></head><body style='font-family:Arial,sans-serif;margin:24px'>"
                 + "<h3 style='margin:0'>" + esc(frm.doc.company || "") + "</h3>"
                 + "<h4 style='margin:4px 0 12px'>Job Work Order - Contractor Issue Sheet</h4>"
@@ -5523,10 +5583,11 @@ function print_contractor_sheet(frm, rows, party) {
                 + "<b>Operations</b>"
                 + table(["Seq", "Operation", "Operation Entry", "Qty to Make (Nos)"], op_rows)
                 + "<b>Drawings</b>"
-                + table(["Drawing", "Customer Drawing No", "DUNO / Mark No", "Nos", "Kg"], drw_rows,
+                + table(["Drawing", "Customer Drawing No", "DUNO / Mark No", "Nos", "Kg",
+                         "Fabrication Rate Schedule No.", "Rate / Kg", "Painting Rate Schedule No.", "Rate / Kg"], drw_rows,
                     "<tfoot><tr><td " + td + " colspan='3'><b>Total</b></td><td " + tdr + "><b>"
                     + format_number(nos, null, 3) + "</b></td><td " + tdr + "><b>" + format_number(kg, null, 3)
-                    + "</b></td></tr></tfoot>")
+                    + "</b></td><td " + td + " colspan='4'></td></tr></tfoot>")
                 + "<div style='display:flex;margin-top:70px;font-size:12px'>"
                 + sign("Prepared By") + sign("Issued By") + sign("Received By (Supplier / Contractor)")
                 + "</div></body></html>";
@@ -5920,9 +5981,10 @@ def create_manufacturing_settings_custom_fields():
                     "default": "Fully Transferred",
                     "insert_after": "make_serial_no_batch_from_work_order",
                     "description": (
-                        "Fully Transferred: consumption log entries are blocked until all planned "
-                        "weight for that drawing has been transferred to the supplier warehouse. "
-                        "Partially Transferred: log entries are always allowed."
+                        "Fully Transferred: the first operation cannot log anything until every "
+                        "item and batch reserved for the job has been transferred. "
+                        "Partially Transferred: log entries are always allowed; the Final Stock "
+                        "Entry still waits for the full transfer."
                     ),
                 },
             ],
@@ -6264,3 +6326,113 @@ def set_fg_settings_defaults():
                 "Manufyxinvenza Settings", fieldname, value, update_modified=False
             )
     frappe.db.commit()
+
+
+def create_oct22_change_fields():
+    """Client changes of 22 Oct 2026.
+
+    - Item: Validate Storage Location. Off by default, so a transaction offers every
+      Storage Location of its warehouse; on, only the Item's own Storage Locations
+      table (stock_management/storage_location.py: allowed_locations).
+    - Delivery Note / Packing Slip: the weighbridge figure beside the drawing weight.
+      Weighment Weight per row, and a Total that is the sum of the rows when any row
+      has one, typed by hand otherwise (selling_management/weighment.py).
+    - Job Work Order numbered JWO-YYYY-#####. Existing orders keep their SC-ORD names.
+    """
+    create_warehouse_storage_location_field()
+    create_custom_fields(
+        {
+            "Item": [
+                {
+                    "fieldname": "custom_validate_storage_location",
+                    "fieldtype": "Check",
+                    "label": "Validate Storage Location",
+                    "insert_after": "custom_storage_location_section",
+                    "default": "0",
+                    "description": "On: stock may only go to the Storage Locations listed below. "
+                    "Off: every Storage Location of the warehouse is offered.",
+                },
+            ],
+            "Delivery Note Item": [
+                {
+                    "fieldname": "custom_weighment_weight",
+                    "fieldtype": "Float",
+                    "label": "Weighment Weight (Kg)",
+                    "insert_after": "custom_sec_uom",
+                    "precision": "3",
+                    "in_list_view": 1,
+                    "columns": 1,
+                },
+            ],
+            "Delivery Note": [
+                {
+                    "fieldname": "custom_total_weighment_weight",
+                    "fieldtype": "Float",
+                    "label": "Total Weighment Weight (Kg)",
+                    "insert_after": "total_net_weight",
+                    "precision": "3",
+                    "description": "Sum of the rows' Weighment Weight when any row has one; "
+                    "otherwise type the total here.",
+                },
+            ],
+            "Packing Slip Item": [
+                {
+                    "fieldname": "custom_weighment_weight",
+                    "fieldtype": "Float",
+                    "label": "Weighment Weight (Kg)",
+                    "insert_after": "net_weight",
+                    "precision": "3",
+                    "in_list_view": 1,
+                    "columns": 1,
+                },
+            ],
+            "Packing Slip": [
+                {
+                    "fieldname": "custom_total_weighment_weight",
+                    "fieldtype": "Float",
+                    "label": "Total Weighment Weight (Kg)",
+                    "insert_after": "net_weight_uom",
+                    "precision": "3",
+                    "description": "Sum of the rows' Weighment Weight when any row has one; "
+                    "otherwise type the total here.",
+                },
+            ],
+        },
+        update=True,
+    )
+    for prop, value in (("options", "JWO-.YYYY.-"), ("default", "JWO-.YYYY.-")):
+        frappe.make_property_setter(
+            {"doctype": "Subcontracting Order", "fieldname": "naming_series", "property": prop,
+             "value": value, "property_type": "Text"}
+        )
+    frappe.db.commit()
+
+
+def create_warehouse_storage_location_field():
+    """Warehouse -> Mandatory Storage Location (client, 23 Oct 2026). On, and the warehouse
+    has Storage Locations, every movement in or out of it must name one
+    (stock_management/storage_location.py: location_applicable).
+
+    It replaces the Warehouse Type's "Storage Location Applicable" as the switch, which is
+    hidden from now on; patch v16.warehouse_mandatory_storage_location carried it across.
+    Also called from that patch, which runs before customizations are synced."""
+    create_custom_fields(
+        {
+            "Warehouse": [
+                {
+                    "fieldname": "custom_mandatory_storage_location",
+                    "fieldtype": "Check",
+                    "label": "Mandatory Storage Location",
+                    "insert_after": "warehouse_type",
+                    "default": "0",
+                    "description": "Every transaction in this warehouse must select one of its Storage "
+                    "Locations. Has no effect while the warehouse has none.",
+                },
+            ],
+        },
+        update=True,
+    )
+    frappe.make_property_setter(
+        {"doctype": "Warehouse Type", "fieldname": "custom_storage_location_applicable",
+         "property": "hidden", "value": 1, "property_type": "Check"}
+    )

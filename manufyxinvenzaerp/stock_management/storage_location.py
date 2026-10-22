@@ -54,13 +54,15 @@ OPTIONAL_UNTIL_USED = ("excess_material_storage_location",)
 
 @request_cache
 def location_applicable(warehouse):
-	"""Whether stock in `warehouse` must name a Storage Location (its Warehouse Type says so)."""
+	"""Whether stock in `warehouse` must name a Storage Location: the Warehouse's own
+	Mandatory Storage Location box is on and the warehouse has at least one location to
+	choose from (client, 23 Oct 2026). It used to be the Warehouse Type's flag; patch
+	v16.warehouse_mandatory_storage_location copied that onto each warehouse."""
 	if not warehouse:
 		return False
-	warehouse_type = frappe.get_cached_value("Warehouse", warehouse, "warehouse_type")
 	return bool(
-		warehouse_type
-		and frappe.get_cached_value("Warehouse Type", warehouse_type, "custom_storage_location_applicable")
+		frappe.get_cached_value("Warehouse", warehouse, "custom_mandatory_storage_location")
+		and warehouse_locations(warehouse)
 	)
 
 
@@ -80,10 +82,20 @@ def _item_rows(item_code, warehouse):
 	)
 
 
+def validates_item_locations(item_code):
+	"""Whether the Item's own Storage Locations table limits where it may go (the Item's
+	Validate Storage Location box). Off by default (client, 22 Oct 2026): the per-item
+	lists are not in use yet, so every location of the warehouse is offered."""
+	return bool(item_code and frappe.get_cached_value("Item", item_code, "custom_validate_storage_location"))
+
+
 def allowed_locations(item_code, warehouse):
-	"""Locations `item_code` may be put in inside `warehouse`: the ones its Item lists,
-	and nothing else (client, Oct 2026). An item listing none for a warehouse has no
-	allowed location there until its Storage Locations table says where it goes."""
+	"""Locations `item_code` may be put in inside `warehouse`. With Validate Storage
+	Location on: the ones its Item lists, and nothing else (client, Oct 2026) -- an item
+	listing none for a warehouse has no allowed location there. With it off: every
+	location of the warehouse."""
+	if not validates_item_locations(item_code):
+		return warehouse_locations(warehouse)
 	return [r.storage_location for r in _item_rows(item_code, warehouse)]
 
 

@@ -108,3 +108,13 @@ function _soe_create_inspection_dialog(frm) {
 		</table>`);
 	dialog.show();
 }
+
+// Weighment (client, 22 Oct 2026). The server works the difference out on save
+// (subcontracting.set_cycle_time_and_weighment); this only shows it as it is typed. The
+// cycle-time dates are read-only, filled by the server.
+frappe.ui.form.on("Supplier Operation Entry", {
+	weighment_weight_kg(frm) {
+		const weighment = flt(frm.doc.weighment_weight_kg, 3);
+		frm.set_value("weight_difference_kg", weighment ? flt(weighment - flt(frm.doc.drawing_weight_kg), 3) : 0);
+	},
+});

@@ -3,7 +3,7 @@ from collections import defaultdict
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, today
+from frappe.utils import cint, date_diff, flt, getdate, today
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -417,7 +417,7 @@ def get_soe_summary(sco_name):
         filters={"subcontracting_order": sco_name, "docstatus": ["!=", 2]},
         fields=[
             "name", "sequence_id", "operation", "status", "docstatus",
-            "available_to_consume_kg", "total_consumed_kg",
+            "available_to_consume_kg", "total_consumed_kg", "jwo_allocation_no",
             # Who carries each operation out, for the Operations table on the Job
             # Work Order: a Supplier for a subcontracted one, a Contractor for an
             # internal one (_create_soes_for_sco copies it from Process Planning).
@@ -803,6 +803,50 @@ def _excess_booked_to_return(mip_name):
     return {k: flt(v, 3) for k, v in out.items() if flt(v, 3) > 0}
 
 
+def _pending_transfer(sco_name):
+    """What of this job's raw material is still waiting to be transferred, item by item
+    and batch by batch: {mip, kg, item_count, cnc_kg}, with kg 0 when everything has gone.
+    None when the job has no Material Issue Plan or the question cannot be answered.
+
+    Item by item, not in total Kg. SC-ORD-2026-00003 (live, 22 Oct 2026) ran all five
+    operations with 193.424 Kg of PLATE16 still in stores: more PLATE10-G1 and PLATE8-G1
+    had been sent than planned, so the job's total transferred weight was ABOVE plan and
+    every check that compared totals -- Op-1's, the Operations tab banner -- saw nothing
+    missing. Only the Final Stock Entry, which asked this per batch, noticed.
+
+    One answer for every place that asks: Op-1 (_check_op1_transfer), the Final Stock
+    Entry (_pending_transfer_block) and the Operations tab (get_pending_transfer)."""
+    if not sco_name:
+        return None
+    mip_name = frappe.db.get_value(
+        "Material Issue Plan", {"subcontracting_order": sco_name}, "name")
+    if not mip_name:
+        return None
+
+    from manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer import (
+        get_mip_pending_items,
+    )
+
+    try:
+        pending = get_mip_pending_items(mip_name) or []
+    except Exception:
+        return None
+    return frappe._dict(
+        mip=mip_name,
+        kg=flt(sum(flt(p.get("qty")) for p in pending), 3),
+        item_count=len(pending),
+        cnc_kg=flt(sum(flt(p.get("qty")) for p in pending if p.get("cnc_process")), 3),
+    )
+
+
+def _pending_transfer_detail(pending):
+    detail = _("{0} Kg across {1} item(s)").format(pending.kg, pending.item_count)
+    if pending.cnc_kg:
+        detail += _(", of which {0} Kg is CNC Process material that has not reached "
+                    "the CNC warehouse").format(pending.cnc_kg)
+    return detail
+
+
 def _pending_transfer_block(sco_name):
     """Why finished goods cannot be booked yet, or "" when they may be.
 
@@ -811,42 +855,48 @@ def _pending_transfer_block(sco_name):
     produced 10,584.96 Kg of fabricated structures, because the 472.615 Kg of CNC
     material feeding those same drawings had never been sent -- the Loss (Kg) on all
     three finished rows came out NEGATIVE, which is not a loss but an impossibility.
-    Nothing downstream re-checks the order of the legs (stores -> CNC -> supplier ->
-    finished goods), so this is where that sequence is enforced.
+
+    Op-1 now refuses to start on a short transfer (_check_op1_transfer), so this is the
+    last net: it still catches a job run with "Partially Transferred", or one whose
+    operations were logged before that check existed.
 
     Unanswerable counts as allowed here, the opposite of _pending_transfer in
     material_issue_plan.py. The safe direction differs by what the answer gates: a
     plan left open can still be worked on, whereas a job that cannot book its
     finished goods at all is stuck with no way forward.
     """
-    mip_name = frappe.db.get_value(
-        "Material Issue Plan", {"subcontracting_order": sco_name}, "name")
-    if not mip_name:
+    pending = _pending_transfer(sco_name)
+    if not pending or pending.kg <= 0:
         return ""
-
-    from manufyxinvenzaerp.subcontracting_management.material_issue_plan_transfer import (
-        get_mip_pending_items,
-    )
-
-    try:
-        pending = get_mip_pending_items(mip_name)
-    except Exception:
-        return ""
-    if not pending:
-        return ""
-
-    cnc = [p for p in pending if p.get("cnc_process")]
-    total = flt(sum(flt(p.get("qty")) for p in pending), 3)
-    detail = _("{0} Kg across {1} item(s)").format(total, len(pending))
-    if cnc:
-        detail += _(", of which {0} Kg is CNC Process material that has not reached "
-                    "the CNC warehouse").format(
-            flt(sum(flt(p.get("qty")) for p in cnc), 3))
     return _(
         "Raw material for this job is still waiting to be transferred: {0}. "
         "Book finished goods only once it has been sent, or the entry produces more "
         "weight than it consumes. Use the Transfer buttons on {1} first."
-    ).format(detail, mip_name)
+    ).format(_pending_transfer_detail(pending), pending.mip)
+
+
+def _check_op1_transfer(doc):
+    """Op-1 logs nothing until the job's raw material has all been transferred
+    (Manufacturing Settings > SOE Log Entry Allowed When = Fully Transferred, the
+    default). Checked item by item -- see _pending_transfer -- so one short item is not
+    hidden by another sent over plan. "Partially Transferred" skips this; the Final
+    Stock Entry still refuses until the transfer is complete."""
+    pending = _pending_transfer(doc.subcontracting_order)
+    if pending and pending.kg > 0:
+        frappe.throw(
+            _("Raw material for this job is still waiting to be transferred: {0}. "
+              "Transfer it on {1} before logging this operation, or change 'SOE Log Entry "
+              "Allowed When' in Manufacturing Settings to Partially Transferred.")
+            .format(_pending_transfer_detail(pending), pending.mip),
+            title=_("Material Not Yet Transferred"),
+        )
+
+
+@frappe.whitelist()
+def get_pending_transfer(sco_name):
+    """For the Operations tab banner: what is still waiting to be transferred, per item."""
+    frappe.has_permission("Subcontracting Order", "read", doc=sco_name, throw=True)
+    return _pending_transfer(sco_name)
 
 
 @frappe.whitelist()
@@ -1390,6 +1440,8 @@ def validate_supplier_operation_entry(doc, method=None):
         doc.status = "In Progress" if log_nos_by_drawing else "Open"
 
     _validate_completed_status(doc, seq)
+    _stamp_operation_dates(doc)
+    set_cycle_time_and_weighment(doc)
 
     # --- 4. Op-1: check log trigger setting ---
     if seq == 1 and log_nos_by_drawing:
@@ -1398,6 +1450,7 @@ def validate_supplier_operation_entry(doc, method=None):
             or "Fully Transferred"
         )
         if trigger == "Fully Transferred":
+            _check_op1_transfer(doc)
             detail_map = {r.drawing: r for r in (doc.drawing_details or []) if r.drawing}
             for drawing, nos in log_nos_by_drawing.items():
                 row = detail_map.get(drawing)
@@ -1505,6 +1558,37 @@ def _soe_drawing_target_nos(row, seq):
     entered too much" are measured against one number, not two.
     """
     return flt(row.available_to_consume_nos) if (seq or 1) > 1 else flt(row.qty_to_manufacture)
+
+
+def _stamp_operation_dates(doc):
+    """Operation Start / End Date for the cycle time (client, 22 Oct 2026). Read-only on
+    the form (23 Oct); only ever fills a blank, so a date once set does not move.
+
+    Start is the first day anything was logged against the operation -- the log rows
+    carry their own date -- or today when the work started without a dated row. End is
+    the day the operation is marked complete."""
+    status = doc.get("status") or ""
+    if status in ("In Progress", "Completed") and not doc.get("operation_start_date"):
+        logged = [r.get("date") for r in (doc.get("consumption_log") or []) if r.get("date")]
+        doc.operation_start_date = min(getdate(d) for d in logged) if logged else getdate(today())
+    if status == "Completed" and not doc.get("operation_end_date"):
+        doc.operation_end_date = getdate(today())
+
+
+def set_cycle_time_and_weighment(doc, method=None):
+    """No. of Days from the two dates, and the operation's drawing weight against what
+    the weighbridge read. Runs on save and on an update after submit, since the
+    weighment can still be entered on a completed operation."""
+    start, end = doc.get("operation_start_date"), doc.get("operation_end_date")
+    if start and end and getdate(end) < getdate(start):
+        frappe.throw(_("Operation End Date {0} is before the Start Date {1}.").format(
+            frappe.bold(frappe.format(end, "Date")), frappe.bold(frappe.format(start, "Date"))))
+    doc.no_of_days = date_diff(end, start) + 1 if (start and end) else 0
+
+    doc.drawing_weight_kg = flt(
+        sum(flt(r.get("customer_provided_weight_kg")) for r in (doc.get("drawing_details") or [])), 3)
+    weighment = flt(doc.get("weighment_weight_kg"), 3)
+    doc.weight_difference_kg = flt(weighment - flt(doc.drawing_weight_kg), 3) if weighment else 0
 
 
 def _validate_completed_status(doc, seq):
@@ -2044,7 +2128,38 @@ def _create_soes_for_sco(sco):
         prev_soe_name = soe.name
         created_soes.append(soe.name)
 
+    set_jwo_allocation_numbers(sco.name)
     return created_soes
+
+
+def set_jwo_allocation_numbers(sco_name):
+    """Number each Supplier/Contractor's share of a Job Work Order (client, 22 Oct 2026).
+
+    Operations 1-3 by Kavi Contractor and 4-5 by Doos Painter on JWO-2026-00001 work
+    under JWO-2026-00001-1 and JWO-2026-00001-2. Numbered in the order the parties first
+    appear in the routing, one number per party however its operations are spread (A, B,
+    A is two numbers, not three). A job with one party keeps the plain order number.
+
+    An operation with no party -- an internal one with no contractor named -- counts as a
+    party of its own, so it is never filed under somebody else's number."""
+    soes = frappe.get_all(
+        "Supplier Operation Entry",
+        filters={"subcontracting_order": sco_name, "docstatus": ["!=", 2]},
+        fields=["name", "supplier", "contractor", "jwo_allocation_no"],
+        order_by="sequence_id asc",
+    )
+    parties = []
+    for s in soes:
+        party = s.supplier or s.contractor or ""
+        if party not in parties:
+            parties.append(party)
+    for s in soes:
+        number = sco_name
+        if len(parties) > 1:
+            number = "%s-%s" % (sco_name, parties.index(s.supplier or s.contractor or "") + 1)
+        if s.jwo_allocation_no != number:
+            frappe.db.set_value("Supplier Operation Entry", s.name, "jwo_allocation_no", number,
+                                update_modified=False)
 
 
 def _get_mp_total_weight(mp_name):
