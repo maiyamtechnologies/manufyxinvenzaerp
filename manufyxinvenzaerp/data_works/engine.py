@@ -1,10 +1,13 @@
 """Data Works: reset a site's data for go-live, from the Data Works page.
 
-One step, safe to run twice:
+Two steps, each safe to run twice:
   transactions    delete every transaction and test master; keep the item master and other masters
+  items           load the RM item master (data/rm_items.json): create or update its items, then
+                  delete the old raw-material codes it replaces and the leftover test items
 
 What is deleted comes from data/setup.json. The warehouse and rate-schedule steps were removed on
-23 Oct 2026 (client): those masters are now set up by hand on the live site. Only a System Manager
+23 Oct 2026 (client): those masters are now set up by hand on the live site. The items step was
+added on 24 Oct 2026 for the client's new Code-Spec-Grade item master with HSN codes. Only a System Manager
 can open the page, and every button asks for the site name. This is a one-time tool: remove the
 page once the live reset is done.
 """
@@ -18,9 +21,10 @@ import frappe
 from frappe.model.delete_doc import delete_dynamic_links
 from frappe.utils import now_datetime
 
-STEPS = ("transactions",)
+STEPS = ("transactions", "items")
 LABELS = {
 	"transactions": "Delete transactions and test data",
+	"items": "Load RM item master",
 }
 
 
@@ -167,6 +171,8 @@ def _test_names():
 
 
 def _preview_step(step):
+	if step == "items":
+		return _preview_items()
 	cfg = _data("setup.json")
 	lines = []
 	for dt in cfg["ledger_doctypes"] + cfg["transaction_doctypes"]:
@@ -264,3 +270,133 @@ def _do_transactions():
 					_delete(dt, n)
 					_log(f"Test {dt} deleted: {n}")
 	_reset_series()
+
+
+# ---------------------------------------------------------------- step 2: RM item master
+
+# Set on every item of the master; anything else (item defaults, storage locations, inspection)
+# comes from the item it replaces, or from a sibling of the same section.
+_ITEM_FIELDS = {
+	"stock_uom": "Kg",
+	"custom_secondary_uom": "Nos",
+	"custom_item_calculation_type": "Formula Weight Calculation",
+	"is_stock_item": 1,
+	"has_batch_no": 1,
+	"create_new_batch": 1,
+	"disabled": 0,
+}
+
+
+def _item_values(row):
+	return dict(
+		_ITEM_FIELDS,
+		item_name=row["item_code"],
+		description=f"{row['section']} {row['material_code']} {row['grade']}",
+		item_group=row["item_group"],
+		custom_parent_item_group=row["parent_item_group"],
+		custom_material_spec=row["spec"],
+		custom_material_grade=row["grade"],
+		custom_unit_weight=row["unit_weight"],
+		gst_hsn_code=row["gst_hsn_code"],
+		custom_batch_prefix=row["batch_prefix"],
+	)
+
+
+def _items_to_delete(cfg):
+	"""Raw-material items the master does not hold (bar the ones to keep), plus the named test items."""
+	master = {r["item_code"] for r in cfg["items"]}
+	keep = set(cfg["keep"])
+	old = frappe.get_all("Item", filters={"item_group": ["in", cfg["rm_item_groups"]]}, pluck="name")
+	gone = [n for n in old if n not in master and n not in keep]
+	gone += [n for n in cfg["delete_also"] if frappe.db.exists("Item", n)]
+	return sorted(set(gone))
+
+
+def _missing_masters(cfg):
+	"""Linked masters the items need: a missing one would stop the load half way."""
+	missing = []
+	for doctype, key in (("GST HSN Code", "gst_hsn_code"), ("Item Group", "item_group"),
+	                     ("Material Spec", "spec"), ("Material Grade", "grade")):
+		for v in sorted({r[key] for r in cfg["items"]}):
+			if not frappe.db.exists(doctype, v):
+				missing.append(f"{doctype} {v} does not exist")
+	return missing
+
+
+def _preview_items():
+	cfg = _data("rm_items.json")
+	rows = cfg["items"]
+	exists = [r for r in rows if frappe.db.exists("Item", r["item_code"])]
+	gone = _items_to_delete(cfg)
+	lines = _missing_masters(cfg)
+	lines += [
+		f"Item master: {len(rows)} items ({len(rows) - len(exists)} to create, {len(exists)} to update)",
+		f"Items to delete: {len(gone)} (old raw-material codes and test items)",
+	]
+	if left := frappe.db.count("Stock Ledger Entry"):
+		lines.append(f"Stock Ledger still has {left} rows: run 'Delete transactions and test data' first.")
+	lines += [f"  delete {n}" for n in gone]
+	lines.append(f"Kept: {', '.join(cfg['keep'])} and every item outside the raw-material groups.")
+	return lines
+
+
+def _template(row, cfg):
+	"""The Item a new code copies its settings from: the one it replaces, else one of the same section."""
+	if row.get("replaces") and frappe.db.exists("Item", row["replaces"]):
+		return row["replaces"]
+	for r in cfg["items"]:
+		if r["section"] == row["section"] and r is not row:
+			for name in (r["item_code"], r.get("replaces")):
+				if name and frappe.db.exists("Item", name):
+					return name
+	return frappe.db.get_value("Item", {"item_group": row["item_group"]}, "name")
+
+
+def _do_items():
+	cfg = _data("rm_items.json")
+	if missing := _missing_masters(cfg):
+		frappe.throw("<br>".join(missing))
+	if frappe.db.count("Stock Ledger Entry"):
+		frappe.throw("Stock Ledger is not empty: run 'Delete transactions and test data' first.")
+
+	created = updated = 0
+	for row in cfg["items"]:
+		values = _item_values(row)
+		if frappe.db.exists("Item", row["item_code"]):
+			doc = frappe.get_doc("Item", row["item_code"])
+			doc.update(values)
+			doc.save(ignore_permissions=True)
+			updated += 1
+			continue
+		template = _template(row, cfg)
+		if template:
+			doc = frappe.copy_doc(frappe.get_doc("Item", template))
+			doc.barcodes = []
+			doc.image = doc.default_bom = None
+		else:
+			doc = frappe.new_doc("Item")
+		doc.item_code = row["item_code"]
+		doc.update(values)
+		doc.insert(ignore_permissions=True)
+		created += 1
+		_log(f"Created {row['item_code']}" + (f" (from {template})" if template else ""))
+	frappe.db.commit()
+	_log(f"Item master: {created} created, {updated} updated")
+
+	# Deleted one by one: an item some leftover document still links to is kept and reported,
+	# rather than undoing the whole load.
+	gone, kept = 0, []
+	with _inline_cleanup():
+		for name in _items_to_delete(cfg):
+			frappe.db.savepoint("dw_item")
+			try:
+				for ip in frappe.get_all("Item Price", filters={"item_code": name}, pluck="name"):
+					_delete("Item Price", ip)
+				_delete("Item", name)
+				gone += 1
+			except Exception as e:
+				frappe.db.rollback(save_point="dw_item")
+				frappe.clear_last_message()
+				kept.append(name)
+				_log(f"Kept {name}: {frappe.utils.strip_html(str(e))[:200]}")
+	_log(f"Old items deleted: {gone}" + (f"; {len(kept)} kept because they are still in use" if kept else ""))

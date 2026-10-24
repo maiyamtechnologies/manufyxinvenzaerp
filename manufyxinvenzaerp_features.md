@@ -1089,16 +1089,17 @@ done by hand on manufactv16 on 18–20 Oct. It is meant to be used once and then
 
 - **Guards:** System Manager only, and every button asks for the site name. There is no site_config switch
   (removed on request), so after a deploy the page is live; it must be removed in the next commit.
-- **Buttons:** Back up now · Delete transactions and test data · Run everything (backup + delete). The
-  warehouse and rate-schedule steps were removed on 23 Oct 2026 (client): those masters are set up by hand
-  on live. Each shows a preview of what it will
+- **Buttons:** Back up now · Delete transactions and test data · Load RM item master · Run everything
+  (backup + delete + load). The warehouse and rate-schedule steps were removed on 23 Oct 2026 (client):
+  those masters are set up by hand on live. Each shows a preview of what it will
   do, then asks for the site name. The work runs as a background job on the `long` queue, and the page
   follows `sites/<site>/private/data_works.log`. State is in `data_works_status.json`. One backup is
   taken, by Run everything or the Back up button. There is no maintenance mode.
 - **Transactions step:**
   - Ledgers cleared by SQL: Stock Ledger Entry, GL Entry, Payment Ledger Entry, Bin, Repost Item Valuation,
     Stock Reservation Entry.
-  - Documents deleted (with children, comments, versions and attachments): Packing Slip, Delivery Note,
+  - Documents deleted (with children, comments, versions and attachments): Payment Entry, Journal Entry,
+    Sales Invoice, Purchase Invoice (added 24 Oct: live kept SINV-26-00002 after the reset), Packing Slip, Delivery Note,
     Delivery Challan, Supplier Operation Entry, Material Issue Plan, Inspection Entry, Cut Sheet, Material
     Planning, Subcontracting Order, Stock Entry, Purchase Receipt, Purchase Order, Material Request,
     Production Plan, BOM, Drawing, Sales Order, Process Deferred Accounting, Process Subscription, Manufyx
@@ -1107,8 +1108,30 @@ done by hand on manufactv16 on 18–20 Oct. It is meant to be used once and then
     project name does (list in `setup.json`). The preview lists them first.
   - Naming series of everything deleted restart at 1.
   - Kept: the item master and every other master.
+- **Load RM item master step (24 Oct 2026):** loads `data_works/data/rm_items.json`, the client's
+  Code-Spec-Grade master (`RM_Section_Weight_Master_with_Suggested_HSN _ 23-OCT-26.xls`).
+  - 282 items: the sheet's 291 rows less duplicates, codes upper case, Chqd codes keep their space
+    (`CHQD PLATE5-MS-IS2062-E250`), UOM Kg. Weights confirmed by the client on 24 Oct: ISMBX200X100 24.2,
+    ISMCX250X82 34.2, NPBX300X150 42.24.
+  - HSN: the sheet's codes, corrected (approved 24 Oct) where the 8-digit code did not fit the size: MS plates
+    by thickness 72085410 (<3 mm) / 72085310 (3–4.75) / 72085210 (4.75–10) / 72085110 (>10); SS plates
+    72199013 / 72199012 / 72199011; Chqd plates 72084010 (72084000 is not in the GST HSN master); ISA under
+    80 mm 72162100; UC and WPB (H sections) 72163300; FLATX25X3 72111910. Review sheet:
+    `~/Downloads/RM item master - load plan 24-Oct.xlsx`.
+  - Batch prefix (Custom Batch Abbreviation): the item code with the section cut to two letters, e.g.
+    `PT8-MS-IS2062-E250`. PLATE PT, FLAT FT, ROD RD, CHQD PLATE CP, ISA IA, ISMB IB, ISMC IC, NPB NB, WPB WB,
+    UB UB, UC UC (`abbreviations` in the JSON).
+  - A new code is a copy of the live item it replaces (`replaces`), so item defaults, storage locations and
+    inspection settings carry over; then spec, grade, group, weight, HSN, prefix, Kg/Nos and batch settings
+    are set from the JSON. An item that already exists is updated, so the step can run again.
+  - Then deleted, one by one (Item Prices first): every item in *Plates child node* / *Structural child node*
+    that is not in the master, except `keep` (SHS100, SHS150), plus `delete_also` (test item E2E-FG-STRUCT).
+    An item still linked from a leftover document is kept and named in the log instead of undoing the load.
+  - Refuses to start while the Stock Ledger has rows or a linked master (HSN, group, spec, grade) is missing.
+  - Tested: `tests/verify_data_works_items.py` (18/18) runs Delete transactions + Load twice on manufactv16
+    inside a rollback.
 - **Where the data lives:** `manufyxinvenzaerp/data_works/data/setup.json` (test prefixes and the doctype
-  lists).
+  lists) and `data/rm_items.json` (the item master).
 - **Gotchas found while building it:**
   - Frappe refuses to delete a submitted document even with `force`, so each is marked cancelled first (the
     ledgers are already gone).

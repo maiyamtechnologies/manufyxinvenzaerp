@@ -1,8 +1,9 @@
 {
- "_note": "Edit this file to change what Data Works deletes: test_name_prefixes are the test masters (Item, Supplier, Customer, Project) to remove; ledger_doctypes are cleared outright; transaction_doctypes are deleted document by document.",
+ "_note": "Edit this file to change what Data Works deletes: test_name_prefixes are the test masters (Item, Supplier, Customer, Project) to remove; ledger_doctypes are cleared outright; transaction_doctypes are deleted document by document. The item master loaded by 'Load RM item master' is rm_items.json.",
  "test_name_prefixes": ["ZZ", "Test"],
  "ledger_doctypes": ["Stock Ledger Entry", "GL Entry", "Payment Ledger Entry", "Bin", "Repost Item Valuation", "Stock Reservation Entry"],
  "transaction_doctypes": [
+  "Payment Entry", "Journal Entry", "Sales Invoice", "Purchase Invoice",
   "Packing Slip", "Delivery Note", "Delivery Challan", "Supplier Operation Entry", "Material Issue Plan",
   "Inspection Entry", "Cut Sheet", "Material Planning", "Subcontracting Order", "Stock Entry",
   "Purchase Receipt", "Purchase Order", "Material Request", "Production Plan", "BOM", "Drawing",

@@ -1659,3 +1659,14 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
   locations. Replaces the Warehouse Type flag (hidden; patch copied it to the warehouses). features §33.
 - **JWO Operations tab:** Allocation No. moved out of the operations table into its own table below it; the
   operations table scrolls in its own box (it ran under the form side panel at ~1260 px).
+
+## 24 Oct 2026
+
+- **RM item master with HSN** 🔧 — client sheet `RM_Section_Weight_Master_with_Suggested_HSN _ 23-OCT-26.xls`
+  (same 291 rows as 22 Oct plus HSN). Weights confirmed: ISMBX200X100 24.2, ISMCX250X82 34.2, NPBX300X150 42.24.
+  66 HSN codes corrected by thickness / section height (approved). Batch prefix = 2-letter section + rest of the
+  code (`PT8-MS-IS2062-E250`). SHS100 / SHS150 kept; old codes, G1/G2 and E2E-FG-STRUCT deleted.
+- **Data Works:** new step **Load RM item master** (`data/rm_items.json`, 282 items); Delete transactions now also
+  deletes Payment Entry, Journal Entry, Sales Invoice, Purchase Invoice (live SINV-26-00002 was left behind).
+  features §29, `tests/verify_data_works_items.py` (18/18).
+
