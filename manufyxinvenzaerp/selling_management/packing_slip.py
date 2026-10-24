@@ -21,6 +21,8 @@ from frappe.utils import flt
 from erpnext.stock.doctype.delivery_note.delivery_note import make_packing_slip as _erpnext_make_packing_slip
 from erpnext.stock.doctype.packing_slip.packing_slip import PackingSlip as ERPNextPackingSlip
 
+from manufyxinvenzaerp.selling_management.weighment import set_total_weighment_weight
+
 _EPSILON = 0.001
 
 
@@ -92,6 +94,7 @@ class PackingSlip(ERPNextPackingSlip):
 
 	def validate(self):
 		apply_delivery_note_quantities(self)
+		set_total_weighment_weight(self)
 		super().validate()
 
 	def validate_items(self):

@@ -1,22 +1,9 @@
 {
- "_note": "Edit this file to change what Data Works builds. Warehouse names live here, never in the engine. 'rename_default_warehouse_to' renames whatever Stock Settings -> Default Warehouse is today, so the engine never has to know its old name.",
- "warehouse_type": "Storage Location Applicable",
- "rename_default_warehouse_to": "RM Yard",
- "create_warehouses": ["RM Store", "Consumables Store", "Maintenance Store"],
- "remove_warehouses": ["Work in Progress - MIPL_1"],
- "company_defaults": {
-  "default_wip_warehouse": "Work In Progress",
-  "default_fg_warehouse": "Finished Goods"
- },
- "storage_locations": [
-  {"warehouse": "RM Store", "prefix": "A", "from": 1, "to": 1},
-  {"warehouse": "RM Yard", "prefix": "A", "from": 2, "to": 20},
-  {"warehouse": "Consumables Store", "prefix": "C", "from": 1, "to": 10},
-  {"warehouse": "Maintenance Store", "prefix": "M", "from": 1, "to": 10}
- ],
+ "_note": "Edit this file to change what Data Works deletes: test_name_prefixes are the test masters (Item, Supplier, Customer, Project) to remove; ledger_doctypes are cleared outright; transaction_doctypes are deleted document by document. The item master loaded by 'Load RM item master' is rm_items.json.",
  "test_name_prefixes": ["ZZ", "Test"],
  "ledger_doctypes": ["Stock Ledger Entry", "GL Entry", "Payment Ledger Entry", "Bin", "Repost Item Valuation", "Stock Reservation Entry"],
  "transaction_doctypes": [
+  "Payment Entry", "Journal Entry", "Sales Invoice", "Purchase Invoice",
   "Packing Slip", "Delivery Note", "Delivery Challan", "Supplier Operation Entry", "Material Issue Plan",
   "Inspection Entry", "Cut Sheet", "Material Planning", "Subcontracting Order", "Stock Entry",
   "Purchase Receipt", "Purchase Order", "Material Request", "Production Plan", "BOM", "Drawing",

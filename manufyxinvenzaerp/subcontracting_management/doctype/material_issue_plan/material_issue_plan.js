@@ -1973,9 +1973,10 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			: transfer_type === "cnc" ? __("Select Materials — To CNC Warehouse") : __("Select Materials to Transfer"),
 		size: "extra-large",
 		// MRS and Cutting Plan slips go with material leaving for the supplier, so
-		// the leg into CNC does not ask. Both optional; editable on the draft entry.
+		// the leg into CNC does not ask. MRS No. is mandatory (client, 22 Oct 2026);
+		// Cutting Plan No. stays optional. Both editable on the draft entry.
 		fields: (transfer_type === "cnc" ? [] : [
-			{ fieldtype: "Data", fieldname: "mrs_number", label: __("MRS No.") },
+			{ fieldtype: "Data", fieldname: "mrs_number", label: __("MRS No."), reqd: 1 },
 			{ fieldtype: "Column Break" },
 			{ fieldtype: "Data", fieldname: "cutting_plan_no", label: __("Cutting Plan No.") },
 			{ fieldtype: "Section Break" },
@@ -2020,6 +2021,11 @@ function _show_mip_transfer_popup(frm, pending_items, transfer_type) {
 			});
 		},
 		primary_action: function() {
+			if (transfer_type !== "cnc" && !(dlg.get_value("mrs_number") || "").trim()) {
+				frappe.msgprint({ title: __("MRS No. Required"), indicator: "orange",
+					message: __("Enter the MRS No. (Material Request Slip) before transferring.") });
+				return;
+			}
 			var selected = [];
 			$tbody.find("tr").each(function() {
 				var $tr = $(this);

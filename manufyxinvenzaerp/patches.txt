@@ -27,3 +27,5 @@ manufyxinvenzaerp.patches.v1.inspection_feedback_to_rows
 manufyxinvenzaerp.patches.v16.restore_india_compliance_custom_fields
 manufyxinvenzaerp.patches.v16.default_mip_excess_return_warehouse
 manufyxinvenzaerp.patches.v16.link_job_worker_warehouses
+manufyxinvenzaerp.patches.v16.set_jwo_allocation_numbers
+manufyxinvenzaerp.patches.v16.warehouse_mandatory_storage_location

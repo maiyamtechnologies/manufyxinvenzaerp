@@ -8,26 +8,41 @@
   "naming_series",
   "work_order",
   "subcontracting_order",
-  "production_plan",
+  "jwo_allocation_no",
   "column_break_main",
+  "production_plan",
   "operation",
-  "custom_inspection_mandatory",
   "sequence_id",
+  "status",
+  "column_break_main_2",
   "supplier",
   "contractor",
   "supplier_warehouse",
-  "status",
+  "custom_inspection_mandatory",
   "section_break_summary",
   "total_available_nos",
   "total_completed_nos",
   "column_break_summary_kg",
   "available_to_consume_kg",
   "total_consumed_kg",
+  "column_break_summary_3",
+  "section_break_weighment",
+  "drawing_weight_kg",
+  "column_break_weighment",
+  "weighment_weight_kg",
+  "column_break_weighment_2",
+  "weight_difference_kg",
   "section_break_drawing_details",
   "drawing_details",
   "section_break_log",
   "create_inspection_btn",
   "consumption_log",
+  "section_break_cycle",
+  "operation_start_date",
+  "column_break_cycle_1",
+  "operation_end_date",
+  "column_break_cycle_2",
+  "no_of_days",
   "custom_inspection_tab",
   "custom_inspection_status",
   "custom_inspection_call_date",
@@ -62,15 +77,23 @@
    "in_list_view": 1
   },
   {
+   "fieldname": "jwo_allocation_no",
+   "fieldtype": "Data",
+   "label": "JWO Allocation No.",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "description": "Set automatically: -1, -2 per Supplier/Contractor when the job is split."
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "production_plan",
    "fieldtype": "Link",
    "label": "Production Plan",
    "options": "Production Plan",
    "read_only": 1
-  },
-  {
-   "fieldname": "column_break_main",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "operation",
@@ -82,18 +105,24 @@
    "read_only": 1
   },
   {
-   "default": "0",
-   "fieldname": "custom_inspection_mandatory",
-   "fieldtype": "Check",
-   "label": "Inspection Mandatory",
-   "read_only": 1,
-   "description": "Copied from the source Process Planning row's Inspection Mandatory checkbox when this Supplier Operation Entry was created."
-  },
-  {
    "fieldname": "sequence_id",
    "fieldtype": "Int",
    "label": "Sequence ID",
    "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Open\nIn Progress\nCompleted",
+   "default": "Open",
+   "read_only": 1,
+   "in_list_view": 0,
+   "description": "Set automatically. Use Mark as Complete to complete and submit."
+  },
+  {
+   "fieldname": "column_break_main_2",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "supplier",
@@ -120,33 +149,17 @@
    "read_only": 1
   },
   {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "Open\nIn Progress\nCompleted",
-   "default": "Open",
+   "default": "0",
+   "fieldname": "custom_inspection_mandatory",
+   "fieldtype": "Check",
+   "label": "Inspection Mandatory",
    "read_only": 1,
-   "in_list_view": 0,
-   "description": "Set automatically. Use Mark as Complete to complete and submit."
+   "description": "Copied from the source Process Planning row's Inspection Mandatory checkbox when this Supplier Operation Entry was created."
   },
   {
    "fieldname": "section_break_summary",
    "fieldtype": "Section Break",
    "label": "Weight Summary"
-  },
-  {
-   "fieldname": "available_to_consume_kg",
-   "fieldtype": "Float",
-   "label": "Available to Consume (Kg)",
-   "precision": "3",
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_consumed_kg",
-   "fieldtype": "Float",
-   "label": "Total Consumed (Kg)",
-   "precision": "3",
-   "read_only": 1
   },
   {
    "fieldname": "total_available_nos",
@@ -163,6 +176,63 @@
   {
    "fieldname": "column_break_summary_kg",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "available_to_consume_kg",
+   "fieldtype": "Float",
+   "label": "Available to Consume (Kg)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_consumed_kg",
+   "fieldtype": "Float",
+   "label": "Total Consumed (Kg)",
+   "precision": "3",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_summary_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_weighment",
+   "fieldtype": "Section Break",
+   "label": "Weighment"
+  },
+  {
+   "fieldname": "drawing_weight_kg",
+   "fieldtype": "Float",
+   "label": "Drawing Weight (Kg)",
+   "precision": "3",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Customer drawing weight of the drawings on this operation."
+  },
+  {
+   "fieldname": "column_break_weighment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "weighment_weight_kg",
+   "fieldtype": "Float",
+   "label": "Weighment Weight (Kg)",
+   "precision": "3",
+   "allow_on_submit": 1,
+   "description": "Actual weighbridge weight, for reference."
+  },
+  {
+   "fieldname": "column_break_weighment_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "weight_difference_kg",
+   "fieldtype": "Float",
+   "label": "Difference (Kg)",
+   "precision": "3",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Weighment Weight less Drawing Weight."
   },
   {
    "fieldname": "section_break_drawing_details",
@@ -191,6 +261,43 @@
    "fieldtype": "Table",
    "label": "Consumption Log",
    "options": "SOE Consumption Log"
+  },
+  {
+   "fieldname": "section_break_cycle",
+   "fieldtype": "Section Break",
+   "label": "Cycle Time"
+  },
+  {
+   "fieldname": "operation_start_date",
+   "fieldtype": "Date",
+   "label": "Operation Start Date",
+   "allow_on_submit": 1,
+   "description": "Set when the first quantity is logged: the earliest Consumption Log date.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cycle_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "operation_end_date",
+   "fieldtype": "Date",
+   "label": "Operation End Date",
+   "allow_on_submit": 1,
+   "description": "Set when the operation is marked complete.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cycle_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "no_of_days",
+   "fieldtype": "Int",
+   "label": "No. of Days",
+   "read_only": 1,
+   "allow_on_submit": 1,
+   "description": "Start date to end date, both days counted."
   },
   {
    "fieldname": "custom_inspection_tab",
@@ -262,7 +369,7 @@
    "group": "Inspection"
   }
  ],
- "modified": "2026-09-23 12:00:00.000000",
+ "modified": "2026-10-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Subcontracting Management",
  "name": "Supplier Operation Entry",

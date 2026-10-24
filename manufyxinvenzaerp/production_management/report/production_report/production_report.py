@@ -9,7 +9,7 @@ answering "where is 1B1 up to" meant reading four rows and holding them in your 
 
 It is now one row per drawing per Job Work Order, with each operation contributing its
 own block of columns -- quantity, status, inspection rounds, last inspection status and
-the gap in days. The operations are not a fixed list: they are whichever operations the
+its start date, end date and number of days. The operations are not a fixed list: they are whichever operations the
 jobs in view actually have, in sequence order, so a job routed through Welding and
 Blasting shows those and a job routed through Fit-up and Painting shows those.
 
@@ -95,7 +95,8 @@ def get_data(filters):
 		filters=soe_filters,
 		fields=["name", "production_plan", "subcontracting_order", "supplier", "operation",
 				"sequence_id", "status", "custom_inspection_status", "custom_inspection_mandatory",
-				"total_consumed_kg", "total_completed_nos", "creation"],
+				"total_consumed_kg", "total_completed_nos", "creation",
+				"operation_start_date", "operation_end_date", "no_of_days"],
 	)
 	# An Operation or Status filter is a question about operations, so it narrows the
 	# jobs too: asking for Open Fit-up should not list every job in the yard with the
@@ -105,29 +106,6 @@ def get_data(filters):
 		sco_names = [n for n in sco_names if n in matched]
 		if not sco_names:
 			return [], []
-
-	# "Operation gap in days" has no dedicated start/end field anywhere in
-	# this data model (Supplier Operation Entry carries no date fields of its
-	# own beyond the inspection-specific custom_inspection_call_date) -- the
-	# best available proxy is the creation-timestamp gap between consecutive
-	# sequence_id rows of the same Subcontracting Order, since SOEs are
-	# created in sequence order as each prior operation's consumption chains
-	# into the next (subcontracting.py's _get_soe_creation_loop). Flagged as
-	# approximate in the column label/description so it isn't mistaken for a
-	# precise measurement.
-	by_sco = {}
-	for s in soes:
-		by_sco.setdefault(s.subcontracting_order, []).append(s)
-	gap_days = {}
-	for sco, rows in by_sco.items():
-		rows_sorted = sorted(rows, key=lambda r: (r.sequence_id or 0))
-		prev_creation = None
-		for r in rows_sorted:
-			if prev_creation:
-				gap_days[r.name] = (getdate(r.creation) - getdate(prev_creation)).days
-			else:
-				gap_days[r.name] = 0
-			prev_creation = r.creation
 
 	call_counts = {}
 	if soes:
@@ -223,7 +201,12 @@ def get_data(filters):
 			row["op_%s_status" % slug] = s.status or ""
 			row["op_%s_rounds" % slug] = call_counts.get(s.name, 0)
 			row["op_%s_inspection" % slug] = s.custom_inspection_status or ""
-			row["op_%s_gap" % slug] = gap_days.get(s.name, 0)
+			# Cycle time (client, 22 Oct 2026): the operation's own dates, entered on the
+			# Operation Entry. These replace the old "Gap (Days, approx.)", which could only
+			# guess from when consecutive entries happened to be raised.
+			row["op_%s_start" % slug] = s.operation_start_date
+			row["op_%s_end" % slug] = s.operation_end_date
+			row["op_%s_days" % slug] = s.no_of_days or None
 
 	data.sort(key=lambda r: (r["sales_order"] or "", r["production_plan"] or "",
 							 r["subcontracting_order"] or "", r["drawing"] or ""))
@@ -395,7 +378,7 @@ def _total_row(data, operations):
 	total["waste_pct"] = _waste_pct(total["customer_weight_kg"], total["planned_weight_kg"])
 
 	# Each operation's quantity is drawing-level (Kg issued, or pieces completed), so it
-	# adds up; its status, inspection rounds and gap belong to the operation and do not.
+	# adds up; its status, inspection rounds and dates belong to the operation and do not.
 	for op in operations:
 		field = "op_%s_qty" % op["slug"]
 		total[field] = flt(sum(flt(r.get(field)) for r in data), 3)
@@ -771,9 +754,13 @@ def get_columns(operations):
 			 "fieldtype": "Int", "width": 130},
 			{"label": _("{0} Last Inspection Status").format(label), "fieldname": "op_%s_inspection" % op["slug"],
 			 "fieldtype": "Data", "width": 150},
-			{"label": _("{0} Gap (Days, approx.)").format(label), "fieldname": "op_%s_gap" % op["slug"],
-			 "fieldtype": "Int", "width": 140,
-			 "description": _("Days between the previous operation being raised and this one.")},
+			{"label": _("{0} Start Date").format(label), "fieldname": "op_%s_start" % op["slug"],
+			 "fieldtype": "Date", "width": 120},
+			{"label": _("{0} End Date").format(label), "fieldname": "op_%s_end" % op["slug"],
+			 "fieldtype": "Date", "width": 120},
+			{"label": _("{0} No. of Days").format(label), "fieldname": "op_%s_days" % op["slug"],
+			 "fieldtype": "Int", "width": 120,
+			 "description": _("Start date to end date, both days counted.")},
 		]
 
 	columns += [

@@ -1628,3 +1628,45 @@ Source: `~/Downloads/RM Section weight master (2).xls` (291 rows). Reviewed in `
 ### Full-process test, 22 Oct 2026 (manufactv16)
 
 End-to-end run with the client's `BOM_Import_Template _21-oCT-26.xlsx` — see features §30 for the document chain, the two code fixes (Production Plan creators; finished-goods warehouse) and the open items. **To confirm with the client:** the sheet's plate codes did not match their thickness / grade (15 rows corrected in the same file, original kept); item `PLATE6` (MS / IS2062) is needed on live.
+
+
+## Client changes of 22 Oct 2026 (v16, branch `v16_fixes`)
+
+Detail: `manufyxinvenzaerp_features.md` §31. Check: `tests/verify_client_changes_oct22.py` (40/40).
+
+| # | Requirement | Status | Decision / where |
+|---|---|---|---|
+| 1 | Item Validate Storage Location | 🔧 | Check on Item, off for all; off → every location of the warehouse; on → Item's list only. `storage_location.allowed_locations` |
+| 2 | Contractor-wise JWO number + rates in print | 🔧 | Series `JWO-.YYYY.-`; `jwo_allocation_no` on Operation Entry (-1/-2 per party, A,B,A = 2 groups, single party = plain number); print shows Fabrication/Painting RS No. + Rate/Kg |
+| 3 | Drawing weight vs weighment | 🔧 | Operation Entry Weighment / Drawing Weight / Difference; DN + Packing Slip row Weighment, header total = sum of rows else typed |
+| 4 | Production cycle time | 🔧 | Operation Start Date, End Date, No. of Days (inclusive) on Operation Entry; Production Report columns replace "Gap (Days, approx.)" |
+| 5 | MRS No. mandatory | 🔧 | Mandatory in MIP transfer popups to supplier (RM→supplier, CNC→supplier), client + server. RM→CNC leg unchanged. Client's message was cut off at point 5 — confirm scope |
+
+Pre-existing test failures seen while checking (not caused by this work): `verify_storage_location` needs fixture item
+`ZZTEST-CS-REPACK` (absent after the go-live reset; test updated for the new switch but not run);
+`verify_change_request_2026_09_24` "template has a Material Spec column beside Grade".
+
+## 23 Oct 2026
+
+- **Op-1 waits for the full transfer (item by item)** 🔧 — live SC-ORD-2026-00003 logged all operations with
+  193.424 Kg PLATE16 unsent; only the Final Stock Entry caught it. Now Op-1 refuses (Fully Transferred / blank),
+  and the Operations banner reads the same per-item figure. features §32, `tests/verify_op1_waits_for_transfer.py`
+  (13/13). Live data left as is — client will delete the test job.
+- **Data Works:** "Create warehouses and storage locations" and "Create rate schedules" removed (code, preview and
+  `data/rate_schedules.json`; warehouse keys out of `setup.json`). Only "Delete transactions and test data" stays,
+  plus Back up / Run everything. features §29.
+- **Warehouse Mandatory Storage Location** 🔧 — Warehouse checkbox; mandatory only when ticked and the warehouse has
+  locations. Replaces the Warehouse Type flag (hidden; patch copied it to the warehouses). features §33.
+- **JWO Operations tab:** Allocation No. moved out of the operations table into its own table below it; the
+  operations table scrolls in its own box (it ran under the form side panel at ~1260 px).
+
+## 24 Oct 2026
+
+- **RM item master with HSN** 🔧 — client sheet `RM_Section_Weight_Master_with_Suggested_HSN _ 23-OCT-26.xls`
+  (same 291 rows as 22 Oct plus HSN). Weights confirmed: ISMBX200X100 24.2, ISMCX250X82 34.2, NPBX300X150 42.24.
+  66 HSN codes corrected by thickness / section height (approved). Batch prefix = 2-letter section + rest of the
+  code (`PT8-MS-IS2062-E250`). SHS100 / SHS150 kept; old codes, G1/G2 and E2E-FG-STRUCT deleted.
+- **Data Works:** new step **Load RM item master** (`data/rm_items.json`, 282 items); Delete transactions now also
+  deletes Payment Entry, Journal Entry, Sales Invoice, Purchase Invoice (live SINV-26-00002 was left behind).
+  features §29, `tests/verify_data_works_items.py` (18/18).
+

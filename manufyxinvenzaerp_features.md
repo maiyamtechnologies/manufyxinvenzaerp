@@ -1089,15 +1089,17 @@ done by hand on manufactv16 on 18–20 Oct. It is meant to be used once and then
 
 - **Guards:** System Manager only, and every button asks for the site name. There is no site_config switch
   (removed on request), so after a deploy the page is live; it must be removed in the next commit.
-- **Buttons:** Back up now · Delete transactions and test data · Create warehouses and storage locations ·
-  Create rate schedules · Run everything (backup + the three steps). Each shows a preview of what it will
+- **Buttons:** Back up now · Delete transactions and test data · Load RM item master · Run everything
+  (backup + delete + load). The warehouse and rate-schedule steps were removed on 23 Oct 2026 (client):
+  those masters are set up by hand on live. Each shows a preview of what it will
   do, then asks for the site name. The work runs as a background job on the `long` queue, and the page
   follows `sites/<site>/private/data_works.log`. State is in `data_works_status.json`. One backup is
   taken, by Run everything or the Back up button. There is no maintenance mode.
 - **Transactions step:**
   - Ledgers cleared by SQL: Stock Ledger Entry, GL Entry, Payment Ledger Entry, Bin, Repost Item Valuation,
     Stock Reservation Entry.
-  - Documents deleted (with children, comments, versions and attachments): Packing Slip, Delivery Note,
+  - Documents deleted (with children, comments, versions and attachments): Payment Entry, Journal Entry,
+    Sales Invoice, Purchase Invoice (added 24 Oct: live kept SINV-26-00002 after the reset), Packing Slip, Delivery Note,
     Delivery Challan, Supplier Operation Entry, Material Issue Plan, Inspection Entry, Cut Sheet, Material
     Planning, Subcontracting Order, Stock Entry, Purchase Receipt, Purchase Order, Material Request,
     Production Plan, BOM, Drawing, Sales Order, Process Deferred Accounting, Process Subscription, Manufyx
@@ -1106,16 +1108,30 @@ done by hand on manufactv16 on 18–20 Oct. It is meant to be used once and then
     project name does (list in `setup.json`). The preview lists them first.
   - Naming series of everything deleted restart at 1.
   - Kept: the item master and every other master.
-- **Warehouses step:** renames whatever Stock Settings → Default Warehouse is today to `RM Yard`, creates
-  RM Store, Consumables Store and Maintenance Store, gives all four the Warehouse Type *Storage Location
-  Applicable* (created if missing), deletes the duplicate `Work in Progress - MIPL_1`, sets the Company's
-  default WIP and FG warehouses, deletes every Storage Location and creates A1 (RM Store), A2–A20 (RM Yard),
-  C1–C10 and M1–M10. System and job-worker warehouses stay.
-- **Rate schedules step:** deletes all Rate Schedules and Job Natures, then loads 17 Job Natures and 48 Rate
-  Schedules (Category filled in) from `data/rate_schedules.json`.
-- **Where the data lives:** `manufyxinvenzaerp/data_works/data/setup.json` (warehouses, location ranges, test
-  prefixes, the doctype lists) and `rate_schedules.json`. Warehouse names stay out of `engine.py`; see §27.
-  The engine finds the warehouse to rename through Stock Settings.
+- **Load RM item master step (24 Oct 2026):** loads `data_works/data/rm_items.json`, the client's
+  Code-Spec-Grade master (`RM_Section_Weight_Master_with_Suggested_HSN _ 23-OCT-26.xls`).
+  - 282 items: the sheet's 291 rows less duplicates, codes upper case, Chqd codes keep their space
+    (`CHQD PLATE5-MS-IS2062-E250`), UOM Kg. Weights confirmed by the client on 24 Oct: ISMBX200X100 24.2,
+    ISMCX250X82 34.2, NPBX300X150 42.24.
+  - HSN: the sheet's codes, corrected (approved 24 Oct) where the 8-digit code did not fit the size: MS plates
+    by thickness 72085410 (<3 mm) / 72085310 (3–4.75) / 72085210 (4.75–10) / 72085110 (>10); SS plates
+    72199013 / 72199012 / 72199011; Chqd plates 72084010 (72084000 is not in the GST HSN master); ISA under
+    80 mm 72162100; UC and WPB (H sections) 72163300; FLATX25X3 72111910. Review sheet:
+    `~/Downloads/RM item master - load plan 24-Oct.xlsx`.
+  - Batch prefix (Custom Batch Abbreviation): the item code with the section cut to two letters, e.g.
+    `PT8-MS-IS2062-E250`. PLATE PT, FLAT FT, ROD RD, CHQD PLATE CP, ISA IA, ISMB IB, ISMC IC, NPB NB, WPB WB,
+    UB UB, UC UC (`abbreviations` in the JSON).
+  - A new code is a copy of the live item it replaces (`replaces`), so item defaults, storage locations and
+    inspection settings carry over; then spec, grade, group, weight, HSN, prefix, Kg/Nos and batch settings
+    are set from the JSON. An item that already exists is updated, so the step can run again.
+  - Then deleted, one by one (Item Prices first): every item in *Plates child node* / *Structural child node*
+    that is not in the master, except `keep` (SHS100, SHS150), plus `delete_also` (test item E2E-FG-STRUCT).
+    An item still linked from a leftover document is kept and named in the log instead of undoing the load.
+  - Refuses to start while the Stock Ledger has rows or a linked master (HSN, group, spec, grade) is missing.
+  - Tested: `tests/verify_data_works_items.py` (18/18) runs Delete transactions + Load twice on manufactv16
+    inside a rollback.
+- **Where the data lives:** `manufyxinvenzaerp/data_works/data/setup.json` (test prefixes and the doctype
+  lists) and `data/rm_items.json` (the item master).
 - **Gotchas found while building it:**
   - Frappe refuses to delete a submitted document even with `force`, so each is marked cancelled first (the
     ledgers are already gone).
@@ -1145,3 +1161,57 @@ Run on manufactv16 (a restore of live dump `20261021_180002`, plus the 279 RM Se
 - Every item needs Storage Locations for the receiving warehouse before a Purchase Receipt will submit (PR blocked on PLATE10, whose list named only RM Store). The test added A2 / RM Yard to the 8 items used.
 
 **Sheet corrections** (original kept as `BOM_Import_Template _21-oCT-26 (client original).xlsx`): material code now follows the plate's Thickness and Grade — `PLATE8` with Thickness 6 → `PLATE6` (MS) / `PLATE6-SS304`; `PLATE25` with Thickness 30 → `PLATE30-SS304`; SS-304 rows `PLATE10` → `PLATE10-SS304`; Material Spec `MS` → `SS` on every SS-304 row. 15 rows changed. New local Item `PLATE6` (MS / IS2062) — does not exist on live.
+
+## 31. Client changes of 22 Oct 2026
+
+Verified by `tests/verify_client_changes_oct22.py` (40 checks, rolled back).
+
+- **Item → Validate Storage Location** (`custom_validate_storage_location`, Check, default off, above the Storage Locations table; field in `setup.py: create_oct22_change_fields`).
+  - Off (every item after migrate): a transaction offers and accepts every Storage Location of the row's warehouse. The Item's Storage Locations table is ignored, except that its default row is still filled in.
+  - On: the old rule — only the locations the Item lists for that warehouse; none listed, none allowed.
+  - One switch in `storage_location.py: allowed_locations` (via `validates_item_locations`), so Purchase Receipt, Stock Entry, Delivery Note and the MIP / Material Planning paths all follow it. Not request-cached on purpose: an Item saved and re-read in one request must see the new value.
+- **Job Work Order numbering.** Subcontracting Order naming series is `JWO-.YYYY.-` (property setters on `naming_series` options and default). Orders made before keep their `SC-ORD-…` names.
+- **JWO Allocation No. per Supplier/Contractor** (`Supplier Operation Entry.jwo_allocation_no`, read-only).
+  - `subcontracting.set_jwo_allocation_numbers(sco)` runs after `_create_soes_for_sco`. Parties (`supplier or contractor`, blank counts as its own party) are numbered in the order they first appear in the routing: `JWO-2026-00001-1`, `-2`. A, B, A is two numbers, not three (client). One party → the plain order number.
+  - Shown in its own *Allocation No.* table below the Job Work Order's Operations table (Allocation No., Supplier/Contractor, the operations it covers — `allocation_table` in `SCO_OPS_SCRIPT`), and heading the contractor-wise print. Kept out of the operations table so that table keeps its width; the operations table also scrolls inside its own box rather than running under the form's side panel.
+  - Patch `v16.set_jwo_allocation_numbers` filled existing jobs.
+- **Contractor print shows rates.** Each drawing row now has Fabrication Rate Schedule No. + Rate/Kg and Painting Rate Schedule No. + Rate/Kg, read from the Drawing (`rate_schedule`, `rs_rate_per_kg`, `painting_rate_schedule`, `prs_rate_per_kg`). This replaces the earlier "no rates" choice.
+- **Operation Entry — Weighment and Cycle Time** (doctype fields, `allow_on_submit`). Layout (23 Oct): header in 3 columns; *Weighment* (Drawing Weight · Weighment Weight · Difference) one row under Weight Summary; *Cycle Time* (Start · End · No. of Days) one row at the bottom of the Details tab, after the Consumption Log — so the log table is reached without scrolling past them. Start and End Date are read-only (set by the server only):
+  - `operation_start_date`: filled when the operation first goes In Progress, from the earliest Consumption Log date (today if no dated row). `operation_end_date`: filled when the status becomes Completed (Mark as Complete). Only blanks are filled. End before start is refused (server-side safety).
+  - `no_of_days` = end − start + 1 (both days counted), 0 until both are set.
+  - `drawing_weight_kg` = Σ drawing rows' Cust Weight (Total); `weighment_weight_kg` typed (reference only); `weight_difference_kg` = weighment − drawing, 0 when no weighment.
+  - `subcontracting.set_cycle_time_and_weighment` runs in validate and on `before_update_after_submit`; `public/js/supplier_operation_entry.js` shows the same live.
+- **Production Report:** each operation's block now has *Start Date*, *End Date*, *No. of Days* from the Operation Entry. These replace the old *Gap (Days, approx.)* column, which only guessed from creation times.
+- **Delivery Note / Packing Slip weighment.** Row field `custom_weighment_weight` and header `custom_total_weighment_weight` (DN: after Total Net Weight; Packing Slip: after Net Weight UOM). `selling_management/weighment.py`: when any row has a weighment, the total is their sum; when none does, the typed total is kept. Hooked in DN validate and `PackingSlip.validate`; `public/js/weighment.js` does the same live.
+- **MRS No. mandatory** on the Material Issue Plan transfer popups that ask for it — RM → supplier/WIP and CNC → supplier. The leg into CNC still asks for no slips. Checked in the dialog (`reqd`, plus a message on Transfer; Save and Close is not blocked) and on the server (`material_issue_plan_transfer._require_mrs_number` in `create_mip_partial_transfer` for non-CNC and `create_mip_cnc_partial_forward`). Cutting Plan No. stays optional.
+
+## 32. Op-1 waits for the whole transfer, item by item (2026-10-23)
+
+Found on live SC-ORD-2026-00003 / MIP-2026-00003: all five operations were logged while 193.424 Kg of PLATE16
+was still in RM Store. Other items (PLATE10-G1, PLATE8-G1) had been sent over plan, so the job's total
+transferred Kg was above plan. Op-1's check only refused a drawing with 0 Kg transferred, and the Operations tab
+banner compared totals, so neither saw it. Only Make Final Stock Entry, which compares per item and batch,
+refused ("Nothing to Book"). Checked by `tests/verify_op1_waits_for_transfer.py` (13 checks, rolled back).
+
+- **One answer:** `subcontracting._pending_transfer(sco)` → `{mip, kg, item_count, cnc_kg}` from
+  `get_mip_pending_items` (Material Planning held qty per item+batch less the plan's transfer entries). None when
+  the job has no plan or it cannot be answered (then nothing is blocked). Not `items` — that is the dict method.
+- **Op-1** (`_check_op1_transfer`, in `validate_supplier_operation_entry` step 4): with Manufacturing Settings →
+  SOE Log Entry Allowed When = *Fully Transferred* or blank (live is blank), logging on Op-1 is refused while any
+  item is pending — "Material Not Yet Transferred", naming the Kg, item count, CNC share and the plan. The old
+  per-drawing "0 Kg transferred" check stays after it. *Partially Transferred* skips both.
+- **Final Stock Entry** (`_pending_transfer_block`): unchanged rule, now built on the same function. Still the
+  last net for Partially Transferred jobs and for operations logged before this check.
+- **Operations tab banner** (`SCO_OPS_SCRIPT`): `fetch_pending_transfer` calls `get_pending_transfer` before the
+  table is drawn; "Not Yet Transferred" is the item-level Kg plus "N item(s) on MIP-… not yet sent". The planned −
+  transferred Kg difference is only the fallback when there is no plan.
+- Setting description corrected to say what it does (it promised the per-item rule before the code had it).
+- Existing data left as is (client): live SC-ORD-2026-00003 is a test job to be removed.
+
+## 33. Warehouse → Mandatory Storage Location (2026-10-23)
+
+- New Warehouse field `custom_mandatory_storage_location` (Check, after Warehouse Type; `setup.create_warehouse_storage_location_field`).
+- `storage_location.location_applicable(warehouse)` is now: the box is on **and** the warehouse has at least one Storage Location. When it holds, every movement in or out of that warehouse must name one of them: refused on submit when blank, and a filled one is checked on save (rules unchanged, see the Storage Location section). A ticked warehouse with no locations asks for nothing.
+- Replaces Warehouse Type → *Storage Location Applicable* as the switch. That field is hidden (property setter) and no longer read. Patch `v16.warehouse_mandatory_storage_location` ticked every warehouse whose type had it, so behaviour did not change on the day: RM Store, RM Yard, Consumables Store, Maintenance Store (and the ZZTEST store) locally. The patch creates the field itself, because patches run before customizations sync.
+- Forms already ask `get_location_settings`, so the location fields turn mandatory per warehouse without any JS change.
+- Checked in `tests/verify_client_changes_oct22.py` §6. `verify_storage_location.py` fixture switched to the warehouse box.

@@ -470,8 +470,8 @@ _Total: 181_
 - accounts_management/custom/payment_entry.json
 - accounts_management/custom/payment_request.json
 - accounts_management/report/customer_fund_usage/customer_fund_usage.json
-- data_works/data/rate_schedules.json
 - data_works/data/setup.json
+- data_works/data/rm_items.json
 - drawing_management/custom/bom_explosion_item.json
 - drawing_management/custom/bom_item.json
 - drawing_management/custom/bom.json
@@ -1204,8 +1204,6 @@ Functions:
   - 242:_inline_cleanup:
   - 254:_delete:
   - 261:_do_transactions:
-  - 302:_do_warehouses:
-  - 365:_do_rate_schedules:
 
 ### deploy_log.py
 Functions:

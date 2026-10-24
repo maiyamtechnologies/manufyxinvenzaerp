@@ -26,4 +26,5 @@ import "./mfx_buttons.js";
 import "./rate_schedule.js";
 import "./item.js";
 import "./storage_location.js";
+import "./weighment.js";
 import "./manual_renderer.js";

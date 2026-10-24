@@ -288,6 +288,7 @@ doc_events = {
 		# batches on the rows; the location is read from the batch.
 		"validate": [
 			"manufyxinvenzaerp.selling_management.delivery_note.validate_delivery_note",
+			"manufyxinvenzaerp.selling_management.weighment.set_total_weighment_weight",
 			"manufyxinvenzaerp.stock_management.storage_location.fill_locations",
 			"manufyxinvenzaerp.stock_management.storage_location.check_locations",
 		],
@@ -309,6 +310,8 @@ doc_events = {
 			"manufyxinvenzaerp.subcontracting_management.subcontracting.before_submit_supplier_operation_entry",
 			"manufyxinvenzaerp.production_management.inspection.before_submit_soe_inspection_gate",
 		],
+		# Dates and weighment stay correctable on a completed operation.
+		"before_update_after_submit": "manufyxinvenzaerp.subcontracting_management.subcontracting.set_cycle_time_and_weighment",
 		"on_update": "manufyxinvenzaerp.subcontracting_management.subcontracting.on_update_supplier_operation_entry",
 		"on_submit": "manufyxinvenzaerp.subcontracting_management.subcontracting.on_submit_supplier_operation_entry",
 		"before_cancel": "manufyxinvenzaerp.subcontracting_management.subcontracting.before_cancel_supplier_operation_entry",

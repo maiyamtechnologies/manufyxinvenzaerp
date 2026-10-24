@@ -14,7 +14,7 @@
    "creation": "2026-08-18 22:53:12.261670",
    "default": "Fully Transferred",
    "depends_on": null,
-   "description": "Fully Transferred: consumption log entries are blocked until all planned weight for that drawing has been transferred to the supplier warehouse. Partially Transferred: log entries are always allowed.",
+   "description": "Fully Transferred: the first operation cannot log anything until every item and batch reserved for the job has been transferred. Partially Transferred: log entries are always allowed; the Final Stock Entry still waits for the full transfer.",
    "docstatus": 0,
    "dt": "Manufacturing Settings",
    "fetch_from": null,

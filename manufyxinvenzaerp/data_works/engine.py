@@ -1,13 +1,15 @@
 """Data Works: reset a site's data for go-live, from the Data Works page.
 
-Three steps, each safe to run twice:
+Two steps, each safe to run twice:
   transactions    delete every transaction and test master; keep the item master and other masters
-  warehouses      rename the default warehouse, create the new ones, rebuild Storage Locations
-  rate_schedules  replace Job Natures and Rate Schedules with data/rate_schedules.json
+  items           load the RM item master (data/rm_items.json): create or update its items, then
+                  delete the old raw-material codes it replaces and the leftover test items
 
-What is built comes from data/setup.json and data/rate_schedules.json -- warehouse names are
-data, never code. Only a System Manager can open the page, and every button asks for the site name.
-This is a one-time tool: remove the page once the live reset is done.
+What is deleted comes from data/setup.json. The warehouse and rate-schedule steps were removed on
+23 Oct 2026 (client): those masters are now set up by hand on the live site. The items step was
+added on 24 Oct 2026 for the client's new Code-Spec-Grade item master with HSN codes. Only a System Manager
+can open the page, and every button asks for the site name. This is a one-time tool: remove the
+page once the live reset is done.
 """
 
 import json
@@ -19,11 +21,10 @@ import frappe
 from frappe.model.delete_doc import delete_dynamic_links
 from frappe.utils import now_datetime
 
-STEPS = ("transactions", "warehouses", "rate_schedules")
+STEPS = ("transactions", "items")
 LABELS = {
 	"transactions": "Delete transactions and test data",
-	"warehouses": "Create warehouses and storage locations",
-	"rate_schedules": "Create rate schedules",
+	"items": "Load RM item master",
 }
 
 
@@ -66,17 +67,6 @@ def _get_status():
 		return {"state": "idle", "step": None}
 
 
-def _company():
-	"""The company of Stock Settings -> Default Warehouse, else the only company."""
-	wh = frappe.db.get_single_value("Stock Settings", "default_warehouse")
-	company = frappe.db.get_value("Warehouse", wh, "company") if wh else None
-	return company or frappe.get_all("Company", pluck="name", limit=1)[0]
-
-
-def _wh_name(warehouse_name, company):
-	return f"{warehouse_name} - {frappe.db.get_value('Company', company, 'abbr')}"
-
-
 # ---------------------------------------------------------------- whitelisted API
 
 @frappe.whitelist()
@@ -94,11 +84,13 @@ def preview(step):
 	"""What a step would do, as {"title", "lines"} for the confirmation dialog."""
 	_guard()
 	if step == "all":
-		lines = ["A database backup is taken first, then the three steps below run in order."]
+		lines = ["A database backup is taken first, then the step below runs."]
 		for s in STEPS:
 			lines.append(f"-- {LABELS[s]} --")
 			lines += _preview_step(s)
 		return {"title": "Run everything", "lines": lines}
+	if step not in STEPS:
+		frappe.throw("Unknown step.")
 	return {"title": LABELS[step], "lines": _preview_step(step)}
 
 
@@ -179,29 +171,15 @@ def _test_names():
 
 
 def _preview_step(step):
+	if step == "items":
+		return _preview_items()
 	cfg = _data("setup.json")
-	if step == "transactions":
-		lines = []
-		for dt in cfg["ledger_doctypes"] + cfg["transaction_doctypes"]:
-			if _table(dt) and (n := frappe.db.count(dt)):
-				lines.append(f"{dt}: {n} to delete")
-		lines += [f"Test {dt}: {n}" for dt, n in _test_names()]
-		return lines or ["Nothing to delete."]
-	if step == "warehouses":
-		company = _company()
-		default = frappe.db.get_single_value("Stock Settings", "default_warehouse")
-		lines = [f"Rename the default warehouse {default} to {_wh_name(cfg['rename_default_warehouse_to'], company)}"]
-		lines += [f"Create warehouse {_wh_name(w, company)} if missing" for w in cfg["create_warehouses"]]
-		lines += [f"Delete warehouse {_wh_name(w, company)} if present" for w in cfg["remove_warehouses"]]
-		lines.append(f"Delete all {frappe.db.count('Storage Location')} existing Storage Locations")
-		for loc in cfg["storage_locations"]:
-			lines.append(f"Create {loc['prefix']}{loc['from']} to {loc['prefix']}{loc['to']} in {loc['warehouse']}")
-		return lines
-	rs = _data("rate_schedules.json")
-	return [
-		f"Delete {frappe.db.count('Rate Schedule')} Rate Schedules and {frappe.db.count('Job Nature')} Job Natures",
-		f"Create {len(rs['job_natures'])} Job Natures and {len(rs['rate_schedules'])} Rate Schedules",
-	]
+	lines = []
+	for dt in cfg["ledger_doctypes"] + cfg["transaction_doctypes"]:
+		if _table(dt) and (n := frappe.db.count(dt)):
+			lines.append(f"{dt}: {n} to delete")
+	lines += [f"Test {dt}: {n}" for dt, n in _test_names()]
+	return lines or ["Nothing to delete."]
 
 
 def _series_file():
@@ -294,78 +272,131 @@ def _do_transactions():
 	_reset_series()
 
 
-# ---------------------------------------------------------------- step 2: warehouses
+# ---------------------------------------------------------------- step 2: RM item master
 
-def _do_warehouses():
-	cfg = _data("setup.json")
-	company = _company()
-	wtype = cfg["warehouse_type"]
+# Set on every item of the master; anything else (item defaults, storage locations, inspection)
+# comes from the item it replaces, or from a sibling of the same section.
+_ITEM_FIELDS = {
+	"stock_uom": "Kg",
+	"custom_secondary_uom": "Nos",
+	"custom_item_calculation_type": "Formula Weight Calculation",
+	"is_stock_item": 1,
+	"has_batch_no": 1,
+	"create_new_batch": 1,
+	"disabled": 0,
+}
 
-	if frappe.db.exists("Warehouse Type", wtype):
-		frappe.db.set_value("Warehouse Type", wtype, "custom_storage_location_applicable", 1)
-	else:
-		frappe.get_doc(
-			{"doctype": "Warehouse Type", "name": wtype, "custom_storage_location_applicable": 1}
-		).insert(ignore_permissions=True)
-		_log(f"Warehouse Type created: {wtype}")
 
-	target = _wh_name(cfg["rename_default_warehouse_to"], company)
-	default = frappe.db.get_single_value("Stock Settings", "default_warehouse")
-	if frappe.db.exists("Warehouse", target):
-		_log(f"{target} already exists")
-	elif default:
-		frappe.rename_doc("Warehouse", default, target, force=True)
-		frappe.db.set_value("Warehouse", target, "warehouse_name", cfg["rename_default_warehouse_to"])
-		_log(f"{default} renamed to {target}")
-	else:
-		frappe.throw("Stock Settings has no Default Warehouse to rename.")
-	frappe.db.set_value("Warehouse", target, "warehouse_type", wtype)
-	parent = frappe.db.get_value("Warehouse", target, "parent_warehouse")
+def _item_values(row):
+	return dict(
+		_ITEM_FIELDS,
+		item_name=row["item_code"],
+		description=f"{row['section']} {row['material_code']} {row['grade']}",
+		item_group=row["item_group"],
+		custom_parent_item_group=row["parent_item_group"],
+		custom_material_spec=row["spec"],
+		custom_material_grade=row["grade"],
+		custom_unit_weight=row["unit_weight"],
+		gst_hsn_code=row["gst_hsn_code"],
+		custom_batch_prefix=row["batch_prefix"],
+	)
 
-	for w in cfg["create_warehouses"]:
-		name = _wh_name(w, company)
-		if not frappe.db.exists("Warehouse", name):
-			frappe.get_doc(
-				{"doctype": "Warehouse", "warehouse_name": w, "company": company,
-				 "parent_warehouse": parent, "warehouse_type": wtype}
-			).insert(ignore_permissions=True)
-			_log(f"Warehouse created: {name}")
+
+def _items_to_delete(cfg):
+	"""Raw-material items the master does not hold (bar the ones to keep), plus the named test items."""
+	master = {r["item_code"] for r in cfg["items"]}
+	keep = set(cfg["keep"])
+	old = frappe.get_all("Item", filters={"item_group": ["in", cfg["rm_item_groups"]]}, pluck="name")
+	gone = [n for n in old if n not in master and n not in keep]
+	gone += [n for n in cfg["delete_also"] if frappe.db.exists("Item", n)]
+	return sorted(set(gone))
+
+
+def _missing_masters(cfg):
+	"""Linked masters the items need: a missing one would stop the load half way."""
+	missing = []
+	for doctype, key in (("GST HSN Code", "gst_hsn_code"), ("Item Group", "item_group"),
+	                     ("Material Spec", "spec"), ("Material Grade", "grade")):
+		for v in sorted({r[key] for r in cfg["items"]}):
+			if not frappe.db.exists(doctype, v):
+				missing.append(f"{doctype} {v} does not exist")
+	return missing
+
+
+def _preview_items():
+	cfg = _data("rm_items.json")
+	rows = cfg["items"]
+	exists = [r for r in rows if frappe.db.exists("Item", r["item_code"])]
+	gone = _items_to_delete(cfg)
+	lines = _missing_masters(cfg)
+	lines += [
+		f"Item master: {len(rows)} items ({len(rows) - len(exists)} to create, {len(exists)} to update)",
+		f"Items to delete: {len(gone)} (old raw-material codes and test items)",
+	]
+	if left := frappe.db.count("Stock Ledger Entry"):
+		lines.append(f"Stock Ledger still has {left} rows: run 'Delete transactions and test data' first.")
+	lines += [f"  delete {n}" for n in gone]
+	lines.append(f"Kept: {', '.join(cfg['keep'])} and every item outside the raw-material groups.")
+	return lines
+
+
+def _template(row, cfg):
+	"""The Item a new code copies its settings from: the one it replaces, else one of the same section."""
+	if row.get("replaces") and frappe.db.exists("Item", row["replaces"]):
+		return row["replaces"]
+	for r in cfg["items"]:
+		if r["section"] == row["section"] and r is not row:
+			for name in (r["item_code"], r.get("replaces")):
+				if name and frappe.db.exists("Item", name):
+					return name
+	return frappe.db.get_value("Item", {"item_group": row["item_group"]}, "name")
+
+
+def _do_items():
+	cfg = _data("rm_items.json")
+	if missing := _missing_masters(cfg):
+		frappe.throw("<br>".join(missing))
+	if frappe.db.count("Stock Ledger Entry"):
+		frappe.throw("Stock Ledger is not empty: run 'Delete transactions and test data' first.")
+
+	created = updated = 0
+	for row in cfg["items"]:
+		values = _item_values(row)
+		if frappe.db.exists("Item", row["item_code"]):
+			doc = frappe.get_doc("Item", row["item_code"])
+			doc.update(values)
+			doc.save(ignore_permissions=True)
+			updated += 1
+			continue
+		template = _template(row, cfg)
+		if template:
+			doc = frappe.copy_doc(frappe.get_doc("Item", template))
+			doc.barcodes = []
+			doc.image = doc.default_bom = None
 		else:
-			frappe.db.set_value("Warehouse", name, "warehouse_type", wtype)
+			doc = frappe.new_doc("Item")
+		doc.item_code = row["item_code"]
+		doc.update(values)
+		doc.insert(ignore_permissions=True)
+		created += 1
+		_log(f"Created {row['item_code']}" + (f" (from {template})" if template else ""))
+	frappe.db.commit()
+	_log(f"Item master: {created} created, {updated} updated")
 
-	for w in cfg["remove_warehouses"]:
-		name = _wh_name(w, company)
-		if frappe.db.exists("Warehouse", name):
-			frappe.delete_doc("Warehouse", name, ignore_permissions=True)
-			_log(f"Warehouse deleted: {name}")
-
-	for field, w in cfg["company_defaults"].items():
-		name = _wh_name(w, company)
-		if frappe.db.exists("Warehouse", name):
-			frappe.db.set_value("Company", company, field, name)
-
-	for loc in frappe.get_all("Storage Location", pluck="name"):
-		frappe.delete_doc("Storage Location", loc, force=True, ignore_permissions=True)
-	made = 0
-	for loc in cfg["storage_locations"]:
-		wh = _wh_name(loc["warehouse"], company)
-		for i in range(loc["from"], loc["to"] + 1):
-			doc = frappe.get_doc({"doctype": "Storage Location", "warehouse": wh})
-			doc.__newname = f"{loc['prefix']}{i}"
-			doc.insert(ignore_permissions=True)
-			made += 1
-	_log(f"Storage Locations created: {made}")
-
-
-# ---------------------------------------------------------------- step 3: rate schedules
-
-def _do_rate_schedules():
-	data = _data("rate_schedules.json")
-	for dt in ("Rate Schedule", "Job Nature"):
-		for n in frappe.get_all(dt, pluck="name"):
-			frappe.delete_doc(dt, n, ignore_permissions=True)
-	for jn in data["job_natures"]:
-		frappe.get_doc({"doctype": "Job Nature", **jn}).insert(ignore_permissions=True)
-	for rs in data["rate_schedules"]:
-		frappe.get_doc({"doctype": "Rate Schedule", **rs}).insert(ignore_permissions=True)
-	_log(f"Job Natures: {len(data['job_natures'])}, Rate Schedules: {len(data['rate_schedules'])}")
+	# Deleted one by one: an item some leftover document still links to is kept and reported,
+	# rather than undoing the whole load.
+	gone, kept = 0, []
+	with _inline_cleanup():
+		for name in _items_to_delete(cfg):
+			frappe.db.savepoint("dw_item")
+			try:
+				for ip in frappe.get_all("Item Price", filters={"item_code": name}, pluck="name"):
+					_delete("Item Price", ip)
+				_delete("Item", name)
+				gone += 1
+			except Exception as e:
+				frappe.db.rollback(save_point="dw_item")
+				frappe.clear_last_message()
+				kept.append(name)
+				_log(f"Kept {name}: {frappe.utils.strip_html(str(e))[:200]}")
+	_log(f"Old items deleted: {gone}" + (f"; {len(kept)} kept because they are still in use" if kept else ""))

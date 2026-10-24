@@ -5,10 +5,11 @@ every ledger entry but cannot make it mandatory per warehouse, and its own negat
 check works at item level, so a batch could leave a location it is not in. The rules
 added by stock_management/storage_location.py, checked here end to end:
 
-  * a warehouse whose Warehouse Type has "Storage Location Applicable" refuses a
-    submit without a location; any other warehouse does not care;
-  * inward, the location must be one the item lists for that warehouse (none listed,
-    none allowed), and the item's default is filled in;
+  * a warehouse with Mandatory Storage Location ticked, and locations of its own, refuses
+    a submit without a location; any other warehouse does not care;
+  * inward, with the Item's Validate Storage Location on, the location must be one the
+    item lists for that warehouse (none listed, none allowed); with it off (the default
+    since 22 Oct 2026) any location of the warehouse; the item's default is filled in;
   * outward, the location must hold the batch -- the message says where it is;
   * a batch spread over two locations is split into one row per location;
   * a Repack back into the same warehouse (cut-sheet remnant) keeps the source location;
@@ -19,7 +20,7 @@ added by stock_management/storage_location.py, checked here end to end:
     location, and a Material Planning row shows where its batch is.
 
 Fixtures are created once and left in place (ZZTEST names, nothing deleted); the test
-entries are cancelled at the end, and the ZZTEST Warehouse Type is unticked again so no
+entries are cancelled at the end, and the ZZTEST warehouse is unticked again so no
 other check's entries need a location.
 
 Run: bench --site manufactv16 execute manufyxinvenzaerp.tests.verify_storage_location.run
@@ -65,7 +66,7 @@ def _fixtures(company):
             "doctype": "Warehouse", "warehouse_name": "ZZTEST SL Store", "company": company,
             "warehouse_type": WH_TYPE,
         }).insert(ignore_permissions=True)
-    frappe.db.set_value("Warehouse", wh, "warehouse_type", WH_TYPE)
+    frappe.db.set_value("Warehouse", wh, {"warehouse_type": WH_TYPE, "custom_mandatory_storage_location": 1})
 
     for loc in (L1, L2):
         if not frappe.db.exists("Storage Location", loc):
@@ -77,8 +78,9 @@ def _fixtures(company):
     return wh
 
 
-def _set_item_locations(rows):
+def _set_item_locations(rows, validate=1):
     item = frappe.get_doc("Item", ITEM)
+    item.custom_validate_storage_location = validate
     item.set("custom_storage_locations", rows)
     item.save(ignore_permissions=True)
     frappe.db.commit()
@@ -126,6 +128,9 @@ def run():
             company, "Material Receipt", [{"qty": 5, "t_warehouse": wh, "to_storage_location": L1}],
             submit=False), "Storage Locations table"), True)
 
+        # Validate Storage Location off: the item's own list is ignored.
+        _set_item_locations([{"warehouse": wh, "storage_location": L1, "is_default": 1}], validate=0)
+        check("validation off: every location of the warehouse allowed", sl.allowed_locations(ITEM, wh), [L1, L2])
         _set_item_locations([{"warehouse": wh, "storage_location": L1, "is_default": 1}])
         first = _se(company, "Material Receipt", [{"qty": 30, "t_warehouse": wh}])
         made.append(first)
@@ -247,9 +252,9 @@ def run():
             except Exception as e:
                 print("   (could not cancel %s: %s)" % (se.name, e))
         _set_item_locations([])
-        # Untick the type again: other checks pick "any leaf warehouse" for their own
+        # Untick it again: other checks pick "any leaf warehouse" for their own
         # entries, and must not land in one that suddenly needs a Storage Location.
-        frappe.db.set_value("Warehouse Type", WH_TYPE, "custom_storage_location_applicable", 0)
+        frappe.db.set_value("Warehouse", wh, "custom_mandatory_storage_location", 0)
         frappe.db.commit()
         print()
         print("   test entries cancelled, nothing deleted")
