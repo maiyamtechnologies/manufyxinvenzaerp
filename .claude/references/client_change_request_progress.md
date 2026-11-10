@@ -1670,3 +1670,13 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
   deletes Payment Entry, Journal Entry, Sales Invoice, Purchase Invoice (live SINV-26-00002 was left behind).
   features §29, `tests/verify_data_works_items.py` (18/18).
 
+
+## 10 Nov 2026
+
+- **Payment Request: "SQL functions are not allowed as strings in SELECT"** 🔧 — on live, picking a Source of Funds on a
+  supplier Payment Request (ACC-PRQ-2026-00002) blocked save. `get_fund_usage` used `fields=["sum(grand_total) as total"]`,
+  which Frappe v16 rejects; now `[{"SUM": "grand_total", "as": "total"}]`
+  (`accounts_management/payment_request.py`). Rule for v16: aggregates in `get_list/get_all` use dict syntax.
+- **Live Payment Request submit needs an outgoing Email Account** (ACC-PRQ-2026-00001, Inward): ERPNext emails the
+  customer on submit; live has no Email Account. Config on live (Tools > Email Account, Enable + Default Outgoing),
+  not a code change. Outward (supplier) requests don't send mail.

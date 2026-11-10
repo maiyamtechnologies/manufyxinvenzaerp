@@ -76,7 +76,7 @@ def get_fund_usage(payment_entry, payment_request=None):
         frappe.db.get_list(
             "Payment Request",
             filters=filters,
-            fields=["sum(grand_total) as total"],
+            fields=[{"SUM": "grand_total", "as": "total"}],
         )[0]["total"]
         or 0
     )
