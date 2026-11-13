@@ -32,7 +32,7 @@ _Total: 390_
 
 - accounts_management/__init__.py
 - accounts_management/payment_entry.py
-- accounts_management/payment_request.py
+- accounts_management/doctype/payment_approval/payment_approval.py
 - accounts_management/report/customer_fund_usage/customer_fund_usage.py
 - accounts_management/report/customer_fund_usage/__init__.py
 - accounts_management/report/__init__.py
@@ -449,7 +449,7 @@ _Total: 37_
 - public/js/manual_renderer.js
 - public/js/manufyxinvenzaerp.bundle.js
 - public/js/mfx_buttons.js
-- public/js/payment_request.js
+- accounts_management/doctype/payment_approval/payment_approval.js
 - public/js/production_plan.js
 - public/js/purchase_order.js
 - public/js/purchase_receipt.js
@@ -468,7 +468,6 @@ _Total: 37_
 _Total: 181_
 
 - accounts_management/custom/payment_entry.json
-- accounts_management/custom/payment_request.json
 - accounts_management/report/customer_fund_usage/customer_fund_usage.json
 - data_works/data/setup.json
 - data_works/data/rm_items.json
@@ -1167,11 +1166,11 @@ Functions:
   - 8:on_cancel_payment_entry:
   - 12:_sync_payment_entry_created_flag:
 
-### accounts_management/payment_request.py
+### accounts_management/doctype/payment_approval/payment_approval.py
 Functions:
-  - 5:validate_payment_request:
-  - 29:payment_entry_query:
-  - 56:get_fund_usage:
+  - approve / reject / reset_approvals:
+  - make_payment_entry:
+  - get_fund_usage / payment_entry_query / director_query:
 
 ### apps_screen.py
 Functions:
@@ -1676,7 +1675,6 @@ Functions:
   - 5895:create_soe_client_script:
   - 5911:create_manufacturing_settings_custom_fields:
   - 5950:create_material_planning_auto_purchase_fields:
-  - 6013:create_payment_request_custom_fields:
   - 6095:create_fg_sales_custom_fields:
   - 6200:create_fg_property_setters:
   - 6239:set_fg_settings_defaults:
@@ -3123,8 +3121,7 @@ Functions:
 - `stock_management/storage_location.py:565` — `@frappe.validate_and_sanitize_search_inputs`
 - `stock_management/storage_location.py:589` — `get_default_location`
 - `stock_management/storage_location.py:597` — `get_location_settings`
-- `accounts_management/payment_request.py:28` — `@frappe.validate_and_sanitize_search_inputs`
-- `accounts_management/payment_request.py:56` — `get_fund_usage`
+- `accounts_management/doctype/payment_approval/payment_approval.py` — `approve`, `reject`, `reset_approvals`, `make_payment_entry`, `get_fund_usage`, `payment_entry_query`, `director_query`
 - `data_works/engine.py:85` — `get_state`
 - `data_works/engine.py:96` — `preview`
 - `data_works/engine.py:109` — `run`
@@ -3440,9 +3437,6 @@ doc_events = {
 	},
 	"Inspection Entry": {
 		"on_submit": "manufyxinvenzaerp.production_management.inspection.on_submit_inspection_entry",
-	},
-	"Payment Request": {
-		"validate": "manufyxinvenzaerp.accounts_management.payment_request.validate_payment_request",
 	},
 	"Payment Entry": {
 		"on_submit": "manufyxinvenzaerp.accounts_management.payment_entry.on_submit_payment_entry",

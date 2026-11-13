@@ -15,7 +15,7 @@ def execute(filters=None):
 def get_columns():
     return [
         {"label": _("Source Reference No"), "fieldname": "source_reference_no", "fieldtype": "Data", "width": 130},
-        {"label": _("Source of Funds"), "fieldname": "custom_source_of_funds", "fieldtype": "Link",
+        {"label": _("Source of Funds"), "fieldname": "source_of_funds", "fieldtype": "Link",
          "options": "Payment Entry", "width": 130},
         # What the customer's payment was booked against -- normally the Sales Order it
         # came in for. Data rather than Dynamic Link because one Payment Entry may be
@@ -27,17 +27,20 @@ def get_columns():
         {"label": _("Customer Payment Date"), "fieldname": "customer_payment_date", "fieldtype": "Date", "width": 130},
         {"label": _("Total Customer Payment"), "fieldname": "total_customer_payment", "fieldtype": "Currency", "width": 140},
         {"label": _("Balance Remaining"), "fieldname": "balance_remaining", "fieldtype": "Currency", "width": 130},
-        {"label": _("Supplier"), "fieldname": "party", "fieldtype": "Link", "options": "Supplier", "width": 150},
-        {"label": _("Payment Type"), "fieldname": "custom_payment_type", "fieldtype": "Data", "width": 110},
-        {"label": _("Against"), "fieldname": "reference_name", "fieldtype": "Dynamic Link",
-         "options": "reference_doctype", "width": 150},
-        {"label": _("Grand Total"), "fieldname": "grand_total", "fieldtype": "Currency", "width": 110},
-        {"label": _("Payment Request"), "fieldname": "name", "fieldtype": "Link",
-         "options": "Payment Request", "width": 150},
-        {"label": _("Transaction Date"), "fieldname": "transaction_date", "fieldtype": "Date", "width": 100},
-        {"label": _("Outstanding"), "fieldname": "outstanding_amount", "fieldtype": "Currency", "width": 110},
-        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 100},
-        {"label": _("PE Created"), "fieldname": "custom_payment_entry_created", "fieldtype": "Check", "width": 90},
+        {"label": _("Party Type"), "fieldname": "party_type", "fieldtype": "Data", "width": 90},
+        {"label": _("Party"), "fieldname": "party", "fieldtype": "Dynamic Link", "options": "party_type", "width": 150},
+        {"label": _("Payment Type"), "fieldname": "payment_type", "fieldtype": "Data", "width": 110},
+        {"label": _("Purchase Order"), "fieldname": "purchase_order", "fieldtype": "Link",
+         "options": "Purchase Order", "width": 140},
+        {"label": _("Purchase Invoice"), "fieldname": "purchase_invoice", "fieldtype": "Link",
+         "options": "Purchase Invoice", "width": 140},
+        {"label": _("Amount Paid / Approved"), "fieldname": "amount", "fieldtype": "Currency", "width": 130},
+        {"label": _("Payment Approval"), "fieldname": "name", "fieldtype": "Link",
+         "options": "Payment Approval", "width": 150},
+        {"label": _("Date"), "fieldname": "transaction_date", "fieldtype": "Date", "width": 100},
+        {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 110},
+        {"label": _("Payment Entry"), "fieldname": "payment_entry", "fieldtype": "Link",
+         "options": "Payment Entry", "width": 140},
     ]
 
 
@@ -46,7 +49,7 @@ def get_columns():
 # Source of Funds group when group_by_customer_payment is on.
 CUSTOMER_PAYMENT_FIELDS = [
     "source_reference_no",
-    "custom_source_of_funds",
+    "source_of_funds",
     "source_reference_type",
     "source_reference_name",
     "source_customer",
@@ -91,12 +94,13 @@ def get_data(filters):
     # are in scope. The status filter is intentionally excluded here -- already-used
     # amounts must always be computed from ALL Paid requests for a source, even when
     # the display query below is filtered down to only the Unpaid ones.
-    base_conditions = ["pr.party_type = 'Supplier'", "pr.docstatus = 1",
-                        "pr.custom_source_of_funds is not null", "pr.custom_source_of_funds != ''"]
+    # Submitted Payment Approvals only: a draft or still-pending request has not yet
+    # committed any of the customer's money.
+    base_conditions = ["pr.docstatus = 1", "pr.source_of_funds is not null", "pr.source_of_funds != ''"]
     base_values = {}
 
     if filters.get("source_of_funds"):
-        base_conditions.append("pr.custom_source_of_funds = %(source_of_funds)s")
+        base_conditions.append("pr.source_of_funds = %(source_of_funds)s")
         base_values["source_of_funds"] = filters["source_of_funds"]
 
     if filters.get("customer"):
@@ -111,7 +115,7 @@ def get_data(filters):
     if filters.get("sales_order"):
         base_conditions.append(
             """EXISTS (SELECT 1 FROM `tabPayment Entry Reference` per
-                       WHERE per.parent = pr.custom_source_of_funds
+                       WHERE per.parent = pr.source_of_funds
                          AND per.parenttype = 'Payment Entry'
                          AND per.reference_doctype = 'Sales Order'
                          AND per.reference_name = %(sales_order)s)"""
@@ -121,16 +125,16 @@ def get_data(filters):
     already_used_by_source = {}
     for row in frappe.db.sql(
         f"""
-        SELECT pr.custom_source_of_funds, sum(pr.grand_total) as used
-        FROM `tabPayment Request` pr
-        LEFT JOIN `tabPayment Entry` pe ON pe.name = pr.custom_source_of_funds
+        SELECT pr.source_of_funds, sum(COALESCE(NULLIF(pr.approved_amount, 0), pr.requested_amount)) as used
+        FROM `tabPayment Approval` pr
+        LEFT JOIN `tabPayment Entry` pe ON pe.name = pr.source_of_funds
         WHERE {" AND ".join(base_conditions)} AND pr.status = 'Paid'
-        GROUP BY pr.custom_source_of_funds
+        GROUP BY pr.source_of_funds
         """,
         base_values,
         as_dict=True,
     ):
-        already_used_by_source[row.custom_source_of_funds] = row.used or 0
+        already_used_by_source[row.source_of_funds] = row.used or 0
 
     display_conditions = list(base_conditions)
     display_values = dict(base_values)
@@ -142,29 +146,30 @@ def get_data(filters):
     rows = frappe.db.sql(
         f"""
         SELECT
-            pr.name, pr.transaction_date, pr.party, pr.custom_payment_type,
-            pr.reference_doctype, pr.reference_name, pr.grand_total, pr.outstanding_amount,
-            pr.status, pr.custom_payment_entry_created, pr.custom_source_of_funds,
+            pr.name, pr.transaction_date, pr.party_type, pr.party, pr.payment_type,
+            pr.purchase_order, pr.purchase_invoice,
+            COALESCE(NULLIF(pr.approved_amount, 0), pr.requested_amount) as amount,
+            pr.status, pr.payment_entry, pr.source_of_funds,
             pe.party_name as source_customer, pe.reference_no as source_reference_no,
             pe.posting_date as customer_payment_date, pe.paid_amount as total_customer_payment
-        FROM `tabPayment Request` pr
-        LEFT JOIN `tabPayment Entry` pe ON pe.name = pr.custom_source_of_funds
+        FROM `tabPayment Approval` pr
+        LEFT JOIN `tabPayment Entry` pe ON pe.name = pr.source_of_funds
         WHERE {" AND ".join(display_conditions)}
-        ORDER BY pr.custom_source_of_funds, pr.transaction_date, pr.name
+        ORDER BY pr.source_of_funds, pr.transaction_date, pr.name
         """,
         display_values,
         as_dict=True,
     )
 
     refs_by_pe = _references_by_payment_entry(
-        {r.custom_source_of_funds for r in rows if r.custom_source_of_funds}
+        {r.source_of_funds for r in rows if r.source_of_funds}
     )
 
     for row in rows:
         total = row.total_customer_payment or 0
-        used = already_used_by_source.get(row.custom_source_of_funds, 0)
+        used = already_used_by_source.get(row.source_of_funds, 0)
         row["balance_remaining"] = total - used
-        ref_type, ref_name = refs_by_pe.get(row.custom_source_of_funds, ("", ""))
+        ref_type, ref_name = refs_by_pe.get(row.source_of_funds, ("", ""))
         row["source_reference_type"] = ref_type
         row["source_reference_name"] = ref_name
 
@@ -175,7 +180,7 @@ def get_data(filters):
     if frappe.utils.cint(group_by_customer_payment):
         seen_sources = set()
         for row in rows:
-            source = row.custom_source_of_funds
+            source = row.source_of_funds
             if source in seen_sources:
                 for fieldname in CUSTOMER_PAYMENT_FIELDS:
                     row[fieldname] = None

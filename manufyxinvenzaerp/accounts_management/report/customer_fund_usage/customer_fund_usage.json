@@ -18,7 +18,7 @@
  "name": "Customer Fund Usage",
  "owner": "Administrator",
  "prepared_report": 0,
- "ref_doctype": "Payment Request",
+ "ref_doctype": "Payment Approval",
  "report_name": "Customer Fund Usage",
  "report_type": "Script Report",
  "roles": [

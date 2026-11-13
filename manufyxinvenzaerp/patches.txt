@@ -4,6 +4,7 @@
 manufyxinvenzaerp.patches.v1.fix_bom_item_number_field_type
 manufyxinvenzaerp.patches.v1.remove_sco_transfer_fields
 manufyxinvenzaerp.patches.v1.remove_wo_transfer_fields
+manufyxinvenzaerp.patches.v16.seed_director_role
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -29,3 +30,6 @@ manufyxinvenzaerp.patches.v16.default_mip_excess_return_warehouse
 manufyxinvenzaerp.patches.v16.link_job_worker_warehouses
 manufyxinvenzaerp.patches.v16.set_jwo_allocation_numbers
 manufyxinvenzaerp.patches.v16.warehouse_mandatory_storage_location
+manufyxinvenzaerp.patches.v16.seed_payment_approval_masters
+manufyxinvenzaerp.patches.v16.migrate_payment_request_to_payment_approval
+manufyxinvenzaerp.patches.v16.payment_approval_party_fields

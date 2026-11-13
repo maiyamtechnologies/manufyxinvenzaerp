@@ -87,7 +87,6 @@ doctype_js = {
     "Batch": "public/js/batch.js",
     "Supplier Operation Entry": "public/js/supplier_operation_entry.js",
     "Inspection Entry": "public/js/inspection_entry.js",
-    "Payment Request": "public/js/payment_request.js",
     # Finished goods in Kg / Nos (sep14 FG plan) -- one file per owner package.
     "Delivery Note": "public/js/delivery_note.js",
     "Sales Invoice": "public/js/sales_invoice.js",
@@ -348,9 +347,6 @@ doc_events = {
 	},
 	"Inspection Entry": {
 		"on_submit": "manufyxinvenzaerp.production_management.inspection.on_submit_inspection_entry",
-	},
-	"Payment Request": {
-		"validate": "manufyxinvenzaerp.accounts_management.payment_request.validate_payment_request",
 	},
 	"Payment Entry": {
 		"on_submit": "manufyxinvenzaerp.accounts_management.payment_entry.on_submit_payment_entry",
