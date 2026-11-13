@@ -14,6 +14,10 @@ def execute(filters=None):
 
 def get_columns():
     return [
+        # First column: the Payment Approval itself, on every row (not blanked within a
+        # Source of Funds group like the customer-payment columns after it).
+        {"label": _("Payment Approval"), "fieldname": "name", "fieldtype": "Link",
+         "options": "Payment Approval", "width": 150},
         {"label": _("Source Reference No"), "fieldname": "source_reference_no", "fieldtype": "Data", "width": 130},
         {"label": _("Source of Funds"), "fieldname": "source_of_funds", "fieldtype": "Link",
          "options": "Payment Entry", "width": 130},
@@ -35,8 +39,6 @@ def get_columns():
         {"label": _("Purchase Invoice"), "fieldname": "purchase_invoice", "fieldtype": "Link",
          "options": "Purchase Invoice", "width": 140},
         {"label": _("Amount Paid / Approved"), "fieldname": "amount", "fieldtype": "Currency", "width": 130},
-        {"label": _("Payment Approval"), "fieldname": "name", "fieldtype": "Link",
-         "options": "Payment Approval", "width": 150},
         {"label": _("Date"), "fieldname": "transaction_date", "fieldtype": "Date", "width": 100},
         {"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 110},
         {"label": _("Payment Entry"), "fieldname": "payment_entry", "fieldtype": "Link",

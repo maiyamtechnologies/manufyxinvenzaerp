@@ -1739,3 +1739,7 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
 - Supplier approvals that carry a Sales Order (e.g. PAYAPR-2026-00004): core PE rejects Sales Order allocation against a supplier, so it is not allocated; it is named in the PE remarks ("Sales Order (reference only)").
 - New `validate_sales_order`: for a Customer approval the Sales Order must belong to that customer and not be cancelled.
 - Files: accounts_management/doctype/payment_approval/payment_approval.py.
+
+## 13 Nov 2026 (follow-up 2) — workspace not refreshing, report first column
+- Live workspace still showed "Payment Request": Frappe re-imports a standard Workspace / Workspace Sidebar only when the JSON `modified` is newer than the DB copy, and the earlier rename left `modified` at 2026-10-10. Bumped `modified` to 2026-11-13 in workspace/manufyx, workspace/reports and sidebar/manufyxinvenzaerp JSONs. **Rule: any edit to these JSONs must also bump `modified`, or migrate skips it.**
+- Customer Fund Usage report: first column is now **Payment Approval** (on every row). "Source Reference No" (the reference on the customer's source Payment Entry, e.g. the core inward Payment Request ACC-PRQ-...) moved to second and stays blanked within a Source of Funds group.
