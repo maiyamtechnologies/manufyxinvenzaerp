@@ -69,6 +69,7 @@ class PaymentApproval(Document):
             self.validate_approvers()
         self.validate_amounts()
         self.validate_references()
+        self.validate_sales_order()
         self.set_party_name()
         self.set_payment_accounts()
         self.validate_payment_details()
@@ -187,6 +188,15 @@ class PaymentApproval(Document):
                 frappe.throw(_("{0} {1} is cancelled.").format(doctype, name))
             if supplier != self.party:
                 frappe.throw(_("{0} {1} belongs to supplier {2}, not {3}.").format(doctype, name, supplier, self.party))
+
+    def validate_sales_order(self):
+        if not self.sales_order or self.party_type != "Customer":
+            return
+        customer, docstatus = frappe.db.get_value("Sales Order", self.sales_order, ["customer", "docstatus"])
+        if docstatus == 2:
+            frappe.throw(_("Sales Order {0} is cancelled.").format(self.sales_order))
+        if customer != self.party:
+            frappe.throw(_("Sales Order {0} belongs to customer {1}, not {2}.").format(self.sales_order, customer, self.party))
 
     def set_party_name(self):
         if self.party_type not in ("Supplier", "Customer") or not self.party:
@@ -465,8 +475,20 @@ def make_payment_entry(name):
     elif doc.purchase_order:
         po = frappe.db.get_value("Purchase Order", doc.purchase_order, ["grand_total", "advance_paid"], as_dict=True)
         ref = ("Purchase Order", doc.purchase_order, flt(po.grand_total), flt(po.grand_total) - flt(po.advance_paid))
+    elif doc.sales_order and doc.party_type == "Customer":
+        # Customer paid against a Sales Order (e.g. advance refund): allocate to it, the
+        # same total/outstanding core Payment Entry works out for a Sales Order.
+        so = frappe.db.get_value(
+            "Sales Order", doc.sales_order, ["rounded_total", "grand_total", "advance_paid", "customer"], as_dict=True
+        )
+        total = flt(so.rounded_total) or flt(so.grand_total)
+        ref = ("Sales Order", doc.sales_order, total, total - flt(so.advance_paid))
     else:
         ref = None
+    if doc.sales_order and doc.party_type == "Supplier":
+        # A Sales Order on a supplier payment is information only (core allows no Sales
+        # Order allocation against a supplier), so it is named in the remarks.
+        pe.remarks += " " + _("Sales Order (reference only): {0}").format(doc.sales_order)
     if ref and ref[3] > 0:
         pe.append(
             "references",
