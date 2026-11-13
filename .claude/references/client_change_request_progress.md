@@ -1732,3 +1732,10 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
     `payment_approval_party_fields` copies the old supplier column on sites that already had approvals.
   - Not decided by the sheet, so chosen: all selected approvers must approve (not just the minimum count); approvers may be the
     requester; roles that can create/submit are Accounts User / Accounts Manager.
+
+## 13 Nov 2026 (follow-up) — Payment Approval: Sales Order reference on Create Payment Entry
+- Found on live: PAYAPR-2026-00005 (Customer BHEL-Trichy, SAL-ORD-2026-00002) opened a Payment Entry with an empty Payment References table — `make_payment_entry` only handled Purchase Invoice / Purchase Order.
+- Now: Customer approvals with a Sales Order allocate it on the Payment Entry (total = rounded/grand total, outstanding = total − advance_paid, same as core). Without a Sales Order the PE stays an unallocated advance, as before.
+- Supplier approvals that carry a Sales Order (e.g. PAYAPR-2026-00004): core PE rejects Sales Order allocation against a supplier, so it is not allocated; it is named in the PE remarks ("Sales Order (reference only)").
+- New `validate_sales_order`: for a Customer approval the Sales Order must belong to that customer and not be cancelled.
+- Files: accounts_management/doctype/payment_approval/payment_approval.py.
