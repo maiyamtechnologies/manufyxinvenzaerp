@@ -26,7 +26,7 @@ frappe.query_reports["Customer Fund Usage"] = {
 			options: "Payment Entry",
 			get_query: function () {
 				return {
-					query: "manufyxinvenzaerp.accounts_management.payment_request.payment_entry_query",
+					query: "manufyxinvenzaerp.accounts_management.doctype.payment_approval.payment_approval.payment_entry_query",
 				};
 			},
 		},

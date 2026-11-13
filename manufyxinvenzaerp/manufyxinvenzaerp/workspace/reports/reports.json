@@ -71,7 +71,7 @@
    "doc_view": "",
    "label": "Customer Fund Usage",
    "link_to": "Customer Fund Usage",
-   "report_ref_doctype": "Payment Request",
+   "report_ref_doctype": "Payment Approval",
    "type": "Report"
   }
  ],

@@ -1,0 +1,46 @@
+{
+ "name": "Payment Approval Settings",
+ "issingle": 1,
+ "track_changes": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "fields": [
+  {
+   "fieldname": "min_approvals",
+   "fieldtype": "Select",
+   "label": "Minimum Approvals Required",
+   "options": "2\n3",
+   "default": "2",
+   "reqd": 1,
+   "description": "How many of the selected Directors must approve a Payment Approval before it can be submitted. A request must also name at least this many approvers."
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  }
+ ],
+ "creation": "2026-11-13 10:00:00.000000",
+ "modified": "2026-11-13 10:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "module": "Accounts Management",
+ "engine": "InnoDB",
+ "docstatus": 0,
+ "doctype": "DocType",
+ "index_web_pages_for_search": 1,
+ "field_order": [
+  "min_approvals"
+ ]
+}

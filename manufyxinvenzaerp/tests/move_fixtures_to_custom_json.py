@@ -56,7 +56,6 @@ MODULE_MAP = {
 	"SOE Drawing Detail": "Subcontracting Management",
 	"Material Issue Plan": "Subcontracting Management",
 	# Accounts Management
-	"Payment Request": "Accounts Management",
 	"Payment Entry": "Accounts Management",
 }
 

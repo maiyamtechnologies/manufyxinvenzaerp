@@ -1676,7 +1676,59 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
 - **Payment Request: "SQL functions are not allowed as strings in SELECT"** 🔧 — on live, picking a Source of Funds on a
   supplier Payment Request (ACC-PRQ-2026-00002) blocked save. `get_fund_usage` used `fields=["sum(grand_total) as total"]`,
   which Frappe v16 rejects; now `[{"SUM": "grand_total", "as": "total"}]`
-  (`accounts_management/payment_request.py`). Rule for v16: aggregates in `get_list/get_all` use dict syntax.
+  (`accounts_management/payment_request.py`, since moved into Payment Approval -- see 13 Nov 2026). Rule for v16: aggregates in `get_list/get_all` use dict syntax.
 - **Live Payment Request submit needs an outgoing Email Account** (ACC-PRQ-2026-00001, Inward): ERPNext emails the
   customer on submit; live has no Email Account. Config on live (Tools > Email Account, Enable + Default Outgoing),
   not a code change. Outward (supplier) requests don't send mail.
+
+## 13 Nov 2026
+
+- **Payment Approval -- new doctype; core Payment Request back to stock** 🆕 — driven by the client's "Payment Request sheet".
+  Every Payment Request customization (Payment Type, Source of Funds, the hidden Accounting Dimensions section, the
+  Inward "Create Payment Entry" button, the validate hook, `public/js/payment_request.js`, `create_payment_request_custom_fields`)
+  is removed; Payment Request is now exactly what ERPNext ships. Everything lives in **Payment Approval**
+  (Accounts Management, submittable, `PAYAPR-.YYYY.-`, track changes ON = activity log):
+  - **Request fields (sheet):** Date, Pay to (Supplier), Requested Amount, Project, Sales Order, PO Number, Bill/PI Number,
+    Purpose, Material Type, Department, Requested By (defaults to current user), Payment Type (Advance / Bill / **Due Payment**),
+    Mode of Payment, Remarks, Approved Amount (set by the approver, never above Requested; the Payment Entry uses it).
+  - **Source of Funds** (moved over unchanged): customer Payment Entry link, Total / Already Used / Balance, non-blocking
+    "Fund Balance Exceeded" warning. Already Used counts only **Paid** approvals, using the approved amount.
+  - **Approvals:** Approver 1 mandatory, 2 and 3 optional, each a Link to User limited to the new **Director** role (assigned
+    on migrate by patch `seed_director_role`: thamizhdasan / sanjeeviraja / mohanraj / sathish @manufyx.co.in are created if missing
+    (enabled, System User, no welcome email, **no password** -- set one from the User form) or just given the role if they exist). Each approver
+    gets Approve / Reject buttons (remarks mandatory) and the slot shows "✔ Approved" / "✖ Rejected" with date and remarks.
+    Results are written only through `approve`/`reject` (server checks user + role); edits via form/API are reverted.
+    Changing the amount or supplier after approvals clears them. A rejection blocks submit until **Reset Approvals**.
+    Approvers get an in-app ToDo + notification (no email -- live has no outgoing Email Account) and the ToDo closes on action.
+  - **Submit gate:** Submit button appears only when every selected approver approved; server `before_submit` enforces it.
+    Minimum approvers (2 or 3, default 2) is **Payment Approval Settings** (single doctype); a request must name at least that many.
+  - **Payment Entry:** after submit, "Create Payment Entry" builds a Pay entry (allocated to the PI/PO when named, else an
+    advance), linked via the new Payment Entry field `custom_payment_approval`. Submitting that Payment Entry marks the approval
+    **Paid**; cancelling it returns the approval to Submitted. Hooks in `accounts_management/payment_entry.py`.
+  - **Masters:** *Payment Material Type* (14 values from the sheet, typos fixed: Maintenance, Stationery) and *Payment Department*
+    (Production, Plan, Assets, Etc) are Link doctypes, seeded once by patch `seed_payment_approval_masters`.
+  - **Customer Fund Usage** report now reads Payment Approval (columns: Supplier, Payment Type, PO, PI, Amount, Payment
+    Approval, Date, Status, Payment Entry); only submitted approvals appear.
+  - **Migration:** `migrate_payment_request_to_payment_approval` copies existing Supplier Payment Requests that had a Source of
+    Funds / Payment Type into Payment Approvals (status kept, originals untouched), then deletes the old Custom Fields + the
+    Accounting Dimensions Property Setter. Patches `seed_director_role` (pre-sync) and the two above are in patches.txt.
+  - Workspace/sidebar shortcut "Payment Request" -> "Payment Approval"; ERP Manual Customer Fund Usage text updated.
+  - **Tabs + payment details (follow-up, same day):** form has two tabs -- *Request* and *Approvals* (approver blocks).
+    Mode of Payment, Paid From (bank/cash) and Supplier Account (payable) are **not needed to approve**; they are required
+    from submit onwards. The Submit button opens a Payment Details dialog when any is missing (prefilled from the Mode of
+    Payment's account / the supplier's payable account); "Create Payment Entry" does the same for requests submitted without
+    them (`save_payment_details`; the three fields are allow_on_submit until paid). The Payment Entry is built from these
+    stored accounts. Approvers need no Accounts permissions (payment defaults are skipped during approve/reject).
+  - **Amount changed after approvals:** saving a changed Requested Amount asks "create the approval again?" -- Yes saves the
+    new amount and clears approvals; No restores the previous amount and keeps the approvals. Server still clears approvals
+    on any amount/supplier change that bypasses the form (API/import).
+  - **Party Type (Customer or Supplier):** the approval can pay either. `Supplier`/`Supplier Name` became **Party Type** +
+    **Pay to (Party)** (Dynamic Link) + Party Name. PO Number and Bill/PI Number show only for Supplier (and must belong to that
+    supplier); Sales Order is available for both. **Source of Funds shows only for Supplier** and is **reference only**: it is never
+    allocated or posted in the Payment Entry (no references row, no ledger effect); it is only named in the Payment Entry
+    remarks, and it still tracks the customer receipt's used/balance amount for the form and the report. A Customer approval
+    builds a *Pay* entry to the customer (Debtors account) with no allocation -- i.e. a refund / advance returned; Source of Funds is
+    cleared. "Supplier Account" became **Party Account**. Customer Fund Usage shows Party Type + Party columns. Patch
+    `payment_approval_party_fields` copies the old supplier column on sites that already had approvals.
+  - Not decided by the sheet, so chosen: all selected approvers must approve (not just the minimum count); approvers may be the
+    requester; roles that can create/submit are Accounts User / Accounts Manager.

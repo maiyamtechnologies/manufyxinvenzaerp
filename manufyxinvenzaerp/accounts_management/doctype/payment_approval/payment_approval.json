@@ -1,0 +1,552 @@
+{
+ "name": "Payment Approval",
+ "autoname": "naming_series:",
+ "is_submittable": 1,
+ "track_changes": 1,
+ "title_field": "party_name",
+ "search_fields": "party_name,status,purpose",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "allow_import": 1,
+ "quick_entry": 0,
+ "fields": [
+  {
+   "fieldname": "tab_request",
+   "fieldtype": "Tab Break",
+   "label": "Request"
+  },
+  {
+   "fieldname": "sec_request",
+   "fieldtype": "Section Break",
+   "label": "Request"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "PAYAPR-.YYYY.-",
+   "default": "PAYAPR-.YYYY.-",
+   "reqd": 1,
+   "set_only_once": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1,
+   "remember_last_selected_value": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "cb_request",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "transaction_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "default": "Today",
+   "in_list_view": 0
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Draft\nPending Approval\nApproved\nRejected\nSubmitted\nPaid\nCancelled",
+   "default": "Draft",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 1,
+   "in_list_view": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "payment_type",
+   "fieldtype": "Select",
+   "label": "Payment Type",
+   "options": "Advance Payment\nBill Payment\nDue Payment",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sec_party",
+   "fieldtype": "Section Break",
+   "label": "Pay To"
+  },
+  {
+   "fieldname": "party_type",
+   "fieldtype": "Select",
+   "label": "Party Type",
+   "options": "Supplier\nCustomer",
+   "default": "Supplier",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Dynamic Link",
+   "label": "Pay to (Party)",
+   "options": "party_type",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Data",
+   "label": "Party Name",
+   "read_only": 1,
+   "in_global_search": 1
+  },
+  {
+   "fieldname": "cb_party",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "requested_amount",
+   "fieldtype": "Currency",
+   "label": "Requested Amount",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "approved_amount",
+   "fieldtype": "Currency",
+   "label": "Approved Amount",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 0,
+   "description": "Set by the approver when approving. Cannot exceed the requested amount. The Payment Entry uses this amount."
+  },
+  {
+   "fieldname": "sec_details",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Payment Department",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "material_type",
+   "fieldtype": "Link",
+   "label": "Material Type",
+   "options": "Payment Material Type",
+   "reqd": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "other_material",
+   "fieldtype": "Data",
+   "label": "Other Material (specify)",
+   "depends_on": "eval:doc.material_type==\"Others (to fill manually)\"",
+   "mandatory_depends_on": "eval:doc.material_type==\"Others (to fill manually)\""
+  },
+  {
+   "fieldname": "cb_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project",
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Small Text",
+   "label": "Purpose",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sec_refs",
+   "fieldtype": "Section Break",
+   "label": "References"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "purchase_order",
+   "fieldtype": "Link",
+   "label": "PO Number",
+   "options": "Purchase Order",
+   "depends_on": "eval:doc.party_type==\"Supplier\""
+  },
+  {
+   "fieldname": "cb_refs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_invoice",
+   "fieldtype": "Link",
+   "label": "Bill Number / PI Number",
+   "options": "Purchase Invoice",
+   "depends_on": "eval:doc.party_type==\"Supplier\""
+  },
+  {
+   "fieldname": "sec_funds",
+   "fieldtype": "Section Break",
+   "label": "Source of Funds",
+   "collapsible": 0,
+   "depends_on": "eval:doc.party_type==\"Supplier\"",
+   "description": "Reference only: records which customer receipt funds this payment. No accounting entry is made against it."
+  },
+  {
+   "fieldname": "source_of_funds",
+   "fieldtype": "Link",
+   "label": "Source of Funds (Customer Payment Entry)",
+   "options": "Payment Entry",
+   "description": "Reference only -- not allocated or posted in the Payment Entry."
+  },
+  {
+   "fieldname": "total_customer_payment",
+   "fieldtype": "Currency",
+   "label": "Total Customer Payment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer_payment_date",
+   "fieldtype": "Date",
+   "label": "Customer Payment Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_funds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "already_used_amount",
+   "fieldtype": "Currency",
+   "label": "Already Used Amount",
+   "read_only": 1,
+   "description": "Sum of the final amounts of other Paid Payment Approvals drawing from the same Source of Funds."
+  },
+  {
+   "fieldname": "balance_amount",
+   "fieldtype": "Currency",
+   "label": "Balance Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_payment",
+   "fieldtype": "Section Break",
+   "label": "Payment Details",
+   "description": "Not needed for approval. Collected when the request is submitted, and used to build the Payment Entry."
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Mode of Payment",
+   "options": "Mode of Payment",
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "paid_from",
+   "fieldtype": "Link",
+   "label": "Paid From (Bank / Cash Account)",
+   "options": "Account",
+   "allow_on_submit": 1,
+   "description": "Filled from the Mode of Payment when blank."
+  },
+  {
+   "fieldname": "cb_payment",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "party_account",
+   "fieldtype": "Link",
+   "label": "Party Account",
+   "options": "Account",
+   "allow_on_submit": 1,
+   "description": "Supplier payable / customer receivable account. Filled from the party / company default when blank."
+  },
+  {
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "sec_remarks",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "migrated_from",
+   "fieldtype": "Data",
+   "label": "Migrated From Payment Request",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Payment Approval",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1
+  },
+  {
+   "fieldname": "tab_approvals",
+   "fieldtype": "Tab Break",
+   "label": "Approvals"
+  },
+  {
+   "fieldname": "sec_approvals",
+   "fieldtype": "Section Break",
+   "label": "Approvers"
+  },
+  {
+   "fieldname": "approver_1",
+   "fieldtype": "Link",
+   "label": "Approver 1",
+   "options": "User",
+   "reqd": 1,
+   "in_standard_filter": 1,
+   "description": "Must have the Director role"
+  },
+  {
+   "fieldname": "approver_1_status",
+   "fieldtype": "Data",
+   "label": "Approver 1 Status",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_1_on",
+   "fieldtype": "Datetime",
+   "label": "Approver 1 Approved On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_1_remarks",
+   "fieldtype": "Small Text",
+   "label": "Approver 1 Remarks",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cb_approver_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver_2",
+   "fieldtype": "Link",
+   "label": "Approver 2",
+   "options": "User",
+   "reqd": 0,
+   "in_standard_filter": 0,
+   "description": "Optional"
+  },
+  {
+   "fieldname": "approver_2_status",
+   "fieldtype": "Data",
+   "label": "Approver 2 Status",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_2_on",
+   "fieldtype": "Datetime",
+   "label": "Approver 2 Approved On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_2_remarks",
+   "fieldtype": "Small Text",
+   "label": "Approver 2 Remarks",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cb_approver_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver_3",
+   "fieldtype": "Link",
+   "label": "Approver 3",
+   "options": "User",
+   "reqd": 0,
+   "in_standard_filter": 0,
+   "description": "Optional"
+  },
+  {
+   "fieldname": "approver_3_status",
+   "fieldtype": "Data",
+   "label": "Approver 3 Status",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_3_on",
+   "fieldtype": "Datetime",
+   "label": "Approver 3 Approved On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_3_remarks",
+   "fieldtype": "Small Text",
+   "label": "Approver 3 Remarks",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Accounts User",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Director",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1
+  }
+ ],
+ "creation": "2026-11-13 10:00:00.000000",
+ "modified": "2026-11-13 10:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "module": "Accounts Management",
+ "engine": "InnoDB",
+ "docstatus": 0,
+ "doctype": "DocType",
+ "index_web_pages_for_search": 1,
+ "field_order": [
+  "tab_request",
+  "sec_request",
+  "naming_series",
+  "company",
+  "requested_by",
+  "cb_request",
+  "transaction_date",
+  "status",
+  "payment_type",
+  "sec_party",
+  "party_type",
+  "party",
+  "party_name",
+  "cb_party",
+  "requested_amount",
+  "approved_amount",
+  "sec_details",
+  "department",
+  "material_type",
+  "other_material",
+  "cb_details",
+  "project",
+  "purpose",
+  "sec_refs",
+  "sales_order",
+  "purchase_order",
+  "cb_refs",
+  "purchase_invoice",
+  "sec_funds",
+  "source_of_funds",
+  "total_customer_payment",
+  "customer_payment_date",
+  "cb_funds",
+  "already_used_amount",
+  "balance_amount",
+  "sec_payment",
+  "mode_of_payment",
+  "paid_from",
+  "cb_payment",
+  "party_account",
+  "payment_entry",
+  "sec_remarks",
+  "remarks",
+  "migrated_from",
+  "amended_from",
+  "tab_approvals",
+  "sec_approvals",
+  "approver_1",
+  "approver_1_status",
+  "approver_1_on",
+  "approver_1_remarks",
+  "cb_approver_2",
+  "approver_2",
+  "approver_2_status",
+  "approver_2_on",
+  "approver_2_remarks",
+  "cb_approver_3",
+  "approver_3",
+  "approver_3_status",
+  "approver_3_on",
+  "approver_3_remarks"
+ ]
+}

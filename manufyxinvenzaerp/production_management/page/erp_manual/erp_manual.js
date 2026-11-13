@@ -2191,19 +2191,19 @@ const ERP_MANUAL_REPORTS_CHILDREN = [
 		kicker: "Which customer payment is paying which supplier",
 		purpose:
 			"Ties supplier payments back to the customer money that funded them. A customer's " +
-			"Payment Entry is nominated as a <b>Source of Funds</b> on a supplier Payment Request, " +
+			"Payment Entry is nominated as a <b>Source of Funds</b> on a <b>Payment Approval</b>, " +
 			"and this report shows how much of each customer payment has been drawn down and what " +
 			"is left.",
 		fields: [
 			{ name: "Filters", note: "Customer, Sales Order, Source of Funds, Status, and Group by Customer Payment." },
 			{ name: "Source columns", note: "Source Reference No, Source of Funds, Reference Type, Reference Name, Source Customer, Customer Payment Date, Total Customer Payment, <b>Balance Remaining</b>." },
-			{ name: "Draw columns", note: "Supplier, Payment Type, Against, Grand Total, Payment Request, Transaction Date, Outstanding, Status, PE Created." },
-			{ name: "Source of Funds (on the Payment Request)", note: "Searchable by customer name, Payment Entry name or reference number, and restricted to <b>submitted customer receipts</b> — you cannot nominate a supplier payment or an unsubmitted one as a source." },
-			{ name: "Total Customer Payment / Already Used Amount / Balance Amount", note: "Shown read-only on the Payment Request itself. Already Used is the sum across every other <b>Paid</b> supplier Payment Request drawing on the same source, so the balance reflects real commitments rather than drafts." },
+			{ name: "Draw columns", note: "Supplier, Payment Type, Purchase Order, Purchase Invoice, Amount Paid / Approved, Payment Approval, Date, Status, Payment Entry." },
+			{ name: "Source of Funds (on the Payment Approval)", note: "Searchable by customer name, Payment Entry name or reference number, and restricted to <b>submitted customer receipts</b> — you cannot nominate a supplier payment or an unsubmitted one as a source." },
+			{ name: "Total Customer Payment / Already Used Amount / Balance Amount", note: "Shown read-only on the Payment Approval itself. Already Used is the sum across every other <b>Paid</b> Payment Approval drawing on the same source, so the balance reflects real commitments rather than drafts." },
 		],
 		notes: [
 			"Requesting more than the remaining balance shows an orange <b>Fund Balance Exceeded</b> warning naming the amount, the balance and the source — but it does not block the save. It is there to make an overdraw a deliberate decision, not to prevent one.",
-			"Only Paid requests count against a source. A draft or unpaid request does not reduce the balance.",
+			"Only Paid approvals count against a source. A draft, pending or unpaid approval does not reduce the balance. The report lists submitted approvals only.",
 		],
 	},
 ];

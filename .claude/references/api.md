@@ -5,12 +5,16 @@ _Generated: 2026-10-20 03:36:32_
 All `@frappe.whitelist()` methods. Call from JS:
 `frappe.call({ method: 'manufyxinvenzaerp.<dotted.path>', args: {...} })`
 
-## accounts_management/payment_request.py
+## accounts_management/doctype/payment_approval/payment_approval.py
 
-| Method | Line |
-|--------|------|
-| `@frappe.validate_and_sanitize_search_inputs` | 28 |
-| `get_fund_usage` | 56 |
+| Method | Purpose |
+|--------|---------|
+| `approve(name, remarks, approved_amount)` | Director approves (remarks mandatory) |
+| `reject(name, remarks)` | Director rejects (remarks mandatory) |
+| `reset_approvals(name)` | Clear all approvals on a rejected/pending draft |
+| `make_payment_entry(name)` | Unsaved Pay entry for the approved amount |
+| `get_fund_usage(payment_entry, payment_approval)` | Source of Funds total / used / balance |
+| `payment_entry_query`, `director_query` | Link searches |
 ## data_works/engine.py
 
 | Method | Line |

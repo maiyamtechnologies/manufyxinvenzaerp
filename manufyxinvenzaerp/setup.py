@@ -1689,7 +1689,6 @@ def after_install():
     create_soe_client_script()
     create_material_planning_auto_purchase_fields()
     create_manufacturing_settings_custom_fields()
-    create_payment_request_custom_fields()
     # Finished goods in Kg, counted in Nos per drawing (sep14 FG plan). After the
     # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
     create_fg_sales_custom_fields()
@@ -1760,7 +1759,6 @@ def after_migrate():
     create_soe_client_script()
     create_material_planning_auto_purchase_fields()
     create_manufacturing_settings_custom_fields()
-    create_payment_request_custom_fields()
     # Finished goods in Kg, counted in Nos per drawing (sep14 FG plan). After the
     # SO / BOM / PP / SCO / Batch functions above, which add their share of it.
     create_fg_sales_custom_fields()
@@ -6065,88 +6063,6 @@ def create_material_planning_auto_purchase_fields():
                     "fieldtype": "Button",
                     "label": "Auto Purchase",
                     "insert_after": "custom_auto_purchase_supplier",
-                },
-            ],
-        },
-        update=True,
-    )
-
-
-def create_payment_request_custom_fields():
-    """Payment Type classification, plus (for Supplier/Outward requests) a link to the
-    customer Payment Entry funding this supplier payment, with live balance tracking."""
-    create_custom_fields(
-        {
-            "Payment Request": [
-                {
-                    "fieldname": "custom_payment_type",
-                    "label": "Payment Type",
-                    "fieldtype": "Select",
-                    "options": "Advance Payment\nBill Payment",
-                    "insert_after": "party_account_currency",
-                    "reqd": 1,
-                    "in_standard_filter": 1,
-                },
-                {
-                    "fieldname": "custom_source_of_funds_section",
-                    "fieldtype": "Section Break",
-                    "label": "Source of Funds",
-                    "insert_after": "custom_payment_type",
-                    "depends_on": "eval:doc.party_type=='Supplier'",
-                },
-                {
-                    "fieldname": "custom_source_of_funds",
-                    "label": "Source of Funds (Customer Payment Entry)",
-                    "fieldtype": "Link",
-                    "options": "Payment Entry",
-                    "insert_after": "custom_source_of_funds_section",
-                    "in_standard_filter": 1,
-                    "description": "Search by customer name or reference no. Restricted to "
-                                   "submitted customer receipts (Payment Entry: Receive).",
-                },
-                {
-                    "fieldname": "custom_total_customer_payment",
-                    "label": "Total Customer Payment",
-                    "fieldtype": "Currency",
-                    "fetch_from": "custom_source_of_funds.paid_amount",
-                    "read_only": 1,
-                    "insert_after": "custom_source_of_funds",
-                },
-                {
-                    "fieldname": "custom_customer_payment_date",
-                    "label": "Customer Payment Date",
-                    "fieldtype": "Date",
-                    "fetch_from": "custom_source_of_funds.posting_date",
-                    "read_only": 1,
-                    "insert_after": "custom_total_customer_payment",
-                },
-                {
-                    "fieldname": "custom_source_of_funds_column_break",
-                    "fieldtype": "Column Break",
-                    "insert_after": "custom_customer_payment_date",
-                },
-                {
-                    "fieldname": "custom_already_used_amount",
-                    "label": "Already Used Amount",
-                    "fieldtype": "Currency",
-                    "read_only": 1,
-                    "insert_after": "custom_source_of_funds_column_break",
-                    "description": "Sum of grand_total across other Paid Payment Requests "
-                                   "drawing from the same Source of Funds.",
-                },
-                {
-                    "fieldname": "custom_balance_amount",
-                    "label": "Balance Amount",
-                    "fieldtype": "Currency",
-                    "read_only": 1,
-                    "insert_after": "custom_already_used_amount",
-                },
-                {
-                    "fieldname": "custom_payment_entry_created",
-                    "label": "Payment Entry Created",
-                    "fieldtype": "Check",
-                    "read_only": 1,
-                    "insert_after": "custom_balance_amount",
                 },
             ],
         },

@@ -1,5 +1,23 @@
 {
- "custom_fields": [],
+ "custom_fields": [
+  {
+   "doctype": "Custom Field",
+   "name": "Payment Entry-custom_payment_approval",
+   "dt": "Payment Entry",
+   "fieldname": "custom_payment_approval",
+   "fieldtype": "Link",
+   "options": "Payment Approval",
+   "label": "Payment Approval",
+   "insert_after": "reference_date",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1,
+   "in_standard_filter": 0,
+   "module": null,
+   "is_system_generated": 0,
+   "description": "The Payment Approval this payment was made for"
+  }
+ ],
  "custom_perms": [],
  "doctype": "Payment Entry",
  "links": [
