@@ -354,21 +354,18 @@
    "read_only": 1,
    "no_copy": 1,
    "allow_on_submit": 1,
-   "description": "Approver 1 acts first; after that any other Director can approve."
-  },
-  {
-   "fieldname": "sec_approver_1",
-   "fieldtype": "Section Break",
-   "label": "Approver 1 (approves first)"
+   "description": "Every Director can approve or reject; any two approvals allow submit."
   },
   {
    "fieldname": "approver_1",
    "fieldtype": "Link",
    "label": "Approver 1",
    "options": "User",
-   "reqd": 1,
-   "in_standard_filter": 1,
-   "description": "Must have the Director role. Approves first; the other Directors can approve only after this approval."
+   "reqd": 0,
+   "in_standard_filter": 0,
+   "description": "Filled in automatically by the Director who acts",
+   "read_only": 1,
+   "no_copy": 1
   },
   {
    "fieldname": "approver_1_status",
@@ -394,7 +391,7 @@
   {
    "fieldname": "sec_others",
    "fieldtype": "Section Break",
-   "label": "Other Directors (any one can approve once Approver 1 has)"
+   "label": "Approvals (recorded automatically when a Director approves or rejects)"
   },
   {
    "fieldname": "approver_2",
@@ -428,10 +425,6 @@
    "label": "Approver 2 Remarks",
    "read_only": 1,
    "no_copy": 1
-  },
-  {
-   "fieldname": "cb_approver_3",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "approver_3",
@@ -500,6 +493,14 @@
    "label": "Remarks",
    "read_only": 1,
    "no_copy": 1
+  },
+  {
+   "fieldname": "cb_approver_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sec_others_2",
+   "fieldtype": "Section Break"
   }
  ],
  "permissions": [
@@ -624,17 +625,17 @@
   "approvals_received",
   "cb_summary",
   "pending_with",
-  "sec_approver_1",
+  "sec_others",
   "approver_1",
   "approver_1_status",
   "approver_1_on",
   "approver_1_remarks",
-  "sec_others",
+  "cb_approver_2",
   "approver_2",
   "approver_2_status",
   "approver_2_on",
   "approver_2_remarks",
-  "cb_approver_3",
+  "sec_others_2",
   "approver_3",
   "approver_3_status",
   "approver_3_on",
