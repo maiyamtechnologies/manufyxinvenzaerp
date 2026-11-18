@@ -34,3 +34,4 @@ manufyxinvenzaerp.patches.v16.seed_payment_approval_masters
 manufyxinvenzaerp.patches.v16.migrate_payment_request_to_payment_approval
 manufyxinvenzaerp.patches.v16.payment_approval_party_fields
 manufyxinvenzaerp.patches.v16.payment_approval_requested_by_master
+manufyxinvenzaerp.patches.v16.payment_approval_open_approval

@@ -8,11 +8,11 @@ Funds, Payment Type). Core Payment Request is left exactly as ERPNext ships it; 
 built around a Sales/Purchase document and a payment gateway, neither of which a plain
 "please pay this party" request has.
 
-Flow: the request names one Director as Approver 1 -> Approver 1 approves/rejects first
-(Approve/Reject buttons, remarks mandatory) -> after that ANY other Director can approve
-(the one who acts is recorded in the next free "other approver" slot) -> once Approver 1
-and enough others have approved (minimum in Payment Approval Settings, Approver 1 counts)
-the status becomes Approved and ANY Director (not only the requester) can submit ->
+Flow: once the request is saved, EVERY Director gets Approve/Reject buttons (remarks
+mandatory); nobody is named in advance and there is no fixed order. The Director who acts is
+recorded in the next free approver slot. Once enough Directors have approved (minimum in
+Payment Approval Settings, default 2) the status becomes Approved and ANY Director (not
+only the requester) can submit ->
 "Create Payment Entry" builds the Pay entry -> submitting that Payment Entry marks this
 document Paid (see payment_entry.py).
 """
@@ -23,7 +23,6 @@ from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 APPROVER_SLOTS = (1, 2, 3, 4)
-OTHER_SLOTS = (2, 3, 4)  # filled by whichever other Director acts
 ACCOUNTS_ROLES = {"System Manager", "Accounts Manager", "Accounts User"}
 DIRECTOR_ROLE = "Director"
 
@@ -48,32 +47,24 @@ class PaymentApproval(Document):
         return any(self.slot_status(n) == REJECTED for n, _u in self.selected_approvers())
 
     def is_fully_approved(self):
-        """Approver 1 has approved and, counting Approver 1, enough Directors have."""
-        return (
-            bool(self.approver_1)
-            and self.slot_status(1) == APPROVED
-            and self.approved_count() >= get_min_approvals()
-        )
+        """Enough Directors have approved (and nobody rejected)."""
+        return self.approved_count() >= get_min_approvals()
 
     def slot_of(self, user):
         return next((n for n, u in self.selected_approvers() if u == user), None)
 
     def free_slot(self):
         """Slot for a Director who is not yet on the document: the first empty one."""
-        for n in OTHER_SLOTS:
-            if not self.get(f"approver_{n}"):
-                return n
-        return next((n for n in OTHER_SLOTS if self.slot_status(n) == PENDING), None)
+        return next((n for n in APPROVER_SLOTS if not self.get(f"approver_{n}")), None)
 
     @property
     def final_amount(self):
         return flt(self.approved_amount) or flt(self.requested_amount)
 
     def clear_slot(self, n):
-        if n in OTHER_SLOTS:
-            # Other slots only exist because a Director acted: clearing frees the slot.
-            self.set(f"approver_{n}", None)
-        self.set(f"approver_{n}_status", PENDING if self.get(f"approver_{n}") else None)
+        # A slot only exists because a Director acted: clearing frees it.
+        self.set(f"approver_{n}", None)
+        self.set(f"approver_{n}_status", None)
         self.set(f"approver_{n}_on", None)
         self.set(f"approver_{n}_remarks", None)
 
@@ -107,8 +98,7 @@ class PaymentApproval(Document):
         if not self.is_fully_approved():
             frappe.throw(
                 _(
-                    "Approver 1 and enough other Directors must approve before this can be submitted "
-                    "({0} approved; {1} needed including Approver 1)."
+                    "Enough Directors must approve before this can be submitted ({0} approved; {1} needed)."
                 ).format(self.approved_count(), get_min_approvals()),
                 title=_("Approval Pending"),
             )
@@ -142,8 +132,11 @@ class PaymentApproval(Document):
 
     # -------------------------------------------------------------- validation
     def validate_approvers(self):
-        if not self.approver_1:
-            frappe.throw(_("Approver 1 is required."))
+        # Approver slots are filled only when a Director acts; a user without a decision
+        # (e.g. an old request that named Approver 1 in advance) is dropped.
+        for n in APPROVER_SLOTS:
+            if self.get(f"approver_{n}") and self.slot_status(n) == PENDING:
+                self.clear_slot(n)
         selected = self.selected_approvers()
         users = [u for _n, u in selected]
         if len(users) != len(set(users)):
@@ -154,8 +147,6 @@ class PaymentApproval(Document):
         for n in APPROVER_SLOTS:
             if not self.get(f"approver_{n}"):
                 self.clear_slot(n)
-            elif not self.get(f"approver_{n}_status"):
-                self.set(f"approver_{n}_status", PENDING)
 
     def protect_approval_fields(self):
         """Approval results may only be written by approve()/reject()/reset_approvals().
@@ -165,21 +156,15 @@ class PaymentApproval(Document):
         if self.flags.approval_action:
             return
         if not before:
-            for n in OTHER_SLOTS:
-                self.set(f"approver_{n}", None)
             for n in APPROVER_SLOTS:
-                self.set(f"approver_{n}_on", None)
-                self.set(f"approver_{n}_remarks", None)
-                self.set(f"approver_{n}_status", PENDING if self.get(f"approver_{n}") else None)
+                self.clear_slot(n)
             self.approved_amount = 0
             return
 
+        # Nobody is chosen by the requester: the slots record who acted.
         for n in APPROVER_SLOTS:
-            for suffix in ("status", "on", "remarks"):
-                self.set(f"approver_{n}_{suffix}", before.get(f"approver_{n}_{suffix}"))
-        # Only Approver 1 is chosen by the requester; the other slots record who acted.
-        for n in OTHER_SLOTS:
-            self.set(f"approver_{n}", before.get(f"approver_{n}"))
+            for suffix in ("", "_status", "_on", "_remarks"):
+                self.set(f"approver_{n}{suffix}", before.get(f"approver_{n}{suffix}"))
         self.approved_amount = before.approved_amount
 
         had_action = any(before.get(f"approver_{n}_status") in (APPROVED, REJECTED) for n in APPROVER_SLOTS)
@@ -192,8 +177,6 @@ class PaymentApproval(Document):
             frappe.msgprint(
                 _("The amount or party changed, so all earlier approvals were cleared."), indicator="orange", alert=True
             )
-        elif before.approver_1 != self.approver_1:
-            self.clear_slot(1)
 
     def validate_amounts(self):
         if flt(self.requested_amount) <= 0:
@@ -303,10 +286,8 @@ class PaymentApproval(Document):
             self.status = "Rejected"
         elif self.is_fully_approved():
             self.status = "Approved"
-        elif self.approver_1:
-            self.status = "Pending Approval"
         else:
-            self.status = "Draft"
+            self.status = "Pending Approval"
 
     def set_approval_summary(self):
         """Stored (not computed on read) so the list view can filter on them:
@@ -317,13 +298,10 @@ class PaymentApproval(Document):
 
     # ------------------------------------------------------ ToDo / notification
     def pending_approver_users(self):
-        """Who is expected to approve next: Approver 1 first; once Approver 1 has
-        approved, every other Director who has not acted yet (any one of them will do).
-        Nobody once the request is fully approved or rejected."""
-        if self.docstatus != 0 or self.is_rejected() or self.is_fully_approved() or not self.approver_1:
+        """Every Director who has not acted yet (any of them can approve). Nobody once the
+        request is fully approved or rejected."""
+        if self.docstatus != 0 or self.is_rejected() or self.is_fully_approved():
             return []
-        if self.slot_status(1) == PENDING:
-            return [self.approver_1]
         acted = {u for n, u in self.selected_approvers() if self.slot_status(n) != PENDING}
         return [u for u in get_directors() if u not in acted]
 
@@ -385,7 +363,7 @@ class PaymentApproval(Document):
 
 # ---------------------------------------------------------------------- settings
 def get_min_approvals():
-    """Approvals needed before submit, counting Approver 1."""
+    """Approvals needed before submit."""
     return cint(frappe.db.get_single_value("Payment Approval Settings", "min_approvals")) or 2
 
 
@@ -428,17 +406,10 @@ def _record_decision(doc, remarks, result, approved_amount):
     slot = doc.slot_of(user)
     if slot and doc.slot_status(slot) != PENDING:
         frappe.throw(_("You have already {0} this.").format(_("approved") if doc.slot_status(slot) == APPROVED else _("rejected")))
-    if slot != 1:
-        # Everyone except Approver 1 waits for Approver 1, then any Director may act.
-        if doc.slot_status(1) != APPROVED:
-            frappe.throw(
-                _("Approver 1 ({0}) must approve first.").format(frappe.db.get_value("User", doc.approver_1, "full_name") or doc.approver_1),
-                title=_("Approver 1 Pending"),
-            )
+    if not slot:
+        slot = doc.free_slot()
         if not slot:
-            slot = doc.free_slot()
-            if not slot:
-                frappe.throw(_("All approver slots are already used."))
+            frappe.throw(_("All approver slots are already used."))
 
     doc.flags.approval_action = True
     # An approver needs no Accounts permissions: payment accounts are not touched here.
@@ -492,7 +463,7 @@ def submit_approval(name, mode_of_payment=None, paid_from=None, party_account=No
     if doc.docstatus != 0:
         frappe.throw(_("This Payment Approval is already submitted."))
     if not doc.is_fully_approved():
-        frappe.throw(_("It cannot be submitted until Approver 1 and enough other Directors have approved."), title=_("Approval Pending"))
+        frappe.throw(_("It cannot be submitted until enough Directors have approved."), title=_("Approval Pending"))
 
     doc.flags.approval_action = True
     doc.flags.ignore_permissions = True
