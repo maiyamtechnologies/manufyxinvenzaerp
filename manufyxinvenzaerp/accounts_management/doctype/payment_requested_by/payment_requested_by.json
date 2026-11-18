@@ -1,0 +1,95 @@
+{
+ "name": "Payment Requested By",
+ "autoname": "field:requester_name",
+ "allow_rename": 1,
+ "istable": 0,
+ "quick_entry": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 0,
+ "search_fields": "requester_name,user",
+ "fields": [
+  {
+   "fieldname": "requester_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Person who asked for the payment (need not be a system user)"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "System User",
+   "options": "User",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Optional. When set, new Payment Approvals raised by this user default to this name."
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Accounts Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Accounts User",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "report": 1,
+   "print": 1,
+   "email": 1,
+   "share": 1
+  },
+  {
+   "role": "Desk User",
+   "read": 1,
+   "create": 1,
+   "print": 1,
+   "email": 1
+  },
+  {
+   "role": "Director",
+   "read": 1,
+   "report": 1,
+   "print": 1,
+   "email": 1
+  }
+ ],
+ "creation": "2026-11-18 10:00:00.000000",
+ "modified": "2026-11-18 10:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "module": "Accounts Management",
+ "engine": "InnoDB",
+ "docstatus": 0,
+ "doctype": "DocType",
+ "index_web_pages_for_search": 1,
+ "field_order": [
+  "requester_name",
+  "user"
+ ]
+}

@@ -42,7 +42,7 @@
    "fieldname": "requested_by",
    "fieldtype": "Link",
    "label": "Requested By",
-   "options": "User",
+   "options": "Payment Requested By",
    "reqd": 1,
    "in_standard_filter": 1
   },
@@ -205,6 +205,13 @@
    "depends_on": "eval:doc.party_type==\"Supplier\""
   },
   {
+   "fieldname": "party_bill_no",
+   "fieldtype": "Data",
+   "label": "Party Bill Number",
+   "depends_on": "eval:doc.party_type==\"Supplier\"",
+   "description": "The bill number printed on the party's own invoice"
+  },
+  {
    "fieldname": "sec_funds",
    "fieldtype": "Section Break",
    "label": "Source of Funds",
@@ -324,7 +331,35 @@
   {
    "fieldname": "sec_approvals",
    "fieldtype": "Section Break",
-   "label": "Approvers"
+   "label": "Approval Summary"
+  },
+  {
+   "fieldname": "approvals_received",
+   "fieldtype": "Int",
+   "label": "Approvals Received",
+   "read_only": 1,
+   "no_copy": 1,
+   "default": "0",
+   "in_list_view": 1,
+   "allow_on_submit": 1
+  },
+  {
+   "fieldname": "cb_summary",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pending_with",
+   "fieldtype": "Small Text",
+   "label": "Waiting For (users yet to approve)",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "description": "Approver 1 acts first; after that any other Director can approve."
+  },
+  {
+   "fieldname": "sec_approver_1",
+   "fieldtype": "Section Break",
+   "label": "Approver 1 (approves first)"
   },
   {
    "fieldname": "approver_1",
@@ -333,7 +368,7 @@
    "options": "User",
    "reqd": 1,
    "in_standard_filter": 1,
-   "description": "Must have the Director role"
+   "description": "Must have the Director role. Approves first; the other Directors can approve only after this approval."
   },
   {
    "fieldname": "approver_1_status",
@@ -357,8 +392,9 @@
    "no_copy": 1
   },
   {
-   "fieldname": "cb_approver_2",
-   "fieldtype": "Column Break"
+   "fieldname": "sec_others",
+   "fieldtype": "Section Break",
+   "label": "Other Directors (any one can approve once Approver 1 has)"
   },
   {
    "fieldname": "approver_2",
@@ -367,7 +403,10 @@
    "options": "User",
    "reqd": 0,
    "in_standard_filter": 0,
-   "description": "Optional"
+   "description": "Filled in automatically by the Director who acts",
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 0
   },
   {
    "fieldname": "approver_2_status",
@@ -401,7 +440,9 @@
    "options": "User",
    "reqd": 0,
    "in_standard_filter": 0,
-   "description": "Optional"
+   "read_only": 1,
+   "no_copy": 1,
+   "allow_on_submit": 0
   },
   {
    "fieldname": "approver_3_status",
@@ -421,6 +462,42 @@
    "fieldname": "approver_3_remarks",
    "fieldtype": "Small Text",
    "label": "Approver 3 Remarks",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cb_approver_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver_4",
+   "fieldtype": "Link",
+   "label": "Approver 4",
+   "options": "User",
+   "reqd": 0,
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 0,
+   "allow_on_submit": 0
+  },
+  {
+   "fieldname": "approver_4_status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_4_on",
+   "fieldtype": "Datetime",
+   "label": "Date",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "approver_4_remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks",
    "read_only": 1,
    "no_copy": 1
   }
@@ -475,10 +552,19 @@
    "print": 1,
    "email": 1,
    "export": 1
+  },
+  {
+   "role": "Desk User",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "if_owner": 1,
+   "print": 1,
+   "email": 1
   }
  ],
  "creation": "2026-11-13 10:00:00.000000",
- "modified": "2026-11-13 10:00:00.000000",
+ "modified": "2026-11-18 10:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "module": "Accounts Management",
@@ -515,6 +601,7 @@
   "purchase_order",
   "cb_refs",
   "purchase_invoice",
+  "party_bill_no",
   "sec_funds",
   "source_of_funds",
   "total_customer_payment",
@@ -534,11 +621,15 @@
   "amended_from",
   "tab_approvals",
   "sec_approvals",
+  "approvals_received",
+  "cb_summary",
+  "pending_with",
+  "sec_approver_1",
   "approver_1",
   "approver_1_status",
   "approver_1_on",
   "approver_1_remarks",
-  "cb_approver_2",
+  "sec_others",
   "approver_2",
   "approver_2_status",
   "approver_2_on",
@@ -547,6 +638,11 @@
   "approver_3",
   "approver_3_status",
   "approver_3_on",
-  "approver_3_remarks"
+  "approver_3_remarks",
+  "cb_approver_4",
+  "approver_4",
+  "approver_4_status",
+  "approver_4_on",
+  "approver_4_remarks"
  ]
 }
