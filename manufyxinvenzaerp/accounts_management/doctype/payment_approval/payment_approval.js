@@ -58,6 +58,26 @@ function pa_account_filters(frm, kind) {
 		: { company: frm.doc.company, is_group: 0 };
 }
 
+// Directors submit approved requests but have no Account / Mode of Payment permission, so
+// the dialog searches through server queries instead of the standard link search.
+function pa_account_query(frm, kind) {
+	return { query: `${PA_METHOD}.account_query`, filters: { company: frm.doc.company, kind } };
+}
+
+// Who may act next on this draft: Approver 1 first, then any other Director who has not acted.
+function pa_my_turn(doc) {
+	if (doc.docstatus !== 0 || doc.status === "Rejected" || !frappe.user.has_role("Director")) return false;
+	const me = frappe.session.user;
+	if (doc.approver_1 === me) return !doc.approver_1_status || doc.approver_1_status === "Pending";
+	if (doc.approver_1_status !== PA_APPROVED) return false;
+	const slot = [2, 3, 4].find((n) => doc[`approver_${n}`] === me);
+	return !slot || !doc[`approver_${slot}_status`] || doc[`approver_${slot}_status`] === "Pending";
+}
+
+function pa_can_submit(frm) {
+	return frappe.user.has_role("Director") || frm.perm[0].submit;
+}
+
 // Payment Details are not needed to approve, only from submit onwards. This collects the
 // missing ones in a dialog (prefilled from the Mode of Payment / party defaults) and
 // hands the result to `done`.
@@ -72,6 +92,7 @@ function pa_ask_payment_details(frm, done) {
 				options: "Mode of Payment",
 				reqd: 1,
 				default: frm.doc.mode_of_payment,
+				get_query: () => ({ query: `${PA_METHOD}.mode_of_payment_query` }),
 				onchange() {
 					const mop = d.get_value("mode_of_payment");
 					if (!mop) return;
@@ -93,7 +114,7 @@ function pa_ask_payment_details(frm, done) {
 				options: "Account",
 				reqd: 1,
 				default: frm.doc.paid_from,
-				get_query: () => ({ filters: pa_account_filters(frm, "bank") }),
+				get_query: () => pa_account_query(frm, "bank"),
 			},
 			{
 				fieldname: "party_account",
@@ -102,7 +123,7 @@ function pa_ask_payment_details(frm, done) {
 				options: "Account",
 				reqd: 1,
 				default: frm.doc.party_account,
-				get_query: () => ({ filters: pa_account_filters(frm, "party") }),
+				get_query: () => pa_account_query(frm, "party"),
 			},
 		],
 		primary_action_label: __("Continue"),
@@ -131,16 +152,15 @@ function pa_payment_details_missing(doc) {
 }
 
 function pa_has_approval_activity(doc) {
-	return [1, 2, 3].some((n) => [PA_APPROVED, PA_REJECTED].includes(doc[`approver_${n}_status`]));
+	return [1, 2, 3, 4].some((n) => [PA_APPROVED, PA_REJECTED].includes(doc[`approver_${n}_status`]));
 }
 
 frappe.ui.form.on("Payment Approval", {
 	setup(frm) {
 		frm.set_query("paid_from", () => ({ filters: pa_account_filters(frm, "bank") }));
 		frm.set_query("party_account", () => ({ filters: pa_account_filters(frm, "party") }));
-		["approver_1", "approver_2", "approver_3"].forEach((f) => {
-			frm.set_query(f, () => ({ query: `${PA_METHOD}.director_query` }));
-		});
+		// Only Approver 1 is chosen; the other Directors are recorded when they act.
+		frm.set_query("approver_1", () => ({ query: `${PA_METHOD}.director_query` }));
 		frm.set_query("source_of_funds", () => ({ query: `${PA_METHOD}.payment_entry_query` }));
 		frm.set_query("purchase_order", () => ({ filters: { supplier: frm.doc.party, docstatus: 1 } }));
 		frm.set_query("purchase_invoice", () => ({ filters: { supplier: frm.doc.party, docstatus: 1 } }));
@@ -148,8 +168,11 @@ frappe.ui.form.on("Payment Approval", {
 	},
 
 	onload(frm) {
-		if (frm.is_new()) {
-			frm.set_value("requested_by", frappe.session.user);
+		if (frm.is_new() && !frm.doc.requested_by) {
+			frappe.call({
+				method: `${PA_METHOD}.get_default_requester`,
+				callback: (r) => r.message && !frm.doc.requested_by && frm.set_value("requested_by", r.message),
+			});
 		}
 	},
 
@@ -159,25 +182,24 @@ frappe.ui.form.on("Payment Approval", {
 		if (!frm.is_dirty()) frm._pa_saved_amount = doc.requested_amount;
 
 		if (doc.docstatus === 0 && !frm.is_dirty()) {
-			const slots = [1, 2, 3].filter((n) => doc[`approver_${n}`] === frappe.session.user);
-			const my_turn = slots.some((n) => !doc[`approver_${n}_status`] || doc[`approver_${n}_status`] === "Pending");
-
-			if (my_turn && doc.status !== "Rejected") {
+			if (pa_my_turn(doc)) {
 				frm.add_custom_button(__("Approve"), () => pa_act(frm, "approve")).addClass("btn-primary");
 				frm.add_custom_button(__("Reject"), () => pa_act(frm, "reject"));
 			}
 
-			if (doc.status === "Approved") {
-				// Every selected approver has approved: only now is Submit offered.
+			if (doc.status === "Approved" && pa_can_submit(frm)) {
+				// Approver 1 and enough other Directors approved: any Director may submit.
 				frm.page.set_primary_action(__("Submit"), () => {
-					if (!pa_payment_details_missing(doc)) return frm.savesubmit();
-					pa_ask_payment_details(frm, (values) => {
-						frm.set_value({
-							mode_of_payment: values.mode_of_payment,
-							paid_from: values.paid_from,
-							party_account: values.party_account,
-						}).then(() => frm.savesubmit());
-					});
+					const submit = (values) =>
+						frappe.call({
+							method: `${PA_METHOD}.submit_approval`,
+							args: { name: doc.name, ...(values || {}) },
+							freeze: true,
+							freeze_message: __("Submitting..."),
+							callback: (r) => !r.exc && frm.reload_doc(),
+						});
+					if (!pa_payment_details_missing(doc)) return submit();
+					pa_ask_payment_details(frm, submit);
 				});
 			} else {
 				frm.page.clear_primary_action();
@@ -196,15 +218,18 @@ frappe.ui.form.on("Payment Approval", {
 				});
 			}
 
-			const done = [1, 2, 3].filter((n) => doc[`approver_${n}`]).length;
-			const approved = [1, 2, 3].filter((n) => doc[`approver_${n}_status`] === PA_APPROVED).length;
 			if (doc.status === "Pending Approval") {
 				frm.dashboard.set_headline_alert(
-					__("{0} of {1} approvals received", [approved, done]),
+					doc.approver_1_status === PA_APPROVED
+						? __("{0} approval(s) received. Any other Director can approve now. Waiting for: {1}", [
+								doc.approvals_received || 0,
+								doc.pending_with || "-",
+						  ])
+						: __("Waiting for Approver 1 ({0}) to approve first", [doc.approver_1]),
 					"orange"
 				);
 			} else if (doc.status === "Approved") {
-				frm.dashboard.set_headline_alert(__("Fully approved — ready to submit"), "green");
+				frm.dashboard.set_headline_alert(__("Approved — any Director can submit it now"), "green");
 			} else if (doc.status === "Rejected") {
 				frm.dashboard.set_headline_alert(__("Rejected"), "red");
 			}

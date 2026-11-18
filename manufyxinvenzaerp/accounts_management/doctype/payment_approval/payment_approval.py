@@ -8,9 +8,11 @@ Funds, Payment Type). Core Payment Request is left exactly as ERPNext ships it; 
 built around a Sales/Purchase document and a payment gateway, neither of which a plain
 "please pay this party" request has.
 
-Flow: request is saved with 1-3 Director approvers -> each approver approves/rejects
-with remarks (Approve/Reject buttons) -> once every selected approver has approved (and
-the minimum in Payment Approval Settings is met) the document can be submitted ->
+Flow: the request names one Director as Approver 1 -> Approver 1 approves/rejects first
+(Approve/Reject buttons, remarks mandatory) -> after that ANY other Director can approve
+(the one who acts is recorded in the next free "other approver" slot) -> once Approver 1
+and enough others have approved (minimum in Payment Approval Settings, Approver 1 counts)
+the status becomes Approved and ANY Director (not only the requester) can submit ->
 "Create Payment Entry" builds the Pay entry -> submitting that Payment Entry marks this
 document Paid (see payment_entry.py).
 """
@@ -20,7 +22,9 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
-APPROVER_SLOTS = (1, 2, 3)
+APPROVER_SLOTS = (1, 2, 3, 4)
+OTHER_SLOTS = (2, 3, 4)  # filled by whichever other Director acts
+ACCOUNTS_ROLES = {"System Manager", "Accounts Manager", "Accounts User"}
 DIRECTOR_ROLE = "Director"
 
 PENDING = "Pending"
@@ -44,18 +48,31 @@ class PaymentApproval(Document):
         return any(self.slot_status(n) == REJECTED for n, _u in self.selected_approvers())
 
     def is_fully_approved(self):
-        selected = self.selected_approvers()
+        """Approver 1 has approved and, counting Approver 1, enough Directors have."""
         return (
-            bool(selected)
-            and all(self.slot_status(n) == APPROVED for n, _u in selected)
-            and len(selected) >= get_min_approvals()
+            bool(self.approver_1)
+            and self.slot_status(1) == APPROVED
+            and self.approved_count() >= get_min_approvals()
         )
+
+    def slot_of(self, user):
+        return next((n for n, u in self.selected_approvers() if u == user), None)
+
+    def free_slot(self):
+        """Slot for a Director who is not yet on the document: the first empty one."""
+        for n in OTHER_SLOTS:
+            if not self.get(f"approver_{n}"):
+                return n
+        return next((n for n in OTHER_SLOTS if self.slot_status(n) == PENDING), None)
 
     @property
     def final_amount(self):
         return flt(self.approved_amount) or flt(self.requested_amount)
 
     def clear_slot(self, n):
+        if n in OTHER_SLOTS:
+            # Other slots only exist because a Director acted: clearing frees the slot.
+            self.set(f"approver_{n}", None)
         self.set(f"approver_{n}_status", PENDING if self.get(f"approver_{n}") else None)
         self.set(f"approver_{n}_on", None)
         self.set(f"approver_{n}_remarks", None)
@@ -63,7 +80,12 @@ class PaymentApproval(Document):
     # --------------------------------------------------------------- lifecycle
     def validate(self):
         self.company = self.company or frappe.defaults.get_user_default("Company") or frappe.defaults.get_global_default("company")
-        self.requested_by = self.requested_by or frappe.session.user
+        if not self.requested_by:
+            from manufyxinvenzaerp.accounts_management.doctype.payment_requested_by.payment_requested_by import (
+                get_or_create_for_user,
+            )
+
+            self.requested_by = get_or_create_for_user(frappe.session.user)
         if self.docstatus == 0:
             self.protect_approval_fields()
             self.validate_approvers()
@@ -75,6 +97,7 @@ class PaymentApproval(Document):
         self.validate_payment_details()
         self.set_fund_usage()
         self.set_status()
+        self.set_approval_summary()
         if not self.flags.approval_action:
             self.warn_fund_balance()
 
@@ -83,9 +106,10 @@ class PaymentApproval(Document):
             frappe.throw(_("This Payment Approval was rejected and cannot be submitted."))
         if not self.is_fully_approved():
             frappe.throw(
-                _("Every selected approver must approve before this can be submitted ({0} of {1} approved; minimum {2}).").format(
-                    self.approved_count(), len(self.selected_approvers()), get_min_approvals()
-                ),
+                _(
+                    "Approver 1 and enough other Directors must approve before this can be submitted "
+                    "({0} approved; {1} needed including Approver 1)."
+                ).format(self.approved_count(), get_min_approvals()),
                 title=_("Approval Pending"),
             )
         self.require_payment_details()
@@ -95,6 +119,8 @@ class PaymentApproval(Document):
     def before_update_after_submit(self):
         # Frappe runs validate() only on drafts; the Payment Details stay editable after
         # submit (until paid), so they need the same checks here.
+        if not (self.flags.ignore_permissions or ACCOUNTS_ROLES & set(frappe.get_roles())):
+            frappe.throw(_("Only Accounts users can change a submitted Payment Approval."), frappe.PermissionError)
         self.set_payment_accounts()
         self.validate_payment_details()
 
@@ -116,15 +142,12 @@ class PaymentApproval(Document):
 
     # -------------------------------------------------------------- validation
     def validate_approvers(self):
+        if not self.approver_1:
+            frappe.throw(_("Approver 1 is required."))
         selected = self.selected_approvers()
         users = [u for _n, u in selected]
         if len(users) != len(set(users)):
             frappe.throw(_("The same user cannot be selected as approver more than once."))
-        minimum = get_min_approvals()
-        if len(users) < minimum:
-            frappe.throw(
-                _("Select at least {0} approvers (Payment Approval Settings > Minimum Approvals Required).").format(minimum)
-            )
         for n, user in selected:
             if DIRECTOR_ROLE not in frappe.get_roles(user):
                 frappe.throw(_("Approver {0}: {1} does not have the {2} role.").format(n, user, DIRECTOR_ROLE))
@@ -142,6 +165,8 @@ class PaymentApproval(Document):
         if self.flags.approval_action:
             return
         if not before:
+            for n in OTHER_SLOTS:
+                self.set(f"approver_{n}", None)
             for n in APPROVER_SLOTS:
                 self.set(f"approver_{n}_on", None)
                 self.set(f"approver_{n}_remarks", None)
@@ -152,6 +177,9 @@ class PaymentApproval(Document):
         for n in APPROVER_SLOTS:
             for suffix in ("status", "on", "remarks"):
                 self.set(f"approver_{n}_{suffix}", before.get(f"approver_{n}_{suffix}"))
+        # Only Approver 1 is chosen by the requester; the other slots record who acted.
+        for n in OTHER_SLOTS:
+            self.set(f"approver_{n}", before.get(f"approver_{n}"))
         self.approved_amount = before.approved_amount
 
         had_action = any(before.get(f"approver_{n}_status") in (APPROVED, REJECTED) for n in APPROVER_SLOTS)
@@ -164,10 +192,8 @@ class PaymentApproval(Document):
             frappe.msgprint(
                 _("The amount or party changed, so all earlier approvals were cleared."), indicator="orange", alert=True
             )
-        else:
-            for n in APPROVER_SLOTS:
-                if before.get(f"approver_{n}") != self.get(f"approver_{n}"):
-                    self.clear_slot(n)
+        elif before.approver_1 != self.approver_1:
+            self.clear_slot(1)
 
     def validate_amounts(self):
         if flt(self.requested_amount) <= 0:
@@ -208,6 +234,8 @@ class PaymentApproval(Document):
         """Fill the bank/cash and party accounts from the Mode of Payment and the
         party, but only the blanks -- anything the user chose stays."""
         if self.flags.skip_payment_defaults:
+            return
+        if self.paid_from and self.party_account:
             return
         defaults = get_payment_defaults(self.company, self.party_type, self.party, self.mode_of_payment)
         self.paid_from = self.paid_from or defaults.get("paid_from")
@@ -275,16 +303,29 @@ class PaymentApproval(Document):
             self.status = "Rejected"
         elif self.is_fully_approved():
             self.status = "Approved"
-        elif self.selected_approvers():
+        elif self.approver_1:
             self.status = "Pending Approval"
         else:
             self.status = "Draft"
 
+    def set_approval_summary(self):
+        """Stored (not computed on read) so the list view can filter on them:
+        `pending_with` holds the user ids still expected to approve, which is what the
+        "Pending My Approval" filter matches."""
+        self.approvals_received = self.approved_count()
+        self.pending_with = ", ".join(self.pending_approver_users()) or None
+
     # ------------------------------------------------------ ToDo / notification
     def pending_approver_users(self):
-        if self.docstatus != 0 or self.is_rejected():
+        """Who is expected to approve next: Approver 1 first; once Approver 1 has
+        approved, every other Director who has not acted yet (any one of them will do).
+        Nobody once the request is fully approved or rejected."""
+        if self.docstatus != 0 or self.is_rejected() or self.is_fully_approved() or not self.approver_1:
             return []
-        return [u for n, u in self.selected_approvers() if self.slot_status(n) == PENDING]
+        if self.slot_status(1) == PENDING:
+            return [self.approver_1]
+        acted = {u for n, u in self.selected_approvers() if self.slot_status(n) != PENDING}
+        return [u for u in get_directors() if u not in acted]
 
     def sync_assignments(self):
         """Keep one open ToDo per approver who still has to act, so the request shows
@@ -344,7 +385,21 @@ class PaymentApproval(Document):
 
 # ---------------------------------------------------------------------- settings
 def get_min_approvals():
+    """Approvals needed before submit, counting Approver 1."""
     return cint(frappe.db.get_single_value("Payment Approval Settings", "min_approvals")) or 2
+
+
+def get_directors():
+    """Enabled users holding the Director role."""
+    return frappe.db.sql(
+        """
+        SELECT u.name FROM `tabUser` u
+        INNER JOIN `tabHas Role` hr ON hr.parent = u.name AND hr.parenttype = 'User'
+        WHERE hr.role = %s AND u.enabled = 1 ORDER BY u.full_name
+        """,
+        DIRECTOR_ROLE,
+        pluck="name",
+    )
 
 
 # --------------------------------------------------------------------- approvals
@@ -366,17 +421,29 @@ def _record_decision(doc, remarks, result, approved_amount):
     if DIRECTOR_ROLE not in frappe.get_roles():
         frappe.throw(_("Only users with the {0} role can approve.").format(DIRECTOR_ROLE), frappe.PermissionError)
 
-    slot = next((n for n, u in doc.selected_approvers() if u == frappe.session.user), None)
-    if not slot:
-        frappe.throw(_("You are not an approver on this Payment Approval."), frappe.PermissionError)
-    if doc.slot_status(slot) != PENDING:
-        frappe.throw(_("You have already {0} this.").format(_("approved") if doc.slot_status(slot) == APPROVED else _("rejected")))
+    user = frappe.session.user
     if doc.is_rejected():
         frappe.throw(_("This Payment Approval was rejected. Reset approvals to start again."))
+
+    slot = doc.slot_of(user)
+    if slot and doc.slot_status(slot) != PENDING:
+        frappe.throw(_("You have already {0} this.").format(_("approved") if doc.slot_status(slot) == APPROVED else _("rejected")))
+    if slot != 1:
+        # Everyone except Approver 1 waits for Approver 1, then any Director may act.
+        if doc.slot_status(1) != APPROVED:
+            frappe.throw(
+                _("Approver 1 ({0}) must approve first.").format(frappe.db.get_value("User", doc.approver_1, "full_name") or doc.approver_1),
+                title=_("Approver 1 Pending"),
+            )
+        if not slot:
+            slot = doc.free_slot()
+            if not slot:
+                frappe.throw(_("All approver slots are already used."))
 
     doc.flags.approval_action = True
     # An approver needs no Accounts permissions: payment accounts are not touched here.
     doc.flags.skip_payment_defaults = True
+    doc.set(f"approver_{slot}", user)
     doc.set(f"approver_{slot}_status", result)
     doc.set(f"approver_{slot}_on", now_datetime())
     doc.set(f"approver_{slot}_remarks", remarks)
@@ -397,7 +464,9 @@ def _record_decision(doc, remarks, result, approved_amount):
     if doc.owner and doc.owner != frappe.session.user:
         doc.notify(doc.owner, _("{0} {1} Payment Approval {2}").format(frappe.session.user, verb, doc.name))
     if doc.status == "Approved":
-        doc.notify(doc.owner, _("Payment Approval {0} is fully approved and can be submitted").format(doc.name))
+        # Any Director can submit, so tell all of them (and the requester).
+        for u in {doc.owner, *get_directors()} - {frappe.session.user}:
+            doc.notify(u, _("Payment Approval {0} is approved and ready to submit").format(doc.name))
     return {"status": doc.status, "approved_count": doc.approved_count()}
 
 
@@ -409,6 +478,33 @@ def approve(name, remarks, approved_amount=None):
 @frappe.whitelist(methods=["POST"])
 def reject(name, remarks):
     return _act(name, remarks, REJECTED)
+
+
+@frappe.whitelist(methods=["POST"])
+def submit_approval(name, mode_of_payment=None, paid_from=None, party_account=None):
+    """Submit an approved request. Any Director (not only the requester) may do it, as may
+    anyone with Submit permission. Directors have no Accounts permissions, so the submit
+    is done here after checking who is asking and that the approvals are complete."""
+    frappe.db.get_value("Payment Approval", name, "name", for_update=True)
+    doc = frappe.get_doc("Payment Approval", name)
+    if not (DIRECTOR_ROLE in frappe.get_roles() or doc.has_permission("submit")):
+        frappe.throw(_("Only a Director or an Accounts user can submit a Payment Approval."), frappe.PermissionError)
+    if doc.docstatus != 0:
+        frappe.throw(_("This Payment Approval is already submitted."))
+    if not doc.is_fully_approved():
+        frappe.throw(_("It cannot be submitted until Approver 1 and enough other Directors have approved."), title=_("Approval Pending"))
+
+    doc.flags.approval_action = True
+    doc.flags.ignore_permissions = True
+    if mode_of_payment:
+        doc.mode_of_payment = mode_of_payment
+    if paid_from:
+        doc.paid_from = paid_from
+    if party_account:
+        doc.party_account = party_account
+    doc.submit()
+    doc.add_comment("Info", _("{0} submitted this Payment Approval.").format(frappe.session.user))
+    return doc.status
 
 
 @frappe.whitelist(methods=["POST"])
@@ -485,6 +581,8 @@ def make_payment_entry(name):
         ref = ("Sales Order", doc.sales_order, total, total - flt(so.advance_paid))
     else:
         ref = None
+    if doc.party_bill_no:
+        pe.remarks += " " + _("Party Bill No: {0}").format(doc.party_bill_no)
     if doc.sales_order and doc.party_type == "Supplier":
         # A Sales Order on a supplier payment is information only (core allows no Sales
         # Order allocation against a supplier), so it is named in the remarks.
@@ -517,13 +615,18 @@ def get_payment_defaults(company, party_type=None, party=None, mode_of_payment=N
 
     frappe.has_permission("Payment Approval", "read", throw=True)
     out = {}
-    # The party's default account is a lookup, not a disclosure; skip the
-    # account-permission check core applies so any user filling the form gets the default.
-    frappe.flags.ignore_account_permission = True
-    if company and mode_of_payment:
-        out["paid_from"] = (get_default_bank_cash_account(company, "Bank", mode_of_payment=mode_of_payment) or {}).get("account")
-    if company and party_type in ("Supplier", "Customer") and party:
-        out["party_account"] = get_party_account(party_type, party, company)
+    # The default accounts are a lookup, not a disclosure. Core checks the caller's Account
+    # permission, which Directors and plain requesters do not have, so look them up as
+    # Administrator (nothing but the two account names leaves this function).
+    session_user = frappe.session.user
+    frappe.set_user("Administrator")
+    try:
+        if company and mode_of_payment:
+            out["paid_from"] = (get_default_bank_cash_account(company, "Bank", mode_of_payment=mode_of_payment) or {}).get("account")
+        if company and party_type in ("Supplier", "Customer") and party:
+            out["party_account"] = get_party_account(party_type, party, company)
+    finally:
+        frappe.set_user(session_user)
     return out
 
 
@@ -615,3 +718,51 @@ def director_query(doctype, txt, searchfield, start, page_len, filters):
         """,
         {"role": DIRECTOR_ROLE, "txt": f"%{txt}%", "page_len": cint(page_len), "start": cint(start)},
     )
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def account_query(doctype, txt, searchfield, start, page_len, filters):
+    """Account search for the Payment Details dialog. Directors submit approved requests
+    but hold no Account permission, so the standard link search would return nothing.
+    filters: {"company": ..., "kind": "bank" | "party"}."""
+    if isinstance(filters, str):
+        filters = frappe.parse_json(filters)
+    filters = filters or {}
+    frappe.has_permission("Payment Approval", "read", throw=True)
+    bank = filters.get("kind") == "bank"
+    return frappe.db.sql(
+        f"""
+        SELECT name, account_type FROM `tabAccount`
+        WHERE company = %(company)s AND is_group = 0 AND disabled = 0
+          {"AND account_type IN ('Bank', 'Cash')" if bank else ""}
+          AND (name LIKE %(txt)s OR account_name LIKE %(txt)s)
+        ORDER BY name LIMIT %(page_len)s OFFSET %(start)s
+        """,
+        {"company": filters.get("company"), "txt": f"%{txt}%", "page_len": cint(page_len), "start": cint(start)},
+    )
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def mode_of_payment_query(doctype, txt, searchfield, start, page_len, filters):
+    frappe.has_permission("Payment Approval", "read", throw=True)
+    return frappe.db.sql(
+        """
+        SELECT name FROM `tabMode of Payment`
+        WHERE enabled = 1 AND name LIKE %(txt)s
+        ORDER BY name LIMIT %(page_len)s OFFSET %(start)s
+        """,
+        {"txt": f"%{txt}%", "page_len": cint(page_len), "start": cint(start)},
+    )
+
+
+@frappe.whitelist()
+def get_default_requester():
+    """The Payment Requested By name for the logged-in user (created on first use), so a
+    new Payment Approval opens with Requested By already filled in."""
+    from manufyxinvenzaerp.accounts_management.doctype.payment_requested_by.payment_requested_by import (
+        get_or_create_for_user,
+    )
+
+    return get_or_create_for_user(frappe.session.user)
