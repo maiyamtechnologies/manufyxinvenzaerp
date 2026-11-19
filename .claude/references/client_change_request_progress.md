@@ -1759,3 +1759,9 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
 - Status is `Pending Approval` from the first save; `pending_with` lists every Director who has not acted (drives "Pending My Approval" in the list Show menu); ToDo + notification go to all Directors.
 - Patch `patches/v16/payment_approval_open_approval.py` drops old "named only" approver slots on drafts and recomputes status/summary.
 - Code: `payment_approval.py` (`is_fully_approved`, `free_slot`, `clear_slot`, `validate_approvers`, `protect_approval_fields`, `pending_approver_users`, `_record_decision`), `payment_approval.js` (`pa_my_turn`, headline), `payment_approval.json` (layout: Approval Summary + two rows of two approver blocks).
+
+## 19 Nov 2026 — Payment Approval: Approver 1 chosen on the Request tab (mandatory), approves first; any 2 approvals allow submit
+
+- Reverses the 18 Nov (2) "no Approver 1 / any Director approves first" change. Back to: **Approver 1 is mandatory**, picked by the requester, and must approve first; every other Director may then approve (recorded in the next free slot); once any 2 approvals (min_approvals in Payment Approval Settings, Approver 1 counts) are in, status = Approved and any Director can submit.
+- Only the **Approver 1 selector** moved: it is now on the **Request** tab (under Requested By). Approver 1 Status / Approved On / Remarks and Approver 2-4 stay on the **Approvals** tab.
+- Patch `payment_approval_approver_1_on_request`: open drafts approved under the "any Director" flow get their first deciding Director moved into Approver 1; drafts nobody acted on just show the mandatory field for the requester to fill.

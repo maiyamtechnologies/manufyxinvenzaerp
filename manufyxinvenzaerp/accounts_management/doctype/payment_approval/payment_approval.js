@@ -64,11 +64,13 @@ function pa_account_query(frm, kind) {
 	return { query: `${PA_METHOD}.account_query`, filters: { company: frm.doc.company, kind } };
 }
 
-// Every Director who has not yet approved/rejected this draft may act.
+// Who may act next on this draft: Approver 1 first, then any other Director who has not acted.
 function pa_my_turn(doc) {
 	if (doc.docstatus !== 0 || doc.status === "Rejected" || !frappe.user.has_role("Director")) return false;
 	const me = frappe.session.user;
-	const slot = [1, 2, 3, 4].find((n) => doc[`approver_${n}`] === me);
+	if (doc.approver_1 === me) return !doc.approver_1_status || doc.approver_1_status === "Pending";
+	if (doc.approver_1_status !== PA_APPROVED) return false;
+	const slot = [2, 3, 4].find((n) => doc[`approver_${n}`] === me);
 	return !slot || !doc[`approver_${slot}_status`] || doc[`approver_${slot}_status`] === "Pending";
 }
 
@@ -157,6 +159,8 @@ frappe.ui.form.on("Payment Approval", {
 	setup(frm) {
 		frm.set_query("paid_from", () => ({ filters: pa_account_filters(frm, "bank") }));
 		frm.set_query("party_account", () => ({ filters: pa_account_filters(frm, "party") }));
+		// Only Approver 1 is chosen; the other Directors are recorded when they act.
+		frm.set_query("approver_1", () => ({ query: `${PA_METHOD}.director_query` }));
 		frm.set_query("source_of_funds", () => ({ query: `${PA_METHOD}.payment_entry_query` }));
 		frm.set_query("purchase_order", () => ({ filters: { supplier: frm.doc.party, docstatus: 1 } }));
 		frm.set_query("purchase_invoice", () => ({ filters: { supplier: frm.doc.party, docstatus: 1 } }));
@@ -184,7 +188,7 @@ frappe.ui.form.on("Payment Approval", {
 			}
 
 			if (doc.status === "Approved" && pa_can_submit(frm)) {
-				// Enough Directors approved: any Director may submit.
+				// Approver 1 and enough other Directors approved: any Director may submit.
 				frm.page.set_primary_action(__("Submit"), () => {
 					const submit = (values) =>
 						frappe.call({
@@ -216,10 +220,12 @@ frappe.ui.form.on("Payment Approval", {
 
 			if (doc.status === "Pending Approval") {
 				frm.dashboard.set_headline_alert(
-					__("{0} approval(s) received. Any Director can approve. Waiting for: {1}", [
-						doc.approvals_received || 0,
-						doc.pending_with || "-",
-					]),
+					doc.approver_1_status === PA_APPROVED
+						? __("{0} approval(s) received. Any other Director can approve now. Waiting for: {1}", [
+								doc.approvals_received || 0,
+								doc.pending_with || "-",
+						  ])
+						: __("Waiting for Approver 1 ({0}) to approve first", [doc.approver_1]),
 					"orange"
 				);
 			} else if (doc.status === "Approved") {

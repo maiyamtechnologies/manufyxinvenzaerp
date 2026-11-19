@@ -12,7 +12,7 @@
    "options": "2\n3",
    "default": "2",
    "reqd": 1,
-   "description": "How many Directors must approve a Payment Approval before it can be submitted. Every Director can approve; nobody is named in advance."
+   "description": "How many of the selected Directors must approve a Payment Approval before it can be submitted. A request must also name at least this many approvers."
   }
  ],
  "permissions": [
