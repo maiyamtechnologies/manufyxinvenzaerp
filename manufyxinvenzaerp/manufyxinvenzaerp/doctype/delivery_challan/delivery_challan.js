@@ -62,6 +62,41 @@ frappe.ui.form.on("Delivery Challan", {
 		dc_toggle_type_fields(frm);
 	},
 
+	against_gate_pass(frm) {
+		// Return Entry: pull the supplier details and the still-pending items
+		// from the chosen gate pass.
+		if (frm.doc.challan_type !== "Return Entry" || !frm.doc.against_gate_pass) return;
+		frappe.call({
+			method: "manufyxinvenzaerp.manufyxinvenzaerp.doctype.delivery_challan.delivery_challan.get_return_entry_details",
+			args: { source_name: frm.doc.against_gate_pass },
+			freeze: true,
+			freeze_message: __("Fetching gate pass details..."),
+			callback(r) {
+				const d = r && r.message;
+				if (!d) return;
+				// Assigned directly (not set_value) so the party_type / party handlers,
+				// which blank dependent fields, do not wipe what was just filled.
+				["company", "party_type", "party", "party_display_name", "party_address",
+					"job_no", "ref_dc_no", "total_value_of_goods", "production_plan", "wo_date",
+					"vehicle_no", "driver_name", "mobile_no"].forEach(function (f) {
+					if (d[f] !== undefined && d[f] !== null) frm.doc[f] = d[f];
+				});
+				frm.clear_table("items");
+				(d.items || []).forEach(function (it) {
+					const row = frm.add_child("items");
+					Object.keys(it).forEach(function (k) {
+						if (it[k] !== null && it[k] !== undefined) row[k] = it[k];
+					});
+				});
+				frm.refresh_fields();
+				dc_recalculate_totals(frm);
+			},
+			error() {
+				frm.set_value("against_gate_pass", null);
+			},
+		});
+	},
+
 	party_type(frm) {
 		frm.set_value("party", null);
 		frm.set_value("party_display_name", null);
