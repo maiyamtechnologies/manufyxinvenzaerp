@@ -1765,3 +1765,10 @@ Pre-existing test failures seen while checking (not caused by this work): `verif
 - Reverses the 18 Nov (2) "no Approver 1 / any Director approves first" change. Back to: **Approver 1 is mandatory**, picked by the requester, and must approve first; every other Director may then approve (recorded in the next free slot); once any 2 approvals (min_approvals in Payment Approval Settings, Approver 1 counts) are in, status = Approved and any Director can submit.
 - Only the **Approver 1 selector** moved: it is now on the **Request** tab (under Requested By). Approver 1 Status / Approved On / Remarks and Approver 2-4 stay on the **Approvals** tab.
 - Patch `payment_approval_approver_1_on_request`: open drafts approved under the "any Director" flow get their first deciding Director moved into Approver 1; drafts nobody acted on just show the mandatory field for the requester to fill.
+
+## 24 Nov 2026 — Delivery Challan: Return Entry auto-fills from the original gate pass
+
+- On a Delivery Challan with **Challan Type = Return Entry**, selecting **Against Gate Pass** now fills the **supplier/party details** (party type, party, display name, address, company), trip details (job no, production plan, WO date, vehicle, driver, mobile) and the **item rows still pending return** (item, description, UOM, qty, weight, purpose, batch, remarks), each row anchored to the source row (`against_challan_item`) so partial returns stay exact. Changing the gate pass replaces the items.
+- Server: `delivery_challan.get_return_entry_details(source_name)` (whitelisted) reuses `make_return_entry`, so the same rules apply (submitted, Returnable, something still pending). Form: `against_gate_pass` handler in `delivery_challan.js` (assigns fields directly so the party_type/party handlers don't blank them).
+- The existing Create → Return Entry button on a submitted Returnable gate pass is unchanged.
+- **Ref DC No** and **Total Value of Goods** are also carried over from the original gate pass (both here and on the Create → Return Entry button, which used to clear them). Material Received By is still left blank. Terms and sign-off users are not carried over.

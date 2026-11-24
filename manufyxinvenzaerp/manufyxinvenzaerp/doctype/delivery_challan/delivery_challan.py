@@ -430,9 +430,8 @@ def make_return_entry(source_name, target_doc=None):
         target.expected_return_date = None
         target.gp_date = nowdate()
         target.status = "Draft"
-        # Both belong to the outbound trip, not the return.
-        target.ref_dc_no = None
-        target.total_value_of_goods = 0
+        # Ref DC No and Total Value of Goods are carried over from the original
+        # gate pass; the receiver belongs to the outbound trip, not the return.
         target.material_received_by = None
 
     def update_item(source_row, target_row, source_parent):
@@ -471,6 +470,30 @@ def make_return_entry(source_name, target_doc=None):
         )
 
     return doc
+
+
+@frappe.whitelist()
+def get_return_entry_details(source_name):
+    """Party, trip details and still-pending item rows of a Returnable gate pass.
+
+    Backs the form: picking `against_gate_pass` on a Return Entry fills the supplier
+    details and the items from the original gate pass. Reuses make_return_entry so the
+    same rules apply (submitted, Returnable, something still pending) and the rows
+    carry the `against_challan_item` anchor that keeps partial returns exact.
+    """
+    doc = make_return_entry(source_name)
+    header = (
+        "company", "party_type", "party", "party_display_name", "party_address",
+        "job_no", "ref_dc_no", "total_value_of_goods", "production_plan", "wo_date",
+        "vehicle_no", "driver_name", "mobile_no",
+    )
+    row_fields = (
+        "item_code", "material_description", "uom", "qty", "weight_kg", "purpose",
+        "remarks", "batch_no", "against_challan_item",
+    )
+    out = {f: doc.get(f) for f in header}
+    out["items"] = [{f: r.get(f) for f in row_fields} for r in doc.items]
+    return out
 
 
 def _pending_by_row(source_name):
